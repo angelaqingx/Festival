@@ -295,6 +295,7 @@ describe("CustomerAccountService", () => {
 	});
 	it("calculates registration ages at before, on, and after birthday boundaries", async () => {
 		const f = await fixture();
+		f.setNow(new Date("2026-01-01T00:00:00.000Z"));
 		await f.organizations.updateRegistrationAgeConfiguration({
 			organizationId: f.org.id,
 			registrationAgeDate: "2026-06-01",
@@ -314,10 +315,7 @@ describe("CustomerAccountService", () => {
 		expect((await create("On", "2016-06-01")).ageSnapshot.age).toBe(10);
 		expect((await create("After", "2016-06-02")).ageSnapshot.age).toBe(9);
 		const created = await create("Validity", "2016-01-01");
-		expect(
-			new Date(created.ageSnapshot.validUntilIso).getTime() -
-				new Date(created.ageSnapshot.createdAtIso).getTime(),
-		).toBeGreaterThanOrEqual(90 * 24 * 60 * 60 * 1000 - 1);
+		expect(created.ageSnapshot.validUntilIso).toBe("2026-04-01T00:00:00.000Z");
 	});
 	it("rejects child writes without the customer CSRF boundary", async () => {
 		const f = await fixture();
