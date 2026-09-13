@@ -317,6 +317,43 @@ describe("CustomerAccountService", () => {
 		const created = await create("Validity", "2016-01-01");
 		expect(created.ageSnapshot.validUntilIso).toBe("2026-04-01T00:00:00.000Z");
 	});
+	it("rejects calendar-invalid birthdays without normalizing them", async () => {
+		const f = await fixture();
+		await f.organizations.updateRegistrationAgeConfiguration({
+			organizationId: f.org.id,
+			registrationAgeDate: "2026-06-01",
+		});
+		const auth = await f.authenticate();
+		const session = await f.repository.getSession(auth.sessionId);
+		if (!session) throw new Error("session");
+		await expect(
+			f.service.createChild(
+				"festival",
+				auth.sessionId,
+				session.csrfToken,
+				"https://festival.example.com",
+				{ displayName: "Invalid", birthday: "2016-02-31" },
+			),
+		).rejects.toMatchObject({ status: 400 });
+		const created = await f.service.createChild(
+			"festival",
+			auth.sessionId,
+			session.csrfToken,
+			"https://festival.example.com",
+			{ displayName: "Leap", birthday: "2016-02-29" },
+		);
+		expect(created.ageSnapshot.age).toBe(10);
+		await expect(
+			f.service.refreshChildAgeSnapshot(
+				"festival",
+				auth.sessionId,
+				session.csrfToken,
+				"https://festival.example.com",
+				created.child.id,
+				{ birthday: "2015-02-29" },
+			),
+		).rejects.toMatchObject({ status: 400 });
+	});
 	it("rejects child writes without the customer CSRF boundary", async () => {
 		const f = await fixture();
 		await f.organizations.updateRegistrationAgeConfiguration({

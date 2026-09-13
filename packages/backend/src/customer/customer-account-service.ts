@@ -121,6 +121,18 @@ function money(value: unknown) {
 	return { amount: value.amount, currencyCode: value.currencyCode };
 }
 
+function birthdayDate(value: unknown): Date | undefined {
+	if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value))
+		return undefined;
+	const [year, month, day] = value.split("-").map(Number);
+	const date = new Date(`${value}T00:00:00.000Z`);
+	return date.getUTCFullYear() === year &&
+		date.getUTCMonth() === month - 1 &&
+		date.getUTCDate() === day
+		? date
+		: undefined;
+}
+
 function profile(record: FestivalCustomerRecord): CustomerProfile {
 	return {
 		name: record.name.value,
@@ -1013,8 +1025,9 @@ export class CustomerAccountService {
 		};
 		if (typeof displayName !== "string" || !displayName.trim())
 			throw new AppError("Child display name is required.", 400);
-		if (typeof birthday !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(birthday))
-			throw new AppError("Birthday must use YYYY-MM-DD.", 400);
+		const birth = birthdayDate(birthday);
+		if (!birth)
+			throw new AppError("Birthday must be a valid YYYY-MM-DD date.", 400);
 		const config = await this.organizations.getRegistrationAgeConfiguration(
 			access.organizationId,
 		);
@@ -1023,7 +1036,6 @@ export class CustomerAccountService {
 				"Registration age date must be configured before creating a child.",
 				409,
 			);
-		const birth = new Date(`${birthday}T00:00:00.000Z`);
 		const reference = new Date(`${config.registrationAgeDate}T00:00:00.000Z`);
 		if (Number.isNaN(birth.getTime()) || birth > reference)
 			throw new AppError(
@@ -1069,8 +1081,9 @@ export class CustomerAccountService {
 		).find((item) => item.id === childId);
 		if (!child) throw new AppError("Child not found.", 404);
 		const birthday = (input as { birthday?: unknown })?.birthday;
-		if (typeof birthday !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(birthday))
-			throw new AppError("Birthday must use YYYY-MM-DD.", 400);
+		const birth = birthdayDate(birthday);
+		if (!birth)
+			throw new AppError("Birthday must be a valid YYYY-MM-DD date.", 400);
 		const config = await this.organizations.getRegistrationAgeConfiguration(
 			access.organizationId,
 		);
@@ -1079,7 +1092,6 @@ export class CustomerAccountService {
 				"Registration age date must be configured before refreshing an age snapshot.",
 				409,
 			);
-		const birth = new Date(`${birthday}T00:00:00.000Z`);
 		const reference = new Date(`${config.registrationAgeDate}T00:00:00.000Z`);
 		if (Number.isNaN(birth.getTime()) || birth > reference)
 			throw new AppError(
