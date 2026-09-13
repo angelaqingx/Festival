@@ -4,6 +4,8 @@
  * This intentionally creates an empty, final schema only. It contains no
  * compatibility migration, data conversion, or reset operation.
  */
+import { sql } from "bun";
+
 export function postgresSchemaName(schema: string): string {
 	if (!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(schema)) {
 		throw new Error("Database schema is invalid.");
@@ -347,4 +349,28 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 		CREATE INDEX IF NOT EXISTS idx_user_login_firebase_uid ON ${safeSchema}.user_login_event(firebase_uid);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_app_user_email_lower ON ${safeSchema}.app_user(lower(email));
 	`;
+}
+
+const initializations = new Map<string, Promise<void>>();
+
+/** Initializes an empty schema without modifying rows in an existing one. */
+export async function initializePostgresSchema(schema: string): Promise<void> {
+	const safeSchema = postgresSchemaName(schema);
+	const existing = initializations.get(safeSchema);
+	if (existing) return existing;
+
+	const initialization = sql.begin(async (transaction) => {
+		await transaction.unsafe(
+			"SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+			[safeSchema],
+		);
+		await transaction.unsafe(buildCanonicalPostgresSchemaSql(safeSchema));
+	});
+	initializations.set(safeSchema, initialization);
+	try {
+		await initialization;
+	} catch (error) {
+		initializations.delete(safeSchema);
+		throw error;
+	}
 }
