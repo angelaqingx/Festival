@@ -114,6 +114,12 @@ export function customerMembershipPurchaseSignInPath(
 	return `/api/organizations/${encodeURIComponent(slug)}/customer-auth/start?offering=${encodeURIComponent(offeringId)}`;
 }
 
+export function customerAccompanistMembershipSignInPath(slug: string) {
+	const encodedSlug = encodeURIComponent(slug);
+	const returnTo = `/org/${encodedSlug}/accompanist-membership`;
+	return `/api/organizations/${encodedSlug}/customer-auth/start?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
 export function getCustomerSession(slug: string) {
 	return requestJson<CustomerSessionResponse>(
 		`/api/organizations/${slug}/customer/session`,
