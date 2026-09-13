@@ -680,7 +680,30 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-## 8. Sanity checks
+## 8. Clean-slate Admin Tool onboarding
+
+`festival_sepv2_db` is intentionally disposable. It starts empty and must be
+configured through Festival's supported Admin Tool workflows; do not import or
+backfill prior organizations, users, integrations, catalogs, or operational
+data.
+
+Before merging a clean-schema change, an authorized operator must complete a
+manual **Admin Tool Shopify Integration Run** against a new database:
+
+1. Create the administrator and organization, then create a Festival and its
+   divisions.
+2. In **Admin > Integrations**, save and verify the Shopify integration and run
+   **Shopify Integration > Diagnostics** so the paid-order webhook is checked.
+3. Recreate the registration/catalog configuration and the required membership
+   and accompanist offerings.
+4. Record any Shopify Dev Dashboard or protected-customer-data setup that could
+   not be completed through the Admin Tool.
+
+The automated PostgreSQL 17 schema contract covers fresh initialization and
+representative schema writes. It cannot authorize or substitute for the live
+Shopify/Admin Tool run.
+
+## 9. Sanity checks
 
 Run the repo verification commands after setup changes:
 
