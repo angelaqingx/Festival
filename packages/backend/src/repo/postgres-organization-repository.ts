@@ -1367,10 +1367,10 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				id,
 				token,
 				organization_id,
-				email,
-				role,
-				invited_by_user_id
-			) VALUES ($1, $2, $3, $4, NOT EXISTS (SELECT 1 FROM ${this.schema}.festivals WHERE organization_id = $2), $5, $6, $7)
+					email,
+					role,
+					invited_by_user_id
+				) VALUES ($1, $2, $3, $4, $5, $6)
 			RETURNING
 				id,
 				token,
@@ -1595,10 +1595,23 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				code,
 				short_name,
 				is_primary,
-				name,
-				start_date,
-				end_date
-			) VALUES ($1, $2, $3, $4, $5, $6)
+					name,
+					start_date,
+					end_date
+				) VALUES (
+					$1,
+					$2,
+					$3,
+					$4,
+					NOT EXISTS (
+						SELECT 1
+						FROM ${this.schema}.festivals
+						WHERE organization_id = $2
+					),
+					$5,
+					$6,
+					$7
+				)
 			RETURNING
 				id,
 				organization_id,
