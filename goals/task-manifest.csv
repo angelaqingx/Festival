@@ -39,3 +39,4 @@ number,taskname,first_create_date,first_create_hhmmss,first_create_git_hash
 38,teacher-membership-enhancements,2026-09-11,000000,-------
 39,issue-153-postgres-festival-insert,2026-09-13,000000,-------
 40,issue-156-calendar-birthday-validation,2026-09-13,000000,-------
+41,review-pr-150-fix-open-issue,2026-09-13,000000,-------

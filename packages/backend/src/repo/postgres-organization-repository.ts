@@ -738,13 +738,6 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				ADD CONSTRAINT products_duration_days_check
 					CHECK (duration_days > 0 AND duration_days <= 36500);
 
-			ALTER TABLE ${schema}.entitlement_grants
-				DROP CONSTRAINT IF EXISTS entitlement_grants_class_check;
-
-			ALTER TABLE ${schema}.entitlement_grants
-				ADD CONSTRAINT entitlement_grants_class_check
-					CHECK (entitlement_class IN ('teacher_membership', 'accompanist_membership'));
-
 			CREATE TABLE IF NOT EXISTS ${schema}.entitlement_grants (
 				id TEXT PRIMARY KEY,
 				organization_id TEXT NOT NULL REFERENCES ${schema}.organizations (id) ON DELETE CASCADE,
@@ -773,6 +766,13 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				CONSTRAINT entitlement_grants_status_check
 					CHECK (status IN ('active', 'expired', 'revoked'))
 			);
+
+			ALTER TABLE ${schema}.entitlement_grants
+				DROP CONSTRAINT IF EXISTS entitlement_grants_class_check;
+
+			ALTER TABLE ${schema}.entitlement_grants
+				ADD CONSTRAINT entitlement_grants_class_check
+					CHECK (entitlement_class IN ('teacher_membership', 'accompanist_membership'));
 
 			ALTER TABLE ${schema}.users
 				ADD COLUMN IF NOT EXISTS disassociated BOOLEAN NOT NULL DEFAULT FALSE;
