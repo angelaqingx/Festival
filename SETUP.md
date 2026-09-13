@@ -79,7 +79,7 @@ psql -U postgres -f database/init-user-db.sql
 
 The checked-in script currently creates:
 - role `festivaladmin`
-- database `festival_db`
+- database `festival_sepv2_db`
 
 ### 3.2 Create the application schema
 
@@ -88,7 +88,7 @@ The backend creates tables inside `${DB_SCHEMA}`, but it does not create the sch
 Example using the default local values in the env files:
 
 ```bash
-psql -U festivaladmin -d festival_db -c 'CREATE SCHEMA IF NOT EXISTS orgs AUTHORIZATION festivaladmin;'
+psql -U festivaladmin -d festival_sepv2_db -c 'CREATE SCHEMA IF NOT EXISTS orgs AUTHORIZATION festivaladmin;'
 ```
 
 If you change `DB_SCHEMA`, change the SQL command to use the same schema name.
@@ -168,7 +168,7 @@ These values come from your local PostgreSQL install and the bootstrap you ran a
 | --- | --- | --- |
 | `DB_USER` | yes | PostgreSQL role used by the app. |
 | `DB_PASSWORD` | yes | Password for `DB_USER`. |
-| `DATABASE` | yes | Database name, for example `festival_db`. |
+| `DATABASE` | yes | Database name, for example `festival_sepv2_db`. |
 | `DB_HOST` | yes | Usually `localhost`. |
 | `DB_PORT` | yes | Usually `5432`. |
 | `DB_SSL` | yes | Use `false` for normal local Postgres unless your local setup requires SSL. |
@@ -525,7 +525,7 @@ Services and ports:
 
 What this command does:
 - builds `festival-backend:local` and `festival-frontend:local`
-- pulls `postgres:16-alpine`
+- pulls `postgres:17-alpine`
 - starts services in dependency order
 
 When finished, stop with:
