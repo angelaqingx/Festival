@@ -30,15 +30,15 @@
 
 ## Delivery
 
-- Delivered: pending
-- Exceptions: None
-- Deferred work: None
+- Delivered: #158–#163 are committed separately. PostgreSQL 17 and `festival_sepv2_db` are configured; a canonical non-destructive initializer replaces compatibility migrations; an isolated PostgreSQL 17 contract test and normalized schema-only snapshot are committed; manual Admin Tool Shopify onboarding is documented; all workspace packages are `0.2.0`.
+- Exceptions: The live Admin Tool Shopify Integration Run is intentionally not executed in this task and is a PR pre-merge requirement.
+- Deferred work: Live Shopify/Admin Tool onboarding execution by an authorized operator.
 - Dirty-worktree decision: continue — the only preflight entries are task-owned locked-goal artifacts and this task spec.
 
 ## Quality gate results
 
-- Lint: pending
-- Build: pending
-- Tests: pending
-- Code review: pending
+- Lint: passed (`bun run format:check`)
+- Build: passed (`bun run build`)
+- Tests: passed (`bun run test`; database-dependent contract test skips without `POSTGRES_INTEGRATION_URL` and separately passed against PostgreSQL 17)
+- Code review: passed (no findings; confidence 0.91)
 - Clean merge: pending
