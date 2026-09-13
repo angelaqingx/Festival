@@ -218,8 +218,7 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 		);
 		CREATE TABLE IF NOT EXISTS ${safeSchema}.festival_children (
 			id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, parent_customer_id TEXT NOT NULL,
-			display_name TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL,
-			UNIQUE(organization_id,parent_customer_id,LOWER(display_name))
+			display_name TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL
 		);
 		CREATE TABLE IF NOT EXISTS ${safeSchema}.festival_child_age_snapshots (
 			id TEXT PRIMARY KEY, child_id TEXT NOT NULL, organization_id TEXT NOT NULL,
@@ -340,6 +339,7 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 		CREATE INDEX IF NOT EXISTS idx_festival_customers_org_name ON ${safeSchema}.festival_customers(organization_id,LOWER(name));
 		CREATE INDEX IF NOT EXISTS idx_festival_customers_org_email ON ${safeSchema}.festival_customers(organization_id,LOWER(email));
 		CREATE INDEX IF NOT EXISTS idx_festival_customers_org_phone ON ${safeSchema}.festival_customers(organization_id,phone);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_festival_children_parent_name ON ${safeSchema}.festival_children(organization_id, parent_customer_id, LOWER(display_name));
 		CREATE UNIQUE INDEX IF NOT EXISTS checkout_intents_scope_key ON ${safeSchema}.checkout_intents(organization_id, customer_id, session_id, idempotency_key);
 		CREATE INDEX IF NOT EXISTS membership_validation_customer_idx ON ${safeSchema}.membership_validation_decisions (organization_id, customer_id, created_at DESC);
 		CREATE UNIQUE INDEX IF NOT EXISTS membership_validation_checkout_intent_idx ON ${safeSchema}.membership_validation_decisions (organization_id, checkout_intent_id) WHERE checkout_intent_id IS NOT NULL;
