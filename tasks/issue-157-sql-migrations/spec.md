@@ -41,4 +41,4 @@
 - Build: passed (`bun run build`)
 - Tests: passed (`bun run test`; database-dependent contract test skips without `POSTGRES_INTEGRATION_URL` and separately passed against PostgreSQL 17)
 - Code review: passed (no findings; confidence 0.91)
-- Clean merge: pending
+- Clean merge: passed (fast-forward into `ericp/exp-long-running-agent`)
