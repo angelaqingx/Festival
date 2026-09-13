@@ -1,11 +1,13 @@
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, onMount, Show } from "solid-js";
 import { Button } from "../components/Button.js";
 import {
 	acquireAccompanistMembership,
+	customerAccompanistMembershipSignInPath,
 	getAccompanistMembershipForm,
 	getCustomerProfile,
 	getCustomerSession,
 } from "../lib/api.js";
+import { buildOrgRootPath } from "../lib/routes.js";
 
 export function AccompanistMembershipPage(props: { slug: string }) {
 	const [csrfToken, setCsrfToken] = createSignal("");
@@ -18,23 +20,25 @@ export function AccompanistMembershipPage(props: { slug: string }) {
 	>([]);
 	const [selected, setSelected] = createSignal<string[]>([]);
 	const [loading, setLoading] = createSignal(true);
+	const [authenticated, setAuthenticated] = createSignal(false);
+	const [needsSignIn, setNeedsSignIn] = createSignal(false);
+	const [redirectingToShopify, setRedirectingToShopify] = createSignal(false);
 	const [submitting, setSubmitting] = createSignal(false);
 	const [error, setError] = createSignal("");
 	const [success, setSuccess] = createSignal("");
+	let signInDialog: HTMLElement | undefined;
 
 	onMount(async () => {
 		try {
-			const [session, profile, form] = await Promise.all([
-				getCustomerSession(props.slug),
+			const session = await getCustomerSession(props.slug);
+			if (!session.session.authenticated) {
+				setNeedsSignIn(true);
+				return;
+			}
+			const [profile, form] = await Promise.all([
 				getCustomerProfile(props.slug),
 				getAccompanistMembershipForm(props.slug),
 			]);
-			if (!session.session.authenticated) {
-				window.location.assign(
-					`/api/organizations/${encodeURIComponent(props.slug)}/customer-auth/start?returnTo=${encodeURIComponent(window.location.pathname)}`,
-				);
-				return;
-			}
 			setCsrfToken(session.session.csrfToken);
 			setName(profile.profile.name ?? "");
 			setEmail(profile.profile.email ?? "");
@@ -46,12 +50,50 @@ export function AccompanistMembershipPage(props: { slug: string }) {
 					? form.divisions.map((division) => division.id)
 					: form.divisions.slice(0, 1).map((division) => division.id),
 			);
+			setAuthenticated(true);
 		} catch {
 			setError("Accompanist membership information could not be loaded.");
 		} finally {
 			setLoading(false);
 		}
 	});
+
+	createEffect(() => {
+		if (needsSignIn()) signInDialog?.focus();
+	});
+
+	function trapSignInDialogFocus(event: KeyboardEvent) {
+		if (event.key !== "Tab" || !signInDialog) return;
+		const focusable = Array.from(
+			signInDialog.querySelectorAll<HTMLElement>(
+				'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+			),
+		);
+		const first = focusable[0];
+		const last = focusable.at(-1);
+		if (!first || !last) {
+			event.preventDefault();
+			return;
+		}
+		if (event.shiftKey && document.activeElement === first) {
+			event.preventDefault();
+			last.focus();
+		} else if (!event.shiftKey && document.activeElement === last) {
+			event.preventDefault();
+			first.focus();
+		}
+	}
+
+	function continueToShopify() {
+		if (redirectingToShopify()) return;
+		setRedirectingToShopify(true);
+		window.location.assign(customerAccompanistMembershipSignInPath(props.slug));
+	}
+
+	function cancelSignIn() {
+		if (redirectingToShopify()) return;
+		window.location.assign(buildOrgRootPath(props.slug));
+	}
 
 	function toggle(id: string) {
 		setSelected((current) =>
@@ -93,10 +135,52 @@ export function AccompanistMembershipPage(props: { slug: string }) {
 		<section class="panel flow-panel">
 			<h2>Accompanist Membership</h2>
 			<Show when={loading()}>
-				<p role="status">Loading membership form…</p>
+				<p role="status">Checking your sign-in status…</p>
 			</Show>
 			<Show when={error()}>{(message) => <p role="alert">{message()}</p>}</Show>
-			<Show when={!loading()}>
+			<Show when={needsSignIn()}>
+				<div class="modal-backdrop" role="presentation">
+					<section
+						ref={signInDialog}
+						class="modal-card accompanist-sign-in-card"
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="accompanist-sign-in-title"
+						aria-describedby="accompanist-sign-in-description"
+						tabindex="-1"
+						onKeyDown={trapSignInDialogFocus}
+					>
+						<h3 id="accompanist-sign-in-title">Sign in to continue</h3>
+						<p id="accompanist-sign-in-description">
+							You'll sign in securely with Shopify to complete your accompanist
+							membership and select your divisions.
+						</p>
+						<p>
+							Sign in is required before we can show your enrollment details.
+						</p>
+						<div class="modal-actions">
+							<Button
+								type="button"
+								disabled={redirectingToShopify()}
+								onClick={continueToShopify}
+							>
+								{redirectingToShopify()
+									? "Continuing to Shopify…"
+									: "Continue to Shopify"}
+							</Button>
+							<Button
+								type="button"
+								variant="secondary"
+								disabled={redirectingToShopify()}
+								onClick={cancelSignIn}
+							>
+								Cancel
+							</Button>
+						</div>
+					</section>
+				</div>
+			</Show>
+			<Show when={authenticated()}>
 				<form class="flow-panel" onSubmit={submit}>
 					<label>
 						Name
