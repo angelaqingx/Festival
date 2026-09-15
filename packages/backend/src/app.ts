@@ -42,6 +42,11 @@ import { ShopifyIntegrationService as DefaultShopifyIntegrationService } from ".
 import { ShopifyMembershipProductService } from "./shopify/shopify-membership-product-service.js";
 import { TokenlessShopifyPublicCatalogClient } from "./shopify/shopify-public-catalog-client.js";
 import { ShopifyWebhookSubscriptionService } from "./shopify/shopify-webhook-subscription-service.js";
+import { PostgresVolunteerRepository } from "./volunteers/postgres-volunteer-repository.js";
+import {
+	InMemoryVolunteerRepository,
+	type VolunteerRepository,
+} from "./volunteers/volunteer-repository.js";
 
 export interface CreateAppOptions {
 	env?: AppEnv;
@@ -60,6 +65,7 @@ export interface CreateAppOptions {
 	shopifyOrderProjectionService?: ShopifyOrderProjectionService;
 	shopifyWebhookService?: ShopifyWebhookService;
 	membershipStatusService?: MembershipStatusService;
+	volunteerRepository?: VolunteerRepository;
 }
 
 function privateTokenMatches(
@@ -246,6 +252,13 @@ export async function createApp(options: CreateAppOptions = {}) {
 	const membershipStatusService =
 		options.membershipStatusService ??
 		new MembershipStatusService(repository, commerceRepository);
+	const volunteerRepository =
+		options.volunteerRepository ??
+		(env.databaseSchema
+			? new PostgresVolunteerRepository(env.databaseSchema)
+			: new InMemoryVolunteerRepository());
+	if (volunteerRepository instanceof PostgresVolunteerRepository)
+		await volunteerRepository.ensureReady();
 
 	const app = new Hono();
 	const allowedApiOrigins = new Set(env.allowedApiOrigins ?? LOCAL_API_ORIGINS);
@@ -316,6 +329,7 @@ export async function createApp(options: CreateAppOptions = {}) {
 			shopifyIntegrationDiagnosticService,
 			membershipCheckoutService,
 			membershipStatusService,
+			volunteerRepository,
 		),
 	);
 	app.route(

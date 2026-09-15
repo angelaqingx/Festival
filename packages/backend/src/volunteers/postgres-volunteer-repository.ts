@@ -1,0 +1,289 @@
+import { randomUUID } from "node:crypto";
+import { sql } from "bun";
+import type {
+	BookShiftsOutcome,
+	CreateRoleInput,
+	CreateShiftInput,
+	UpsertVolunteerInput,
+	VolunteerAssignmentRecord,
+	VolunteerRecord,
+	VolunteerRepository,
+	VolunteerRoleRecord,
+	VolunteerShiftRecord,
+} from "./volunteer-repository.js";
+
+function schemaName(value: string) {
+	if (!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(value))
+		throw new Error("Database schema is invalid.");
+	return value;
+}
+
+export class PostgresVolunteerRepository implements VolunteerRepository {
+	private readonly schema: string;
+
+	constructor(schema: string) {
+		this.schema = schemaName(schema);
+	}
+
+	async ensureReady() {
+		await sql.unsafe(`
+			CREATE TABLE IF NOT EXISTS ${this.schema}.volunteers (
+				id TEXT PRIMARY KEY,
+				organization_id TEXT NOT NULL REFERENCES ${this.schema}.organizations (id) ON DELETE CASCADE,
+				firebase_uid TEXT NOT NULL,
+				account_email TEXT NOT NULL,
+				name TEXT NOT NULL,
+				phone TEXT NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+			CREATE UNIQUE INDEX IF NOT EXISTS volunteers_org_uid_key
+				ON ${this.schema}.volunteers (organization_id, firebase_uid);
+
+			CREATE TABLE IF NOT EXISTS ${this.schema}.volunteer_roles (
+				id TEXT PRIMARY KEY,
+				organization_id TEXT NOT NULL REFERENCES ${this.schema}.organizations (id) ON DELETE CASCADE,
+				slug TEXT NOT NULL,
+				description TEXT NOT NULL,
+				details_url TEXT NULL,
+				is_room_proctor BOOLEAN NOT NULL DEFAULT FALSE,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+
+			CREATE TABLE IF NOT EXISTS ${this.schema}.volunteer_shifts (
+				id TEXT PRIMARY KEY,
+				organization_id TEXT NOT NULL REFERENCES ${this.schema}.organizations (id) ON DELETE CASCADE,
+				role_id TEXT NOT NULL REFERENCES ${this.schema}.volunteer_roles (id) ON DELETE CASCADE,
+				date DATE NOT NULL,
+				period TEXT NOT NULL CHECK (period IN ('AM', 'PM')),
+				time_text TEXT NULL,
+				division TEXT NULL,
+				adjudicator TEXT NULL,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+
+			CREATE TABLE IF NOT EXISTS ${this.schema}.volunteer_assignments (
+				id TEXT PRIMARY KEY,
+				organization_id TEXT NOT NULL REFERENCES ${this.schema}.organizations (id) ON DELETE CASCADE,
+				shift_id TEXT NOT NULL REFERENCES ${this.schema}.volunteer_shifts (id) ON DELETE CASCADE,
+				volunteer_id TEXT NOT NULL REFERENCES ${this.schema}.volunteers (id) ON DELETE CASCADE,
+				status TEXT NOT NULL CHECK (status IN ('active', 'cancelled')),
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				cancelled_at TIMESTAMPTZ NULL);
+			CREATE UNIQUE INDEX IF NOT EXISTS volunteer_assignments_active_shift_key
+				ON ${this.schema}.volunteer_assignments (shift_id) WHERE status = 'active';
+		`);
+	}
+
+	async upsertVolunteer(input: UpsertVolunteerInput) {
+		const rows = (await sql.unsafe(
+			`INSERT INTO ${this.schema}.volunteers (id, organization_id, firebase_uid, account_email, name, phone)
+			 VALUES ($1, $2, $3, $4, $5, $6)
+			 ON CONFLICT (organization_id, firebase_uid)
+			 DO UPDATE SET account_email = $4, name = $5, phone = $6
+			 RETURNING id, organization_id, firebase_uid, account_email, name, phone, created_at::text`,
+			[
+				randomUUID(),
+				input.organizationId,
+				input.firebaseUid,
+				input.accountEmail,
+				input.name,
+				input.phone,
+			],
+		)) as Array<Record<string, unknown>>;
+		return this.volunteer(rows[0]);
+	}
+
+	async createRole(input: CreateRoleInput) {
+		const rows = (await sql.unsafe(
+			`INSERT INTO ${this.schema}.volunteer_roles (id, organization_id, slug, description, details_url, is_room_proctor)
+			 VALUES ($1, $2, $3, $4, $5, $6)
+			 RETURNING id, organization_id, slug, description, details_url, is_room_proctor, created_at::text`,
+			[
+				randomUUID(),
+				input.organizationId,
+				input.slug,
+				input.description,
+				input.detailsUrl,
+				input.isRoomProctor,
+			],
+		)) as Array<Record<string, unknown>>;
+		return this.role(rows[0]);
+	}
+
+	async createShift(input: CreateShiftInput) {
+		const rows = (await sql.unsafe(
+			`INSERT INTO ${this.schema}.volunteer_shifts (id, organization_id, role_id, date, period, time_text, division, adjudicator)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			 RETURNING id, organization_id, role_id, date::text, period, time_text, division, adjudicator, created_at::text`,
+			[
+				randomUUID(),
+				input.organizationId,
+				input.roleId,
+				input.date,
+				input.period,
+				input.timeText,
+				input.division,
+				input.adjudicator,
+			],
+		)) as Array<Record<string, unknown>>;
+		return this.shift(rows[0]);
+	}
+
+	async listRoles(organizationId: string) {
+		const rows = (await sql.unsafe(
+			`SELECT id, organization_id, slug, description, details_url, is_room_proctor, created_at::text
+			 FROM ${this.schema}.volunteer_roles WHERE organization_id = $1 ORDER BY created_at`,
+			[organizationId],
+		)) as Array<Record<string, unknown>>;
+		return rows.map((row) => this.role(row));
+	}
+
+	async listShiftsForRole(organizationId: string, roleId: string) {
+		const rows = (await sql.unsafe(
+			`SELECT id, organization_id, role_id, date::text, period, time_text, division, adjudicator, created_at::text
+			 FROM ${this.schema}.volunteer_shifts WHERE organization_id = $1 AND role_id = $2 ORDER BY date, period`,
+			[organizationId, roleId],
+		)) as Array<Record<string, unknown>>;
+		return rows.map((row) => this.shift(row));
+	}
+
+	async bookShifts(input: {
+		organizationId: string;
+		volunteerId: string;
+		shiftIds: string[];
+	}): Promise<BookShiftsOutcome> {
+		throw new Error(
+			"PostgresVolunteerRepository.bookShifts is not implemented yet " +
+				"(atomic, concurrency-safe booking is Week 3 scope).",
+		);
+	}
+
+	async cancelAssignment(input: {
+		organizationId: string;
+		assignmentId: string;
+		cancelledAtIso: string;
+	}) {
+		const rows = (await sql.unsafe(
+			`UPDATE ${this.schema}.volunteer_assignments
+			 SET status = 'cancelled', cancelled_at = $1
+			 WHERE id = $2 AND organization_id = $3 AND status = 'active'
+			 RETURNING id, organization_id, shift_id, volunteer_id, status, created_at::text, cancelled_at::text`,
+			[input.cancelledAtIso, input.assignmentId, input.organizationId],
+		)) as Array<Record<string, unknown>>;
+		return rows[0] ? this.assignment(rows[0]) : null;
+	}
+
+	async listScheduleForOrganization(organizationId: string) {
+		const rows = (await sql.unsafe(
+			`SELECT
+				shift.id AS shift_id, shift.organization_id, shift.role_id, shift.date::text, shift.period,
+				shift.time_text, shift.division, shift.adjudicator, shift.created_at::text AS shift_created_at,
+				role.slug, role.description, role.details_url, role.is_room_proctor, role.created_at::text AS role_created_at,
+				assignment.id AS assignment_id, assignment.status, assignment.created_at::text AS assignment_created_at,
+				assignment.cancelled_at::text,
+				volunteer.id AS volunteer_id, volunteer.firebase_uid, volunteer.account_email, volunteer.name, volunteer.phone,
+				volunteer.created_at::text AS volunteer_created_at
+			 FROM ${this.schema}.volunteer_shifts shift
+			 JOIN ${this.schema}.volunteer_roles role ON role.id = shift.role_id
+			 LEFT JOIN ${this.schema}.volunteer_assignments assignment
+				ON assignment.shift_id = shift.id AND assignment.status = 'active'
+			 LEFT JOIN ${this.schema}.volunteers volunteer ON volunteer.id = assignment.volunteer_id
+			 WHERE shift.organization_id = $1
+			 ORDER BY shift.date, shift.period`,
+			[organizationId],
+		)) as Array<Record<string, unknown>>;
+
+		return rows.map((row) => ({
+			shift: this.shift({
+				id: row.shift_id,
+				organization_id: row.organization_id,
+				role_id: row.role_id,
+				date: row.date,
+				period: row.period,
+				time_text: row.time_text,
+				division: row.division,
+				adjudicator: row.adjudicator,
+				created_at: row.shift_created_at,
+			}),
+			role: this.role({
+				id: row.role_id,
+				organization_id: row.organization_id,
+				slug: row.slug,
+				description: row.description,
+				details_url: row.details_url,
+				is_room_proctor: row.is_room_proctor,
+				created_at: row.role_created_at,
+			}),
+			assignment: row.assignment_id
+				? this.assignment({
+						id: row.assignment_id,
+						organization_id: row.organization_id,
+						shift_id: row.shift_id,
+						volunteer_id: row.volunteer_id,
+						status: row.status,
+						created_at: row.assignment_created_at,
+						cancelled_at: row.cancelled_at,
+					})
+				: null,
+			volunteer: row.volunteer_id
+				? this.volunteer({
+						id: row.volunteer_id,
+						organization_id: row.organization_id,
+						firebase_uid: row.firebase_uid,
+						account_email: row.account_email,
+						name: row.name,
+						phone: row.phone,
+						created_at: row.volunteer_created_at,
+					})
+				: null,
+		}));
+	}
+
+	private volunteer(row: Record<string, unknown>): VolunteerRecord {
+		return {
+			id: String(row.id),
+			organizationId: String(row.organization_id),
+			firebaseUid: String(row.firebase_uid),
+			accountEmail: String(row.account_email),
+			name: String(row.name),
+			phone: String(row.phone),
+			createdAtIso: String(row.created_at),
+		};
+	}
+
+	private role(row: Record<string, unknown>): VolunteerRoleRecord {
+		return {
+			id: String(row.id),
+			organizationId: String(row.organization_id),
+			slug: String(row.slug),
+			description: String(row.description),
+			detailsUrl: row.details_url === null ? null : String(row.details_url),
+			isRoomProctor: row.is_room_proctor === true,
+			createdAtIso: String(row.created_at),
+		};
+	}
+
+	private shift(row: Record<string, unknown>): VolunteerShiftRecord {
+		return {
+			id: String(row.id),
+			organizationId: String(row.organization_id),
+			roleId: String(row.role_id),
+			date: String(row.date),
+			period: row.period as VolunteerShiftRecord["period"],
+			timeText: row.time_text === null ? null : String(row.time_text),
+			division: row.division === null ? null : String(row.division),
+			adjudicator: row.adjudicator === null ? null : String(row.adjudicator),
+			createdAtIso: String(row.created_at),
+		};
+	}
+
+	private assignment(row: Record<string, unknown>): VolunteerAssignmentRecord {
+		return {
+			id: String(row.id),
+			organizationId: String(row.organization_id),
+			shiftId: String(row.shift_id),
+			volunteerId: String(row.volunteer_id),
+			status: row.status as VolunteerAssignmentRecord["status"],
+			createdAtIso: String(row.created_at),
+			cancelledAtIso:
+				row.cancelled_at === null ? null : String(row.cancelled_at),
+		};
+	}
+}

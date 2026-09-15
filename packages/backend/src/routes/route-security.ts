@@ -242,6 +242,11 @@ export const CURRENT_ROUTE_SECURITY = [
 		authenticationClass: "firebase",
 	},
 	{ method: "GET", path: "/api/v1/auth/me", authenticationClass: "firebase" },
+	{
+		method: "GET",
+		path: "/api/organizations/:slug/volunteers/roles",
+		authenticationClass: "tenant",
+	},
 ] as const satisfies readonly RouteSecurityDeclaration[];
 
 interface RegisteredRoute {
