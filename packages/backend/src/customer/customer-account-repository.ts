@@ -144,6 +144,12 @@ export interface CustomerAccountRepository {
 		organizationId: string,
 		shopifyCustomerGid: string,
 	): Promise<FestivalCustomerRecord | null>;
+	recordVerifiedShopifyEmail(input: {
+		organizationId: string;
+		customerId: string;
+		email: string;
+		verifiedAtIso: string;
+	}): Promise<FestivalCustomerRecord | null>;
 	applyCustomerProfile(
 		input: ApplyCustomerProfileInput,
 	): Promise<FestivalCustomerRecord | null>;

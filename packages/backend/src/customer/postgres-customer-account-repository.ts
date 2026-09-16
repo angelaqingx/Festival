@@ -312,6 +312,29 @@ export class PostgresCustomerAccountRepository
 		)) as CustomerRow[];
 		return rows[0] ? customer(rows[0]) : null;
 	}
+	async recordVerifiedShopifyEmail(input: {
+		organizationId: string;
+		customerId: string;
+		email: string;
+		verifiedAtIso: string;
+	}) {
+		await this.ensureReady();
+		const rows = (await sql.unsafe(
+			`UPDATE ${this.schema}.festival_customers SET
+			email=$3,
+			email_source='shopify',
+			email_updated_at=$4,
+			updated_at=GREATEST(updated_at,$4)
+			WHERE organization_id=$1 AND id=$2 RETURNING *`,
+			[
+				input.organizationId,
+				input.customerId,
+				input.email,
+				input.verifiedAtIso,
+			],
+		)) as CustomerRow[];
+		return rows[0] ? customer(rows[0]) : null;
+	}
 	async applyCustomerProfile(input: ApplyCustomerProfileInput) {
 		await this.ensureReady();
 		const values = [

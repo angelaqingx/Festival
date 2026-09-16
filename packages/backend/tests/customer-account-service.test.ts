@@ -461,6 +461,82 @@ describe("CustomerAccountService", () => {
 		});
 		expect(JSON.stringify(orders)).not.toContain("gid://shopify/Customer");
 	});
+	it("records only a verified Shopify identity email when the customer signs in", async () => {
+		const f = await fixture();
+		f.setTokenClaims({
+			email: " Eric@Example.com ",
+			email_verified: true,
+		});
+		const authenticated = await f.authenticate();
+		const session = await f.repository.getSession(authenticated.sessionId);
+		if (!session) throw new Error("session");
+		expect(
+			await f.repository.getCustomer(f.org.id, session.customerId),
+		).toMatchObject({
+			email: { value: "eric@example.com", source: "shopify" },
+		});
+		const customerSession = await f.service.session(
+			"festival",
+			authenticated.sessionId,
+		);
+		if (!customerSession.session.authenticated) throw new Error("session");
+		expect(
+			await f.service.formAccess(
+				"festival",
+				authenticated.sessionId,
+				customerSession.session.csrfToken,
+				"https://festival.example.com",
+			),
+		).toMatchObject({ verifiedShopifyCustomerEmail: "eric@example.com" });
+		await f.repository.applyCustomerProfile({
+			organizationId: f.org.id,
+			customerId: session.customerId,
+			source: "festival",
+			updatedAtIso: "2026-08-01T00:00:00.000Z",
+			profile: { email: "local@example.com" },
+		});
+		f.setTokenClaims({
+			email: "updated@example.com",
+			email_verified: true,
+		});
+		await f.authenticate();
+		expect(
+			await f.repository.getCustomer(f.org.id, session.customerId),
+		).toMatchObject({
+			email: { value: "updated@example.com", source: "shopify" },
+		});
+
+		const unverified = await fixture();
+		unverified.setTokenClaims({
+			email: "eric@example.com",
+			email_verified: false,
+		});
+		const unauthenticated = await unverified.authenticate();
+		const unverifiedSession = await unverified.repository.getSession(
+			unauthenticated.sessionId,
+		);
+		if (!unverifiedSession) throw new Error("session");
+		expect(
+			await unverified.repository.getCustomer(
+				unverified.org.id,
+				unverifiedSession.customerId,
+			),
+		).toMatchObject({ email: { value: null, source: null } });
+
+		const missing = await fixture();
+		missing.setTokenClaims({ email_verified: true });
+		const missingEmail = await missing.authenticate();
+		const missingSession = await missing.repository.getSession(
+			missingEmail.sessionId,
+		);
+		if (!missingSession) throw new Error("session");
+		expect(
+			await missing.repository.getCustomer(
+				missing.org.id,
+				missingSession.customerId,
+			),
+		).toMatchObject({ email: { value: null, source: null } });
+	});
 	it("resolves one durable customer before every session and exposes only the local profile", async () => {
 		const f = await fixture();
 		const first = await f.authenticate();

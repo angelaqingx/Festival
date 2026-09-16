@@ -552,6 +552,12 @@ export class CustomerAccountService {
 			throw new AppError("Customer authentication response is invalid.", 401);
 		return claims;
 	}
+	private verifiedShopifyEmail(claims: Record<string, unknown>) {
+		if (claims.email_verified !== true || typeof claims.email !== "string")
+			return undefined;
+		const email = claims.email.trim().toLowerCase();
+		return email || undefined;
+	}
 	private async signingKeys(
 		integration: CustomerAccountIntegrationRecord,
 		discovery: Discovery,
@@ -671,7 +677,7 @@ export class CustomerAccountService {
 				code,
 			}),
 		);
-		await this.verifyIdToken(
+		const claims = await this.verifyIdToken(
 			bundle.idToken,
 			integration,
 			discovered.oidc,
@@ -697,7 +703,7 @@ export class CustomerAccountService {
 			organizationId: org.id,
 			purpose: SHOPIFY_CUSTOMER_TOKENS_PURPOSE,
 		});
-		await this.repository.createCustomerSession({
+		const { customer } = await this.repository.createCustomerSession({
 			sessionId,
 			organizationId: org.id,
 			shopifyCustomerGid: customerGid,
@@ -708,6 +714,15 @@ export class CustomerAccountService {
 			lastSeenAtIso: now.toISOString(),
 			expiresAtIso: expiresAt.toISOString(),
 		});
+		const verifiedEmail = this.verifiedShopifyEmail(claims);
+		if (verifiedEmail) {
+			await this.repository.recordVerifiedShopifyEmail({
+				organizationId: org.id,
+				customerId: customer.id,
+				email: verifiedEmail,
+				verifiedAtIso: now.toISOString(),
+			});
+		}
 		return {
 			sessionId,
 			returnTo: state.returnTo,
