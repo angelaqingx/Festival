@@ -248,7 +248,7 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 			organization_id TEXT NOT NULL REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
 			customer_id TEXT NOT NULL, entitlement_class TEXT NOT NULL CHECK (entitlement_class IN ('teacher_membership', 'accompanist_membership')),
 			source TEXT NOT NULL CHECK (source IN ('teacher_checkout', 'accompanist_form')),
-			offering_id TEXT NOT NULL REFERENCES ${safeSchema}.products (id), starts_on DATE NOT NULL, ends_on DATE NOT NULL,
+			offering_id TEXT NULL REFERENCES ${safeSchema}.products (id), starts_on DATE NOT NULL, ends_on DATE NOT NULL,
 			revoked_at TIMESTAMPTZ NULL, revoked_reason TEXT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			CHECK (ends_on > starts_on),
 			CHECK ((entitlement_class = 'teacher_membership' AND source = 'teacher_checkout') OR (entitlement_class = 'accompanist_membership' AND source = 'accompanist_form')),

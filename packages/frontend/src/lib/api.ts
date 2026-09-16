@@ -429,6 +429,30 @@ export function getAdminMembershipProducts(idToken: string, slug: string) {
 	);
 }
 
+export function getAdminAccompanistPolicy(idToken: string, slug: string) {
+	return requestJson<{
+		policy: {
+			policy: "exactly_one" | "one_to_two" | "one_to_all";
+		};
+	}>(
+		`/api/organizations/${encodeURIComponent(slug)}/admin/accompanist-policy`,
+		undefined,
+		idToken,
+	);
+}
+
+export function saveAdminAccompanistPolicy(
+	idToken: string,
+	slug: string,
+	policy: "exactly_one" | "one_to_two" | "one_to_all",
+) {
+	return requestJson(
+		`/api/organizations/${encodeURIComponent(slug)}/admin/accompanist-policy`,
+		{ method: "POST", body: JSON.stringify({ policy }) },
+		idToken,
+	);
+}
+
 export function getStaffAccompanists(idToken: string, slug: string) {
 	return requestJson<{
 		accompanists: Array<{

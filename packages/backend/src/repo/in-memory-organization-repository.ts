@@ -893,7 +893,7 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		return (
 			this.accompanistPolicies.get(organizationId) ?? {
 				organizationId,
-				policy: "one_to_all",
+				policy: "exactly_one",
 				updatedAtIso: new Date().toISOString(),
 			}
 		);

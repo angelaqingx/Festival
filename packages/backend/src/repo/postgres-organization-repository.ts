@@ -212,7 +212,7 @@ interface AccompanistMembershipGrantRow {
 	organization_id: string;
 	customer_id: string;
 	normalized_email: string;
-	offering_id: string;
+	offering_id: string | null;
 	offering_name_snapshot: string;
 	source: "accompanist_form";
 	contact_name: string;
@@ -350,7 +350,7 @@ function mapAccompanistGrant(
 		organizationId: row.organization_id,
 		customerId: row.customer_id,
 		normalizedEmail: row.normalized_email,
-		offeringId: row.offering_id,
+		offeringId: row.offering_id ?? undefined,
 		offeringNameSnapshot: row.offering_name_snapshot,
 		source: row.source,
 		contact: {
@@ -1752,7 +1752,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				}
 			: {
 					organizationId,
-					policy: "one_to_all",
+					policy: "exactly_one",
 					updatedAtIso: new Date().toISOString(),
 				};
 	}
@@ -1834,18 +1834,17 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				if (!advanced || advanced.count !== 1)
 					throw new Error("Entitlement cohort compare-and-swap failed.");
 				const inserted = await transaction.unsafe(
-					`INSERT INTO ${this.schema}.membership_entitlements (id,organization_id,customer_id,entitlement_class,source,offering_id,starts_on,ends_on) SELECT $1,$2,$3,'accompanist_membership','accompanist_form',$4,$5::date,$6::date FROM ${this.schema}.products WHERE id=$4 AND organization_id=$2 RETURNING id`,
+					`INSERT INTO ${this.schema}.membership_entitlements (id,organization_id,customer_id,entitlement_class,source,offering_id,starts_on,ends_on) VALUES ($1,$2,$3,'accompanist_membership','accompanist_form',NULL,$4::date,$5::date) RETURNING id`,
 					[
 						entitlementId,
 						input.organizationId,
 						input.customerId,
-						input.offeringId,
 						input.startsOn,
 						input.endsOn,
 					],
 				);
 				if (!inserted[0])
-					throw new Error("Accompanist offering was not found.");
+					throw new Error("Unable to create accompanist membership.");
 				await transaction.unsafe(
 					`INSERT INTO ${this.schema}.accompanist_membership_entitlement_details (entitlement_id,contact_name,contact_email,contact_city,contact_phone) VALUES ($1,$2,$3,$4,$5)`,
 					[
@@ -1898,7 +1897,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 	}): Promise<AccompanistMembershipGrant[]> {
 		await this.ensureReady();
 		const rows = (await sql.unsafe(
-			`SELECT e.id,e.organization_id,e.customer_id,identity.normalized_email,e.offering_id,p.product_name_snapshot AS offering_name_snapshot,e.source,d.contact_name,d.contact_email,d.contact_city,d.contact_phone,COALESCE(jsonb_agg(jsonb_build_object('divisionId',ed.division_id,'divisionName',ed.division_name_snapshot)) FILTER (WHERE ed.division_id IS NOT NULL),'[]') AS divisions,e.starts_on::text,e.ends_on::text,CASE WHEN e.revoked_at IS NOT NULL THEN 'revoked' WHEN e.starts_on > (NOW() AT TIME ZONE o.timezone)::date THEN 'scheduled' WHEN e.ends_on <= (NOW() AT TIME ZONE o.timezone)::date THEN 'expired' ELSE 'active' END AS status,(e.revoked_at IS NULL AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date) AS is_current,e.created_at FROM ${this.schema}.membership_entitlements e JOIN ${this.schema}.organizations o ON o.id=e.organization_id JOIN ${this.schema}.products p ON p.id=e.offering_id JOIN ${this.schema}.accompanist_membership_entitlement_details d ON d.entitlement_id=e.id LEFT JOIN ${this.schema}.membership_identity_emails identity ON identity.organization_id=e.organization_id AND identity.customer_id=e.customer_id LEFT JOIN ${this.schema}.membership_entitlement_divisions ed ON ed.entitlement_id=e.id WHERE e.organization_id=$1 AND e.entitlement_class='accompanist_membership' AND ($2::text IS NULL OR e.customer_id=$2) AND ($3::text IS NULL OR identity.normalized_email=$3) AND ($4::boolean = FALSE OR (e.revoked_at IS NULL AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date)) GROUP BY e.id,identity.normalized_email,p.product_name_snapshot,d.contact_name,d.contact_email,d.contact_city,d.contact_phone,o.timezone ORDER BY e.created_at,e.id`,
+			`SELECT e.id,e.organization_id,e.customer_id,identity.normalized_email,e.offering_id,COALESCE(p.product_name_snapshot,'Accompanist Membership') AS offering_name_snapshot,e.source,d.contact_name,d.contact_email,d.contact_city,d.contact_phone,COALESCE(jsonb_agg(jsonb_build_object('divisionId',ed.division_id,'divisionName',ed.division_name_snapshot)) FILTER (WHERE ed.division_id IS NOT NULL),'[]') AS divisions,e.starts_on::text,e.ends_on::text,CASE WHEN e.revoked_at IS NOT NULL THEN 'revoked' WHEN e.starts_on > (NOW() AT TIME ZONE o.timezone)::date THEN 'scheduled' WHEN e.ends_on <= (NOW() AT TIME ZONE o.timezone)::date THEN 'expired' ELSE 'active' END AS status,(e.revoked_at IS NULL AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date) AS is_current,e.created_at FROM ${this.schema}.membership_entitlements e JOIN ${this.schema}.organizations o ON o.id=e.organization_id LEFT JOIN ${this.schema}.products p ON p.id=e.offering_id JOIN ${this.schema}.accompanist_membership_entitlement_details d ON d.entitlement_id=e.id LEFT JOIN ${this.schema}.membership_identity_emails identity ON identity.organization_id=e.organization_id AND identity.customer_id=e.customer_id LEFT JOIN ${this.schema}.membership_entitlement_divisions ed ON ed.entitlement_id=e.id WHERE e.organization_id=$1 AND e.entitlement_class='accompanist_membership' AND ($2::text IS NULL OR e.customer_id=$2) AND ($3::text IS NULL OR identity.normalized_email=$3) AND ($4::boolean = FALSE OR (e.revoked_at IS NULL AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date)) GROUP BY e.id,identity.normalized_email,p.product_name_snapshot,d.contact_name,d.contact_email,d.contact_city,d.contact_phone,o.timezone ORDER BY e.created_at,e.id`,
 			[
 				input.organizationId,
 				input.customerId ?? null,

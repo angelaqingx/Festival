@@ -106,7 +106,7 @@ CREATE TABLE orgs.checkout_intents (
     customer_id text NOT NULL,
     session_id text NOT NULL,
     idempotency_key text NOT NULL,
-    offering_id text NOT NULL,
+    offering_id text,
     entitlement_class text NOT NULL,
     duration_days integer NOT NULL,
     shopify_product_gid text NOT NULL,
@@ -1690,5 +1690,4 @@ ALTER TABLE ONLY orgs.user_login_event
 --
 -- PostgreSQL database dump complete
 --
-
 

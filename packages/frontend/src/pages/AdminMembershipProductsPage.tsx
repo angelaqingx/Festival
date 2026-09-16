@@ -1,7 +1,11 @@
-import { For, Show } from "solid-js";
+import { createSignal, For, onMount, Show } from "solid-js";
 import type { FestivalAppController } from "../app/useFestivalAppController.js";
 import { AccessDeniedPanel } from "../components/AccessDeniedPanel.js";
 import { Button } from "../components/Button.js";
+import {
+	getAdminAccompanistPolicy,
+	saveAdminAccompanistPolicy,
+} from "../lib/api.js";
 import { buildOrgAdminIntegrationsPath } from "../lib/routes.js";
 
 interface AdminMembershipProductsPageProps {
@@ -20,6 +24,53 @@ export function AdminMembershipProductsPage(
 ) {
 	const shopifyIntegrationVerified = () =>
 		props.app.shopifySettings()?.verificationStatus === "ok";
+	const teacherProducts = () =>
+		props.app
+			.membershipProducts()
+			.filter((product) => product.entitlementClass === "teacher_membership");
+	const [accompanistPolicy, setAccompanistPolicy] = createSignal<
+		"exactly_one" | "one_to_two" | "one_to_all"
+	>("exactly_one");
+	const [policyError, setPolicyError] = createSignal("");
+	const choices = [
+		["exactly_one", "Exactly one division"],
+		["one_to_two", "One or two divisions"],
+		["one_to_all", "One or more divisions"],
+	] as const;
+	onMount(() => {
+		const route = props.app.route();
+		const user = props.app.firebaseUser();
+		if (route.kind !== "org-admin-memberships" || !user) return;
+		void (async () => {
+			try {
+				const response = await getAdminAccompanistPolicy(
+					await user.getIdToken(),
+					route.slug,
+				);
+				setAccompanistPolicy(response.policy.policy);
+			} catch {
+				setPolicyError("Accompanist division policy could not be loaded.");
+			}
+		})();
+	});
+	const savePolicy = async (
+		policy: "exactly_one" | "one_to_two" | "one_to_all",
+	) => {
+		const route = props.app.route();
+		const user = props.app.firebaseUser();
+		if (route.kind !== "org-admin-memberships" || !user) return;
+		setPolicyError("");
+		try {
+			await saveAdminAccompanistPolicy(
+				await user.getIdToken(),
+				route.slug,
+				policy,
+			);
+			setAccompanistPolicy(policy);
+		} catch {
+			setPolicyError("Accompanist division policy could not be saved.");
+		}
+	};
 
 	return (
 		<Show
@@ -40,7 +91,7 @@ export function AdminMembershipProductsPage(
 								<p>Review Shopify-backed membership products.</p>
 							</div>
 							<span class="shopify-status shopify-status-ok">
-								{props.app.membershipProducts().length}
+								{teacherProducts().length}
 							</span>
 						</div>
 
@@ -65,11 +116,11 @@ export function AdminMembershipProductsPage(
 							}
 						>
 							<Show
-								when={props.app.membershipProducts().length > 0}
+								when={teacherProducts().length > 0}
 								fallback={<p class="muted">No membership products yet.</p>}
 							>
 								<div class="admin-membership-list">
-									<For each={props.app.membershipProducts()}>
+									<For each={teacherProducts()}>
 										{(membershipProduct) => (
 											<article class="admin-membership-item">
 												<div>
@@ -212,6 +263,33 @@ export function AdminMembershipProductsPage(
 						</Button>
 					</form>
 				</div>
+				<section class="shopify-integration-card membership-admin-form">
+					<div class="shopify-card-header">
+						<div>
+							<h2>Accompanist division policy</h2>
+							<p>Choose how many divisions an accompanist may select.</p>
+						</div>
+					</div>
+					<Show when={policyError()}>
+						{(message) => <p class="shopify-error-text">{message()}</p>}
+					</Show>
+					<fieldset class="field">
+						<legend>Division selection</legend>
+						<For each={choices}>
+							{([value, label]) => (
+								<label>
+									<input
+										type="radio"
+										name="accompanist-division-policy"
+										checked={accompanistPolicy() === value}
+										onChange={() => void savePolicy(value)}
+									/>
+									{label}
+								</label>
+							)}
+						</For>
+					</fieldset>
+				</section>
 			</section>
 		</Show>
 	);

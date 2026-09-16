@@ -13,18 +13,8 @@ async function setup() {
 		displayName: "Piano",
 		normalizedName: "piano",
 	});
-	const offering = await repository.createMembershipProductRecord({
-		organizationId: organization.id,
-		entitlementClass: "accompanist_membership",
-		durationDays: 365,
-		isActive: true,
-		shopifyProductGid: "gid://shopify/Product/1",
-		shopifyVariantGid: "gid://shopify/ProductVariant/1",
-		productNameSnapshot: "Accompanist Membership",
-	});
 	const service = new AccompanistMembershipService(
 		repository,
-		{ resolveActiveFreeAccompanistOffering: async () => offering } as never,
 		() => new Date("2026-09-12T12:00:00.000Z"),
 	);
 	return { repository, organization, division, service };
@@ -96,16 +86,8 @@ describe("AccompanistMembershipService", () => {
 			verifiedShopifyCustomerEmail: "shopper@example.com",
 			payload,
 		});
-		const offering = await repository.findMembershipProductRecordByClass(
-			organization.id,
-			"accompanist_membership",
-		);
-		if (!offering) throw new Error("Expected accompanist offering.");
 		const renewal = new AccompanistMembershipService(
 			repository,
-			{
-				resolveActiveFreeAccompanistOffering: async () => offering,
-			} as never,
 			() => new Date("2027-08-14T12:00:00.000Z"),
 		);
 		const scheduled = await renewal.acquire({

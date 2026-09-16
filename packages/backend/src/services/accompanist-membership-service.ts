@@ -3,14 +3,15 @@ import {
 	addCalendarDays,
 	calendarDateInTimezone,
 	deriveEntitlementLifecycle,
+	INITIAL_ACCOMPANIST_MEMBERSHIP_DURATION_DAYS,
 	validateAccompanistContact,
 	validateAccompanistDivisionSelection,
 } from "@festival/common";
 import { AppError } from "../errors/app-error.js";
 import type { OrganizationRepository } from "../repo/organization-repository.js";
-import type { ShopifyMembershipProductService } from "../shopify/shopify-membership-product-service.js";
 
 const RENEWAL_WINDOW_DAYS = 30;
+const ACCOMPANIST_MEMBERSHIP_DISPLAY_NAME = "Accompanist Membership";
 
 function verifiedShopifyIdentityEmail(
 	value: string | null | undefined,
@@ -36,7 +37,6 @@ function calendarDaysUntil(from: string, exclusiveEnd: string): number {
 export class AccompanistMembershipService {
 	constructor(
 		private readonly organizations: OrganizationRepository,
-		private readonly offerings: ShopifyMembershipProductService,
 		private readonly now: () => Date = () => new Date(),
 	) {}
 
@@ -105,9 +105,6 @@ export class AccompanistMembershipService {
 				400,
 			);
 		}
-		const offering = await this.offerings.resolveActiveFreeAccompanistOffering(
-			input.organizationId,
-		);
 		const normalizedIdentityEmail = verifiedShopifyIdentityEmail(
 			input.verifiedShopifyCustomerEmail,
 		);
@@ -140,8 +137,7 @@ export class AccompanistMembershipService {
 			organizationId: input.organizationId,
 			customerId: input.customerId,
 			normalizedEmail: normalizedIdentityEmail,
-			offeringId: offering.id,
-			offeringNameSnapshot: offering.productNameSnapshot,
+			offeringNameSnapshot: ACCOMPANIST_MEMBERSHIP_DISPLAY_NAME,
 			source: "accompanist_form",
 			contact,
 			divisions: selected.map((id) => {
@@ -152,7 +148,10 @@ export class AccompanistMembershipService {
 				return { divisionId: division.id, divisionName: division.displayName };
 			}),
 			startsOn,
-			endsOn: addCalendarDays(startsOn, offering.durationDays),
+			endsOn: addCalendarDays(
+				startsOn,
+				INITIAL_ACCOMPANIST_MEMBERSHIP_DURATION_DAYS,
+			),
 		});
 		return {
 			membership: {

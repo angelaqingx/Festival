@@ -1890,7 +1890,7 @@ describe("organization routes", () => {
 		);
 	});
 
-	it("persists the Admin-only accompanist policy and defaults it to one-to-all", async () => {
+	it("persists the Admin-only accompanist policy and defaults it to exactly one", async () => {
 		const { app, repository } = await createTestAppWithMembershipProducts();
 		await createOrganizationViaApi(app);
 		const initial = await app.fetch(
@@ -1900,7 +1900,7 @@ describe("organization routes", () => {
 			),
 		);
 		expect(await initial.json()).toMatchObject({
-			policy: { policy: "one_to_all" },
+			policy: { policy: "exactly_one" },
 		});
 		const updated = await app.fetch(
 			new Request(

@@ -23,7 +23,7 @@ export interface AccompanistMembershipGrant {
 	organizationId: string;
 	customerId: string;
 	normalizedEmail: string;
-	offeringId: string;
+	offeringId?: string;
 	offeringNameSnapshot: string;
 	source: AccompanistMembershipSource;
 	contact: AccompanistContactSnapshot;
