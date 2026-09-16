@@ -338,6 +338,35 @@ CREATE TABLE orgs.membership_entitlement_divisions (
     division_name_snapshot text NOT NULL
 );
 
+--
+-- Name: membership_entitlement_revocations; Type: TABLE; Schema: orgs; Owner: -
+--
+
+CREATE TABLE orgs.membership_entitlement_revocations (
+    id text NOT NULL,
+    entitlement_id text NOT NULL,
+    organization_id text NOT NULL,
+    actor_user_id text NOT NULL,
+    reason text NOT NULL,
+    revoked_at timestamp with time zone NOT NULL,
+    CONSTRAINT membership_entitlement_revocations_reason_check CHECK (((length(reason) >= 1) AND (length(reason) <= 500)))
+);
+
+ALTER TABLE ONLY orgs.membership_entitlement_revocations
+    ADD CONSTRAINT membership_entitlement_revocations_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY orgs.membership_entitlement_revocations
+    ADD CONSTRAINT membership_entitlement_revocations_entitlement_id_key UNIQUE (entitlement_id);
+
+ALTER TABLE ONLY orgs.membership_entitlement_revocations
+    ADD CONSTRAINT membership_entitlement_revocations_entitlement_id_fkey FOREIGN KEY (entitlement_id) REFERENCES orgs.membership_entitlements(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY orgs.membership_entitlement_revocations
+    ADD CONSTRAINT membership_entitlement_revocations_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY orgs.membership_entitlement_revocations
+    ADD CONSTRAINT membership_entitlement_revocations_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES orgs.users(id) ON DELETE RESTRICT;
+
 
 --
 -- Name: membership_entitlements; Type: TABLE; Schema: orgs; Owner: -
@@ -1690,4 +1719,3 @@ ALTER TABLE ONLY orgs.user_login_event
 --
 -- PostgreSQL database dump complete
 --
-

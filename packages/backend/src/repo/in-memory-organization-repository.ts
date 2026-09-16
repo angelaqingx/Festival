@@ -32,6 +32,7 @@ import type {
 	CreateInviteRecordInput,
 	CreateMembershipInput,
 	CreateMembershipProductRecordInput,
+	EntitlementRevocationRecord,
 	InviteWithOrganization,
 	MembershipWithOrganization,
 	OrganizationRepository,
@@ -67,6 +68,10 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 	private readonly entitlementGrants = new Map<
 		string,
 		EntitlementGrantSnapshot
+	>();
+	private readonly entitlementRevocations = new Map<
+		string,
+		EntitlementRevocationRecord
 	>();
 	private readonly divisions = new Map<
 		string,
@@ -1245,5 +1250,44 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 			)
 			.sort((a, b) => a.createdAtIso.localeCompare(b.createdAtIso))
 			.map((grant) => ({ ...grant }));
+	}
+
+	async revokeEntitlement(input: {
+		organizationId: string;
+		entitlementId: string;
+		actorUserId: string;
+		reason: string;
+		revokedAtIso: string;
+	}) {
+		const existing = this.entitlementRevocations.get(input.entitlementId);
+		if (existing) return { revocation: existing, existing: true };
+		const teacher = this.entitlementGrants.get(input.entitlementId);
+		if (teacher?.organizationId === input.organizationId) {
+			this.entitlementGrants.set(input.entitlementId, {
+				...teacher,
+				status: "revoked",
+			});
+		} else {
+			const accompanist = this.accompanistMembershipGrants.get(
+				input.entitlementId,
+			);
+			if (!accompanist || accompanist.organizationId !== input.organizationId)
+				throw new Error("Entitlement was not found.");
+			this.accompanistMembershipGrants.set(input.entitlementId, {
+				...accompanist,
+				status: "revoked",
+				isCurrent: false,
+			});
+		}
+		const revocation: EntitlementRevocationRecord = {
+			id: randomUUID(),
+			entitlementId: input.entitlementId,
+			organizationId: input.organizationId,
+			actorUserId: input.actorUserId,
+			reason: input.reason,
+			revokedAtIso: input.revokedAtIso,
+		};
+		this.entitlementRevocations.set(input.entitlementId, revocation);
+		return { revocation, existing: false };
 	}
 }

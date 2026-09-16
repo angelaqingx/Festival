@@ -12,6 +12,9 @@ test("commits a normalized PostgreSQL 17 schema-only snapshot", async () => {
 		"CREATE TABLE orgs.membership_entitlement_divisions",
 	);
 	expect(snapshot).toContain(
+		"CREATE TABLE orgs.membership_entitlement_revocations",
+	);
+	expect(snapshot).toContain(
 		"CREATE TABLE orgs.membership_entitlement_cohorts",
 	);
 	expect(snapshot).toContain("CREATE TABLE orgs.membership_identity_emails");

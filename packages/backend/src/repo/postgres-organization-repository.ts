@@ -2219,4 +2219,106 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 		)) as EntitlementGrantRow[];
 		return rows.map(mapEntitlementGrant);
 	}
+
+	async revokeEntitlement(input: {
+		organizationId: string;
+		entitlementId: string;
+		actorUserId: string;
+		reason: string;
+		revokedAtIso: string;
+	}) {
+		await this.ensureReady();
+		return sql.begin(async (transaction) => {
+			const initial = (await transaction.unsafe(
+				`SELECT customer_id FROM ${this.schema}.membership_entitlements WHERE id=$1 AND organization_id=$2`,
+				[input.entitlementId, input.organizationId],
+			)) as Array<{ customer_id: string }>;
+			if (!initial[0]) throw new Error("Entitlement was not found.");
+			await transaction.unsafe(
+				"SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+				[`${input.organizationId}:${initial[0].customer_id}`],
+			);
+			const entitlement = (await transaction.unsafe(
+				`SELECT customer_id, entitlement_class, revoked_at::text, revoked_reason FROM ${this.schema}.membership_entitlements WHERE id=$1 AND organization_id=$2 FOR UPDATE`,
+				[input.entitlementId, input.organizationId],
+			)) as Array<{
+				customer_id: string;
+				entitlement_class: string;
+				revoked_at: string | null;
+				revoked_reason: string | null;
+			}>;
+			if (!entitlement[0]) throw new Error("Entitlement was not found.");
+			const existing = (await transaction.unsafe(
+				`SELECT id, entitlement_id, organization_id, actor_user_id, reason, revoked_at::text FROM ${this.schema}.membership_entitlement_revocations WHERE entitlement_id=$1`,
+				[input.entitlementId],
+			)) as Array<{
+				id: string;
+				entitlement_id: string;
+				organization_id: string;
+				actor_user_id: string;
+				reason: string;
+				revoked_at: string;
+			}>;
+			if (existing[0])
+				return {
+					revocation: {
+						id: existing[0].id,
+						entitlementId: existing[0].entitlement_id,
+						organizationId: existing[0].organization_id,
+						actorUserId: existing[0].actor_user_id,
+						reason: existing[0].reason,
+						revokedAtIso: existing[0].revoked_at,
+					},
+					existing: true,
+				};
+			await transaction.unsafe(
+				`UPDATE ${this.schema}.membership_entitlements SET revoked_at=$3::timestamptz, revoked_reason=$4 WHERE id=$1 AND organization_id=$2`,
+				[
+					input.entitlementId,
+					input.organizationId,
+					input.revokedAtIso,
+					input.reason,
+				],
+			);
+			const id = randomUUID();
+			await transaction.unsafe(
+				`INSERT INTO ${this.schema}.membership_entitlement_revocations (id,entitlement_id,organization_id,actor_user_id,reason,revoked_at) VALUES ($1,$2,$3,$4,$5,$6::timestamptz)`,
+				[
+					id,
+					input.entitlementId,
+					input.organizationId,
+					input.actorUserId,
+					input.reason,
+					input.revokedAtIso,
+				],
+			);
+			await transaction.unsafe(
+				`INSERT INTO ${this.schema}.membership_entitlement_cohorts (organization_id,customer_id,entitlement_class) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+				[
+					input.organizationId,
+					entitlement[0].customer_id,
+					entitlement[0].entitlement_class,
+				],
+			);
+			await transaction.unsafe(
+				`UPDATE ${this.schema}.membership_entitlement_cohorts SET version=version+1 WHERE organization_id=$1 AND customer_id=$2 AND entitlement_class=$3`,
+				[
+					input.organizationId,
+					entitlement[0].customer_id,
+					entitlement[0].entitlement_class,
+				],
+			);
+			return {
+				revocation: {
+					id,
+					entitlementId: input.entitlementId,
+					organizationId: input.organizationId,
+					actorUserId: input.actorUserId,
+					reason: input.reason,
+					revokedAtIso: input.revokedAtIso,
+				},
+				existing: false,
+			};
+		});
+	}
 }

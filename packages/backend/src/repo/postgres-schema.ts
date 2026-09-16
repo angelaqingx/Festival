@@ -261,6 +261,12 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 			PRIMARY KEY (entitlement_id, division_id),
 			FOREIGN KEY (division_id, organization_id) REFERENCES ${safeSchema}.organization_divisions(id, organization_id)
 		);
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.membership_entitlement_revocations (
+			id TEXT PRIMARY KEY, entitlement_id TEXT NOT NULL UNIQUE REFERENCES ${safeSchema}.membership_entitlements(id) ON DELETE RESTRICT,
+			organization_id TEXT NOT NULL REFERENCES ${safeSchema}.organizations(id) ON DELETE CASCADE,
+			actor_user_id TEXT NOT NULL REFERENCES ${safeSchema}.users(id) ON DELETE RESTRICT,
+			reason TEXT NOT NULL CHECK (LENGTH(reason) BETWEEN 1 AND 500), revoked_at TIMESTAMPTZ NOT NULL
+		);
 		CREATE TABLE IF NOT EXISTS ${safeSchema}.teacher_membership_entitlement_details (
 			entitlement_id TEXT PRIMARY KEY REFERENCES ${safeSchema}.membership_entitlements(id) ON DELETE CASCADE,
 			checkout_intent_id TEXT NOT NULL UNIQUE, shopify_order_gid TEXT NOT NULL, shopify_order_line_gid TEXT NOT NULL UNIQUE,

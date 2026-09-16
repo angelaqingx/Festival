@@ -191,6 +191,15 @@ export interface CreateAccompanistMembershipGrantInput
 	supersedeGrantId?: string;
 }
 
+export interface EntitlementRevocationRecord {
+	id: string;
+	entitlementId: string;
+	organizationId: string;
+	actorUserId: string;
+	reason: string;
+	revokedAtIso: string;
+}
+
 export interface OrganizationRepository {
 	ensureReady(): Promise<void>;
 	upsertUser(user: AuthenticatedUser): Promise<OrganizationUserRecord>;
@@ -378,4 +387,11 @@ export interface OrganizationRepository {
 		organizationId: string,
 		customerId: string,
 	): Promise<EntitlementGrantSnapshot[]>;
+	revokeEntitlement(input: {
+		organizationId: string;
+		entitlementId: string;
+		actorUserId: string;
+		reason: string;
+		revokedAtIso: string;
+	}): Promise<{ revocation: EntitlementRevocationRecord; existing: boolean }>;
 }
