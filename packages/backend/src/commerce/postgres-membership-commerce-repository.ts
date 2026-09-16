@@ -438,8 +438,48 @@ export class PostgresMembershipCommerceRepository
 										cohort[0].version,
 									],
 								));
-							if (!advanced || advanced.count !== 1)
-								throw new Error("Entitlement cohort compare-and-swap failed.");
+							if (!advanced || advanced.count !== 1) {
+								const refreshedCohort = (await tx.unsafe(
+									`SELECT version FROM ${this.schema}.membership_entitlement_cohorts WHERE organization_id=$1 AND customer_id=$2 AND entitlement_class=$3 FOR UPDATE`,
+									[
+										finalDecision.organizationId,
+										finalDecision.customerId,
+										grantInput.entitlementClass,
+									],
+								)) as Array<{ version: number }>;
+								const retried =
+									refreshedCohort[0] &&
+									(await tx.unsafe(
+										`UPDATE ${this.schema}.membership_entitlement_cohorts SET version=version+1 WHERE organization_id=$1 AND customer_id=$2 AND entitlement_class=$3 AND version=$4 RETURNING version`,
+										[
+											finalDecision.organizationId,
+											finalDecision.customerId,
+											grantInput.entitlementClass,
+											refreshedCohort[0].version,
+										],
+									));
+								if (!retried || retried.count !== 1) {
+									const refreshedEntitlements = (await tx.unsafe(
+										`SELECT 1 FROM ${this.schema}.membership_entitlements e JOIN ${this.schema}.organizations o ON o.id=e.organization_id WHERE e.organization_id=$1 AND e.customer_id=$2 AND e.entitlement_class=$3 AND e.revoked_at IS NULL AND e.starts_on > (NOW() AT TIME ZONE o.timezone)::date LIMIT 1 FOR UPDATE`,
+										[
+											finalDecision.organizationId,
+											finalDecision.customerId,
+											grantInput.entitlementClass,
+										],
+									)) as Array<Record<string, unknown>>;
+									if (!refreshedEntitlements[0]) {
+										throw new Error(
+											"Entitlement cohort compare-and-swap retry failed.",
+										);
+									}
+									finalDecision = {
+										...finalDecision,
+										status: "needs_review",
+										reasonCode: "duplicate_purchase",
+									};
+									grantInput = undefined;
+								}
+							}
 						}
 					}
 				}

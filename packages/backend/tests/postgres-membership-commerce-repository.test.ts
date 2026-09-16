@@ -17,7 +17,11 @@ describe("PostgresMembershipCommerceRepository", () => {
 		expect(value).toContain(
 			"membership_entitlement_cohorts SET version=version+1",
 		);
-		expect(value).toContain("Entitlement cohort compare-and-swap failed.");
+		expect(value).toContain("refreshedCohort");
+		expect(value).toContain(
+			"Entitlement cohort compare-and-swap retry failed.",
+		);
+		expect(value).toContain("refreshedEntitlements");
 		expect(value).toContain('reasonCode: "duplicate_purchase"');
 		expect(value).toContain("grantInput = undefined;");
 		expect(value).toContain("startsOn,");
