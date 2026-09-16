@@ -19,6 +19,7 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 	return `
 		CREATE SCHEMA IF NOT EXISTS ${safeSchema};
 		CREATE EXTENSION IF NOT EXISTS pgcrypto;
+		CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 		CREATE TABLE IF NOT EXISTS ${safeSchema}.organizations (
 			id TEXT PRIMARY KEY,
@@ -35,7 +36,8 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 			is_active BOOLEAN NOT NULL DEFAULT TRUE,
 			display_order INTEGER NOT NULL CHECK (display_order >= 0),
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE (id, organization_id)
 		);
 		CREATE TABLE IF NOT EXISTS ${safeSchema}.users (
 			id TEXT PRIMARY KEY,
@@ -119,32 +121,19 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
-		CREATE TABLE IF NOT EXISTS ${safeSchema}.accompanist_division_policies (
-			organization_id TEXT PRIMARY KEY REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
-			policy TEXT NOT NULL DEFAULT 'one_to_all' CHECK (policy IN ('exactly_one', 'one_to_two', 'one_to_all')),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.membership_division_policies (
+			organization_id TEXT NOT NULL REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
+			entitlement_class TEXT NOT NULL CHECK (entitlement_class IN ('teacher_membership', 'accompanist_membership')),
+			policy TEXT NOT NULL CHECK (policy IN ('exactly_one', 'one_to_two', 'one_to_all')),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (organization_id, entitlement_class)
 		);
-		CREATE TABLE IF NOT EXISTS ${safeSchema}.accompanist_division_policy_history (
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.membership_division_policy_history (
 			id TEXT PRIMARY KEY,
 			organization_id TEXT NOT NULL REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
+			entitlement_class TEXT NOT NULL CHECK (entitlement_class IN ('teacher_membership', 'accompanist_membership')),
 			policy TEXT NOT NULL CHECK (policy IN ('exactly_one', 'one_to_two', 'one_to_all')),
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);
-		CREATE TABLE IF NOT EXISTS ${safeSchema}.accompanist_membership_grants (
-			id TEXT PRIMARY KEY,
-			organization_id TEXT NOT NULL REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
-			customer_id TEXT NOT NULL,
-			normalized_email TEXT NOT NULL,
-			offering_id TEXT NOT NULL REFERENCES ${safeSchema}.products (id),
-			offering_name_snapshot TEXT NOT NULL,
-			source TEXT NOT NULL CHECK (source = 'accompanist_form'),
-			contact_name TEXT NOT NULL, contact_email TEXT NOT NULL, contact_city TEXT NOT NULL, contact_phone TEXT NOT NULL,
-			divisions JSONB NOT NULL,
-			starts_on DATE NOT NULL, ends_on DATE NOT NULL,
-			status TEXT NOT NULL CHECK (status IN ('active', 'superseded', 'expired')),
-			is_current BOOLEAN NOT NULL DEFAULT TRUE,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			CHECK (ends_on > starts_on)
 		);
 		CREATE TABLE IF NOT EXISTS ${safeSchema}.registration_age_configurations (
 			organization_id TEXT PRIMARY KEY REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
@@ -242,16 +231,43 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 			status TEXT NOT NULL CHECK (status IN ('creating', 'ready', 'checkout_started', 'failed', 'expired', 'superseded', 'approved', 'rejected', 'needs_review')),
 			expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
-		CREATE TABLE IF NOT EXISTS ${safeSchema}.entitlement_grants (
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.membership_entitlement_cohorts (
+			organization_id TEXT NOT NULL, customer_id TEXT NOT NULL,
+			entitlement_class TEXT NOT NULL CHECK (entitlement_class IN ('teacher_membership', 'accompanist_membership')),
+			version BIGINT NOT NULL DEFAULT 0 CHECK (version >= 0),
+			PRIMARY KEY (organization_id, customer_id, entitlement_class),
+			FOREIGN KEY (customer_id, organization_id) REFERENCES ${safeSchema}.festival_customers(id, organization_id) ON DELETE CASCADE
+		);
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.membership_identity_emails (
+			organization_id TEXT NOT NULL, normalized_email TEXT NOT NULL, customer_id TEXT NOT NULL,
+			PRIMARY KEY (organization_id, normalized_email), UNIQUE (organization_id, customer_id),
+			FOREIGN KEY (customer_id, organization_id) REFERENCES ${safeSchema}.festival_customers(id, organization_id) ON DELETE CASCADE
+		);
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.membership_entitlements (
 			id TEXT PRIMARY KEY,
 			organization_id TEXT NOT NULL REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
 			customer_id TEXT NOT NULL, entitlement_class TEXT NOT NULL CHECK (entitlement_class IN ('teacher_membership', 'accompanist_membership')),
-			offering_id TEXT NOT NULL REFERENCES ${safeSchema}.products (id), duration_days INTEGER NOT NULL CHECK (duration_days > 0 AND duration_days <= 36500),
-			division_id TEXT NOT NULL REFERENCES ${safeSchema}.organization_divisions (id), division_name_snapshot TEXT NOT NULL,
-			paid_amount TEXT NOT NULL, paid_currency_code TEXT NOT NULL CHECK (paid_currency_code ~ '^[A-Z]{3}$'),
+			source TEXT NOT NULL CHECK (source IN ('teacher_checkout', 'accompanist_form')),
+			offering_id TEXT NOT NULL REFERENCES ${safeSchema}.products (id), starts_on DATE NOT NULL, ends_on DATE NOT NULL,
+			revoked_at TIMESTAMPTZ NULL, revoked_reason TEXT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			CHECK (ends_on > starts_on),
+			FOREIGN KEY (customer_id, organization_id) REFERENCES ${safeSchema}.festival_customers(id, organization_id) ON DELETE CASCADE,
+			EXCLUDE USING gist (organization_id WITH =, customer_id WITH =, entitlement_class WITH =, daterange(starts_on, ends_on, '[)') WITH &&) WHERE (revoked_at IS NULL)
+		);
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.membership_entitlement_divisions (
+			entitlement_id TEXT NOT NULL REFERENCES ${safeSchema}.membership_entitlements(id) ON DELETE CASCADE,
+			organization_id TEXT NOT NULL, division_id TEXT NOT NULL, division_name_snapshot TEXT NOT NULL,
+			PRIMARY KEY (entitlement_id, division_id),
+			FOREIGN KEY (division_id, organization_id) REFERENCES ${safeSchema}.organization_divisions(id, organization_id)
+		);
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.teacher_membership_entitlement_details (
+			entitlement_id TEXT PRIMARY KEY REFERENCES ${safeSchema}.membership_entitlements(id) ON DELETE CASCADE,
 			checkout_intent_id TEXT NOT NULL UNIQUE, shopify_order_gid TEXT NOT NULL, shopify_order_line_gid TEXT NOT NULL UNIQUE,
-			starts_on DATE NOT NULL, ends_on DATE NOT NULL, status TEXT NOT NULL CHECK (status IN ('active', 'expired', 'revoked')),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), CHECK (ends_on > starts_on)
+			paid_amount TEXT NOT NULL, paid_currency_code TEXT NOT NULL CHECK (paid_currency_code ~ '^[A-Z]{3}$'), duration_days INTEGER NOT NULL CHECK (duration_days > 0 AND duration_days <= 36500)
+		);
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.accompanist_membership_entitlement_details (
+			entitlement_id TEXT PRIMARY KEY REFERENCES ${safeSchema}.membership_entitlements(id) ON DELETE CASCADE,
+			contact_name TEXT NOT NULL, contact_email TEXT NOT NULL, contact_city TEXT NOT NULL, contact_phone TEXT NOT NULL
 		);
 		CREATE TABLE IF NOT EXISTS ${safeSchema}.shopify_webhook_deliveries (
 			id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
@@ -332,9 +348,7 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_products_shopify_variant_gid ON ${safeSchema}.products (shopify_variant_gid);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_products_shopify_product_variant_gid ON ${safeSchema}.products (shopify_product_gid, shopify_variant_gid);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_products_org_active_entitlement_class ON ${safeSchema}.products (organization_id, entitlement_class) WHERE product_category = 'membership' AND is_active;
-		CREATE INDEX IF NOT EXISTS idx_entitlement_grants_tenant_customer ON ${safeSchema}.entitlement_grants (organization_id, customer_id, created_at);
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_accompanist_current_customer ON ${safeSchema}.accompanist_membership_grants (organization_id, customer_id) WHERE is_current;
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_accompanist_current_email ON ${safeSchema}.accompanist_membership_grants (organization_id, normalized_email) WHERE is_current;
+		CREATE INDEX IF NOT EXISTS membership_entitlements_cohort_idx ON ${safeSchema}.membership_entitlements (organization_id, customer_id, entitlement_class, starts_on);
 		CREATE INDEX IF NOT EXISTS idx_shopify_customer_sessions_org ON ${safeSchema}.shopify_customer_sessions(organization_id);
 		CREATE INDEX IF NOT EXISTS idx_festival_customers_org_name ON ${safeSchema}.festival_customers(organization_id,LOWER(name));
 		CREATE INDEX IF NOT EXISTS idx_festival_customers_org_email ON ${safeSchema}.festival_customers(organization_id,LOWER(email));

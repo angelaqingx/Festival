@@ -25,7 +25,10 @@ integrationTest(
 					"festival_child_age_snapshots",
 					"products",
 					"checkout_intents",
-					"entitlement_grants",
+					"membership_entitlements",
+					"membership_entitlement_divisions",
+					"membership_entitlement_cohorts",
+					"membership_identity_emails",
 				]),
 			);
 			const festivalColumns = (await sql.unsafe(

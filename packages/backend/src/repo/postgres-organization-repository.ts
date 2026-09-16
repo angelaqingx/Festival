@@ -1739,8 +1739,8 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 		await this.ensureReady();
 		const rows = (await sql.unsafe(
 			`SELECT organization_id, policy, updated_at
-			 FROM ${this.schema}.accompanist_division_policies
-			 WHERE organization_id = $1`,
+			 FROM ${this.schema}.membership_division_policies
+			 WHERE organization_id = $1 AND entitlement_class = 'accompanist_membership'`,
 			[organizationId],
 		)) as AccompanistDivisionPolicyRow[];
 		const row = rows[0];
@@ -1763,10 +1763,10 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 	}): Promise<AccompanistDivisionPolicyRecord> {
 		await this.ensureReady();
 		const rows = (await sql.unsafe(
-			`INSERT INTO ${this.schema}.accompanist_division_policies
-				(organization_id, policy, updated_at)
-			 VALUES ($1, $2, NOW())
-			 ON CONFLICT (organization_id) DO UPDATE
+			`INSERT INTO ${this.schema}.membership_division_policies
+				(organization_id, entitlement_class, policy, updated_at)
+			 VALUES ($1, 'accompanist_membership', $2, NOW())
+			 ON CONFLICT (organization_id, entitlement_class) DO UPDATE
 			 SET policy = EXCLUDED.policy, updated_at = NOW()
 			 RETURNING organization_id, policy, updated_at`,
 			[input.organizationId, input.policy],
@@ -1779,7 +1779,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 			updatedAtIso: row.updated_at,
 		};
 		await sql.unsafe(
-			`INSERT INTO ${this.schema}.accompanist_division_policy_history (id, organization_id, policy) VALUES ($1, $2, $3)`,
+			`INSERT INTO ${this.schema}.membership_division_policy_history (id, organization_id, entitlement_class, policy) VALUES ($1, $2, 'accompanist_membership', $3)`,
 			[randomUUID(), record.organizationId, record.policy],
 		);
 		return record;
@@ -1790,7 +1790,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 	): Promise<AccompanistDivisionPolicyHistoryRecord[]> {
 		await this.ensureReady();
 		const rows = (await sql.unsafe(
-			`SELECT id, organization_id, policy, created_at FROM ${this.schema}.accompanist_division_policy_history WHERE organization_id = $1 ORDER BY created_at, id`,
+			`SELECT id, organization_id, policy, created_at FROM ${this.schema}.membership_division_policy_history WHERE organization_id = $1 AND entitlement_class = 'accompanist_membership' ORDER BY created_at, id`,
 			[organizationId],
 		)) as AccompanistDivisionPolicyHistoryRow[];
 		return rows.map((row) => ({
@@ -1808,35 +1808,64 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 		await this.ensureReady();
 		try {
 			return await sql.begin(async (transaction) => {
-				if (input.supersedeGrantId) {
-					const updated = await transaction.unsafe(
-						`UPDATE ${this.schema}.accompanist_membership_grants SET is_current = FALSE, status = 'superseded' WHERE id = $1 AND organization_id = $2 AND is_current`,
-						[input.supersedeGrantId, input.organizationId],
-					);
-					if (updated.count !== 1)
-						throw new Error("Current accompanist membership was not found.");
-				}
-				const rows = (await transaction.unsafe(
-					`INSERT INTO ${this.schema}.accompanist_membership_grants (id, organization_id, customer_id, normalized_email, offering_id, offering_name_snapshot, source, contact_name, contact_email, contact_city, contact_phone, divisions, starts_on, ends_on, status, is_current) VALUES ($1, $2, $3, $4, $5, $6, 'accompanist_form', $7, $8, $9, $10, $11::jsonb, $12, $13, 'active', TRUE) RETURNING id, organization_id, customer_id, normalized_email, offering_id, offering_name_snapshot, source, contact_name, contact_email, contact_city, contact_phone, divisions, starts_on::text, ends_on::text, status, is_current, created_at`,
+				const entitlementId = randomUUID();
+				await transaction.unsafe(
+					`INSERT INTO ${this.schema}.membership_identity_emails (organization_id, normalized_email, customer_id) VALUES ($1,$2,$3) ON CONFLICT (organization_id, normalized_email) DO UPDATE SET customer_id = ${this.schema}.membership_identity_emails.customer_id WHERE ${this.schema}.membership_identity_emails.customer_id = EXCLUDED.customer_id`,
+					[input.organizationId, input.normalizedEmail, input.customerId],
+				);
+				await transaction.unsafe(
+					`INSERT INTO ${this.schema}.membership_entitlement_cohorts (organization_id, customer_id, entitlement_class) VALUES ($1,$2,'accompanist_membership') ON CONFLICT DO NOTHING`,
+					[input.organizationId, input.customerId],
+				);
+				const inserted = await transaction.unsafe(
+					`INSERT INTO ${this.schema}.membership_entitlements (id,organization_id,customer_id,entitlement_class,source,offering_id,starts_on,ends_on) SELECT $1,$2,$3,'accompanist_membership','accompanist_form',$4,$5::date,$6::date FROM ${this.schema}.products WHERE id=$4 AND organization_id=$2 RETURNING id`,
 					[
-						randomUUID(),
+						entitlementId,
 						input.organizationId,
 						input.customerId,
-						input.normalizedEmail,
 						input.offeringId,
-						input.offeringNameSnapshot,
+						input.startsOn,
+						input.endsOn,
+					],
+				);
+				if (!inserted[0])
+					throw new Error("Accompanist offering was not found.");
+				await transaction.unsafe(
+					`INSERT INTO ${this.schema}.accompanist_membership_entitlement_details (entitlement_id,contact_name,contact_email,contact_city,contact_phone) VALUES ($1,$2,$3,$4,$5)`,
+					[
+						entitlementId,
 						input.contact.name,
 						input.contact.email,
 						input.contact.city,
 						input.contact.phone,
-						JSON.stringify(input.divisions),
-						input.startsOn,
-						input.endsOn,
 					],
-				)) as AccompanistMembershipGrantRow[];
-				const row = rows[0];
-				if (!row) throw new Error("Unable to create accompanist membership.");
-				return mapAccompanistGrant(row);
+				);
+				for (const division of input.divisions)
+					await transaction.unsafe(
+						`INSERT INTO ${this.schema}.membership_entitlement_divisions (entitlement_id,organization_id,division_id,division_name_snapshot) VALUES ($1,$2,$3,$4)`,
+						[
+							entitlementId,
+							input.organizationId,
+							division.divisionId,
+							division.divisionName,
+						],
+					);
+				return {
+					id: entitlementId,
+					organizationId: input.organizationId,
+					customerId: input.customerId,
+					normalizedEmail: input.normalizedEmail,
+					offeringId: input.offeringId,
+					offeringNameSnapshot: input.offeringNameSnapshot,
+					source: "accompanist_form",
+					contact: input.contact,
+					divisions: input.divisions,
+					startsOn: input.startsOn,
+					endsOn: input.endsOn,
+					status: "active",
+					isCurrent: true,
+					createdAtIso: new Date().toISOString(),
+				};
 			});
 		} catch (error) {
 			if (error instanceof Error && /unique|duplicate/i.test(error.message))
@@ -1853,12 +1882,11 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 	}): Promise<AccompanistMembershipGrant[]> {
 		await this.ensureReady();
 		const rows = (await sql.unsafe(
-			`SELECT id, organization_id, customer_id, normalized_email, offering_id, offering_name_snapshot, source, contact_name, contact_email, contact_city, contact_phone, divisions, starts_on::text, ends_on::text, status, is_current, created_at FROM ${this.schema}.accompanist_membership_grants WHERE organization_id = $1 AND ($2::text IS NULL OR customer_id = $2) AND ($3::text IS NULL OR normalized_email = $3) AND ($4::boolean = FALSE OR is_current) ORDER BY created_at, id`,
+			`SELECT e.id,e.organization_id,e.customer_id,identity.normalized_email,e.offering_id,p.product_name_snapshot AS offering_name_snapshot,e.source,d.contact_name,d.contact_email,d.contact_city,d.contact_phone,COALESCE(jsonb_agg(jsonb_build_object('divisionId',ed.division_id,'divisionName',ed.division_name_snapshot)) FILTER (WHERE ed.division_id IS NOT NULL),'[]') AS divisions,e.starts_on::text,e.ends_on::text,CASE WHEN e.revoked_at IS NOT NULL THEN 'expired' WHEN e.ends_on <= (NOW() AT TIME ZONE o.timezone)::date THEN 'expired' ELSE 'active' END AS status,(e.revoked_at IS NULL AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date) AS is_current,e.created_at FROM ${this.schema}.membership_entitlements e JOIN ${this.schema}.organizations o ON o.id=e.organization_id JOIN ${this.schema}.products p ON p.id=e.offering_id JOIN ${this.schema}.accompanist_membership_entitlement_details d ON d.entitlement_id=e.id LEFT JOIN ${this.schema}.membership_identity_emails identity ON identity.organization_id=e.organization_id AND identity.customer_id=e.customer_id LEFT JOIN ${this.schema}.membership_entitlement_divisions ed ON ed.entitlement_id=e.id WHERE e.organization_id=$1 AND e.entitlement_class='accompanist_membership' AND ($2::text IS NULL OR e.customer_id=$2) AND ($3::text IS NULL OR identity.normalized_email=$3) GROUP BY e.id,identity.normalized_email,p.product_name_snapshot,d.contact_name,d.contact_email,d.contact_city,d.contact_phone,o.timezone ORDER BY e.created_at,e.id`,
 			[
 				input.organizationId,
 				input.customerId ?? null,
 				input.normalizedEmail ?? null,
-				input.currentOnly ?? false,
 			],
 		)) as AccompanistMembershipGrantRow[];
 		return rows.map(mapAccompanistGrant);
@@ -2115,77 +2143,47 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 		await this.ensureReady();
 		assertValidEntitlementGrantSnapshotInput(input);
 
-		const rows = (await sql.unsafe(
-			`INSERT INTO ${this.schema}.entitlement_grants (
-				id,
-				organization_id,
-				customer_id,
-				entitlement_class,
-				offering_id,
-				duration_days,
-				division_id,
-				division_name_snapshot,
-				paid_amount,
-				paid_currency_code,
-				checkout_intent_id,
-				shopify_order_gid,
-				shopify_order_line_gid,
-				starts_on,
-				ends_on,
-				status
-			)
-			SELECT
-				$1, $2, $3, $4, $5, $6, $7, $8,
-				$9, $10, $11, $12, $13, $14::date, $15::date, $16
-			FROM ${this.schema}.products offering
-			JOIN ${this.schema}.organization_divisions division ON division.id = $7
-			WHERE offering.id = $5
-				AND offering.organization_id = $2
-				AND division.organization_id = $2
-			RETURNING
-				id,
-				organization_id,
-				customer_id,
-				entitlement_class,
-				offering_id,
-				duration_days,
-				division_id,
-				division_name_snapshot,
-				paid_amount,
-				paid_currency_code,
-				checkout_intent_id,
-				shopify_order_gid,
-				shopify_order_line_gid,
-				starts_on::text,
-				ends_on::text,
-				status,
-				created_at`,
-			[
-				randomUUID(),
-				input.organizationId,
-				input.customerId,
-				input.entitlementClass,
-				input.offeringId,
-				input.durationDays,
-				input.divisionId,
-				input.divisionNameSnapshot,
-				input.paidAmount,
-				input.paidCurrencyCode,
-				input.checkoutIntentId,
-				input.shopifyOrderGid,
-				input.shopifyOrderLineGid,
-				input.startsOn,
-				input.endsOn,
-				input.status,
-			],
-		)) as EntitlementGrantRow[];
-
-		if (!rows[0]) {
-			throw new Error(
-				"Entitlement offering or division was not found for this Organization.",
+		const id = randomUUID();
+		await sql.begin(async (transaction) => {
+			const inserted = await transaction.unsafe(
+				`INSERT INTO ${this.schema}.membership_entitlements (id,organization_id,customer_id,entitlement_class,source,offering_id,starts_on,ends_on) SELECT $1,$2,$3,$4,'teacher_checkout',$5,$6::date,$7::date FROM ${this.schema}.products WHERE id=$5 AND organization_id=$2 RETURNING id`,
+				[
+					id,
+					input.organizationId,
+					input.customerId,
+					input.entitlementClass,
+					input.offeringId,
+					input.startsOn,
+					input.endsOn,
+				],
 			);
-		}
-		return mapEntitlementGrant(rows[0]);
+			if (!inserted[0])
+				throw new Error(
+					"Entitlement offering was not found for this Organization.",
+				);
+			await transaction.unsafe(
+				`INSERT INTO ${this.schema}.membership_entitlement_divisions (entitlement_id,organization_id,division_id,division_name_snapshot) VALUES ($1,$2,$3,$4)`,
+				[
+					id,
+					input.organizationId,
+					input.divisionId,
+					input.divisionNameSnapshot,
+				],
+			);
+			await transaction.unsafe(
+				`INSERT INTO ${this.schema}.teacher_membership_entitlement_details (entitlement_id,checkout_intent_id,shopify_order_gid,shopify_order_line_gid,paid_amount,paid_currency_code,duration_days) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+				[
+					id,
+					input.checkoutIntentId,
+					input.shopifyOrderGid,
+					input.shopifyOrderLineGid,
+					input.paidAmount,
+					input.paidCurrencyCode,
+					input.durationDays,
+				],
+			);
+		});
+		return { ...input, id, createdAtIso: new Date().toISOString() };
 	}
 
 	async listEntitlementGrantSnapshots(
@@ -2194,26 +2192,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 	): Promise<EntitlementGrantSnapshot[]> {
 		await this.ensureReady();
 		const rows = (await sql.unsafe(
-			`SELECT
-				id,
-				organization_id,
-				customer_id,
-				entitlement_class,
-				offering_id,
-				duration_days,
-				division_id,
-				division_name_snapshot,
-				paid_amount,
-				paid_currency_code,
-				checkout_intent_id,
-				shopify_order_gid,
-				shopify_order_line_gid,
-				starts_on::text,
-				ends_on::text,
-				status,
-				created_at
-			 FROM ${this.schema}.entitlement_grants
-			 WHERE organization_id = $1 AND customer_id = $2
+			`SELECT e.id,e.organization_id,e.customer_id,e.entitlement_class,e.offering_id,d.duration_days,ed.division_id,ed.division_name_snapshot,d.paid_amount,d.paid_currency_code,d.checkout_intent_id,d.shopify_order_gid,d.shopify_order_line_gid,e.starts_on::text,e.ends_on::text,CASE WHEN e.revoked_at IS NOT NULL THEN 'revoked' WHEN e.ends_on <= (NOW() AT TIME ZONE o.timezone)::date THEN 'expired' ELSE 'active' END AS status,e.created_at FROM ${this.schema}.membership_entitlements e JOIN ${this.schema}.organizations o ON o.id=e.organization_id JOIN ${this.schema}.teacher_membership_entitlement_details d ON d.entitlement_id=e.id JOIN ${this.schema}.membership_entitlement_divisions ed ON ed.entitlement_id=e.id WHERE e.organization_id=$1 AND e.customer_id=$2
 			 ORDER BY created_at ASC`,
 			[organizationId, customerId],
 		)) as EntitlementGrantRow[];

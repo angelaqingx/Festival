@@ -11,13 +11,17 @@ async function createOrganization(repository: InMemoryOrganizationRepository) {
 }
 
 describe("product repository", () => {
-	it("defines the bounded offering and immutable grant schema", () => {
+	it("defines the bounded offering and canonical entitlement schema", () => {
 		const source = buildCanonicalPostgresSchemaSql("schema");
 		expect(source).toContain("duration_days > 0 AND duration_days <= 36500");
 		expect(source).toContain("idx_products_org_active_entitlement_class");
 		expect(source).toContain(
-			"CREATE TABLE IF NOT EXISTS schema.entitlement_grants",
+			"CREATE TABLE IF NOT EXISTS schema.membership_entitlements",
 		);
+		expect(source).toContain("membership_entitlement_divisions");
+		expect(source).toContain("teacher_membership_entitlement_details");
+		expect(source).toContain("EXCLUDE USING gist");
+		expect(source).not.toContain("schema.entitlement_grants");
 		expect(source).toContain("shopify_order_line_gid TEXT NOT NULL UNIQUE");
 		expect(source).toContain("CHECK (ends_on > starts_on)");
 		expect(source).not.toMatch(/ALTER TABLE|entitlement_period/);
