@@ -1,5 +1,6 @@
 export type AccompanistMembershipSource = "accompanist_form";
 export type AccompanistMembershipGrantStatus =
+	| "scheduled"
 	| "active"
 	| "superseded"
 	| "expired"

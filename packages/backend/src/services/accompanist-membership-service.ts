@@ -2,6 +2,7 @@ import {
 	type AccompanistContactSnapshot,
 	addCalendarDays,
 	calendarDateInTimezone,
+	deriveEntitlementLifecycle,
 	validateAccompanistContact,
 	validateAccompanistDivisionSelection,
 } from "@festival/common";
@@ -110,12 +111,15 @@ export class AccompanistMembershipService {
 		const normalizedIdentityEmail = verifiedShopifyIdentityEmail(
 			input.verifiedShopifyCustomerEmail,
 		);
-		let startsOn = calendarDateInTimezone(
+		const today = calendarDateInTimezone(
 			this.now().toISOString(),
 			input.organizationTimezone,
 		);
+		let startsOn = today;
 		const candidates = await this.organizations.listAccompanistMembershipGrants(
-			{ organizationId: input.organizationId, currentOnly: true },
+			{
+				organizationId: input.organizationId,
+			},
 		);
 		const prior = candidates.find(
 			(grant) => grant.customerId === input.customerId,
@@ -155,20 +159,27 @@ export class AccompanistMembershipService {
 				id: grant.id,
 				startsOn: grant.startsOn,
 				endsOn: grant.endsOn,
-				status: grant.status,
+				status: deriveEntitlementLifecycle(grant, today),
 			},
 		};
 	}
 
 	async listCurrentRoster(organizationId: string) {
-		const today = this.now().toISOString().slice(0, 10);
+		const timezone =
+			await this.organizations.getOrganizationTimezone(organizationId);
+		const today = calendarDateInTimezone(this.now().toISOString(), timezone);
 		const grants = await this.organizations.listAccompanistMembershipGrants({
 			organizationId,
 			currentOnly: true,
 		});
 		return {
 			accompanists: grants
-				.filter((grant) => grant.status === "active" && grant.endsOn > today)
+				.filter(
+					(grant) =>
+						grant.status === "active" &&
+						grant.startsOn <= today &&
+						grant.endsOn > today,
+				)
 				.map((grant) => ({
 					offeringName: grant.offeringNameSnapshot,
 					source: grant.source,

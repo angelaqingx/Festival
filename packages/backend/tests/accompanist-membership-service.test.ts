@@ -108,13 +108,14 @@ describe("AccompanistMembershipService", () => {
 			} as never,
 			() => new Date("2027-08-14T12:00:00.000Z"),
 		);
-		await renewal.acquire({
+		const scheduled = await renewal.acquire({
 			organizationId: organization.id,
 			organizationTimezone: "UTC",
 			customerId: "customer-1",
 			verifiedShopifyCustomerEmail: "shopper@example.com",
 			payload: { ...payload, city: "Tacoma" },
 		});
+		expect(scheduled.membership.status).toBe("scheduled");
 		const grants = await repository.listAccompanistMembershipGrants({
 			organizationId: organization.id,
 		});
@@ -130,6 +131,9 @@ describe("AccompanistMembershipService", () => {
 			contact: { city: "Tacoma" },
 		});
 		expect(grants[1]?.startsOn).toBe(grants[0]?.endsOn);
+		expect(await renewal.listCurrentRoster(organization.id)).toMatchObject({
+			accompanists: [{ startsOn: "2026-09-12" }],
+		});
 	});
 
 	it("uses the verified Shopify email instead of the submitted contact email", async () => {
