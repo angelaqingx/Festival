@@ -955,6 +955,10 @@ export class CustomerAccountService {
 			customerId: valid.customer.id,
 			name: valid.customer.name.value,
 			email: valid.customer.email.value,
+			verifiedShopifyCustomerEmail:
+				valid.customer.email.source === "shopify"
+					? valid.customer.email.value
+					: undefined,
 		};
 	}
 	/** Trusted server-side continuation after checkoutAccess has verified the session and CSRF token. */

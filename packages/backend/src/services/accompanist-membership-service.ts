@@ -11,6 +11,19 @@ import type { ShopifyMembershipProductService } from "../shopify/shopify-members
 
 const RENEWAL_WINDOW_DAYS = 30;
 
+function verifiedShopifyIdentityEmail(
+	value: string | null | undefined,
+): string {
+	const normalized = value?.trim().toLowerCase() ?? "";
+	if ((normalized.match(/[a-zA-Z0-9]/g) ?? []).length < 8) {
+		throw new AppError(
+			"A verified Shopify customer email is required for accompanist membership.",
+			422,
+		);
+	}
+	return normalized;
+}
+
 function calendarDaysUntil(from: string, exclusiveEnd: string): number {
 	return Math.round(
 		(new Date(`${exclusiveEnd}T00:00:00.000Z`).valueOf() -
@@ -30,6 +43,7 @@ export class AccompanistMembershipService {
 		organizationId: string;
 		organizationTimezone: string;
 		customerId: string;
+		verifiedShopifyCustomerEmail?: string | null;
 		payload: unknown;
 	}) {
 		if (
@@ -93,6 +107,9 @@ export class AccompanistMembershipService {
 		const offering = await this.offerings.resolveActiveFreeAccompanistOffering(
 			input.organizationId,
 		);
+		const normalizedIdentityEmail = verifiedShopifyIdentityEmail(
+			input.verifiedShopifyCustomerEmail,
+		);
 		let startsOn = calendarDateInTimezone(
 			this.now().toISOString(),
 			input.organizationTimezone,
@@ -101,9 +118,7 @@ export class AccompanistMembershipService {
 			{ organizationId: input.organizationId, currentOnly: true },
 		);
 		const prior = candidates.find(
-			(grant) =>
-				grant.customerId === input.customerId ||
-				grant.normalizedEmail === contact.email,
+			(grant) => grant.customerId === input.customerId,
 		);
 		if (prior && prior.startsOn > startsOn) {
 			throw new AppError("An accompanist renewal is already scheduled.", 409);
@@ -120,7 +135,7 @@ export class AccompanistMembershipService {
 		const grant = await this.organizations.createAccompanistMembershipGrant({
 			organizationId: input.organizationId,
 			customerId: input.customerId,
-			normalizedEmail: contact.email,
+			normalizedEmail: normalizedIdentityEmail,
 			offeringId: offering.id,
 			offeringNameSnapshot: offering.productNameSnapshot,
 			source: "accompanist_form",

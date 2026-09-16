@@ -37,6 +37,7 @@ describe("AccompanistMembershipService", () => {
 			organizationId: organization.id,
 			organizationTimezone: "America/Los_Angeles",
 			customerId: "customer-1",
+			verifiedShopifyCustomerEmail: "SHOPPER@example.com",
 			payload: {
 				name: "Ava Piano",
 				email: "AVA@example.com",
@@ -65,6 +66,7 @@ describe("AccompanistMembershipService", () => {
 			organizationId: organization.id,
 			organizationTimezone: "UTC",
 			customerId: "customer-1",
+			verifiedShopifyCustomerEmail: "shopper@example.com",
 			payload,
 		});
 		await expect(
@@ -72,6 +74,7 @@ describe("AccompanistMembershipService", () => {
 				organizationId: organization.id,
 				organizationTimezone: "UTC",
 				customerId: "customer-1",
+				verifiedShopifyCustomerEmail: "shopper@example.com",
 				payload,
 			}),
 		).rejects.toMatchObject({ status: 409 });
@@ -90,6 +93,7 @@ describe("AccompanistMembershipService", () => {
 			organizationId: organization.id,
 			organizationTimezone: "UTC",
 			customerId: "customer-1",
+			verifiedShopifyCustomerEmail: "shopper@example.com",
 			payload,
 		});
 		const offering = await repository.findMembershipProductRecordByClass(
@@ -108,6 +112,7 @@ describe("AccompanistMembershipService", () => {
 			organizationId: organization.id,
 			organizationTimezone: "UTC",
 			customerId: "customer-1",
+			verifiedShopifyCustomerEmail: "shopper@example.com",
 			payload: { ...payload, city: "Tacoma" },
 		});
 		const grants = await repository.listAccompanistMembershipGrants({
@@ -125,5 +130,60 @@ describe("AccompanistMembershipService", () => {
 			contact: { city: "Tacoma" },
 		});
 		expect(grants[1]?.startsOn).toBe(grants[0]?.endsOn);
+	});
+
+	it("uses the verified Shopify email instead of the submitted contact email", async () => {
+		const { repository, organization, division, service } = await setup();
+		const payload = {
+			name: "Ava Piano",
+			email: "shared-contact@example.com",
+			city: "Seattle",
+			phone: "+1 206 555 0100",
+			divisionIds: [division.id],
+		};
+		await service.acquire({
+			organizationId: organization.id,
+			organizationTimezone: "UTC",
+			customerId: "customer-1",
+			verifiedShopifyCustomerEmail: "SHOPPER@One.example",
+			payload,
+		});
+		await service.acquire({
+			organizationId: organization.id,
+			organizationTimezone: "UTC",
+			customerId: "customer-2",
+			verifiedShopifyCustomerEmail: "SHOPPER@Two.example",
+			payload,
+		});
+		const grants = await repository.listAccompanistMembershipGrants({
+			organizationId: organization.id,
+		});
+		expect(grants).toHaveLength(2);
+		expect(grants.map((grant) => grant.normalizedEmail)).toEqual([
+			"shopper@one.example",
+			"shopper@two.example",
+		]);
+		expect(grants.map((grant) => grant.contact.email)).toEqual([
+			"shared-contact@example.com",
+			"shared-contact@example.com",
+		]);
+	});
+
+	it("rejects submission without a verified Shopify customer email", async () => {
+		const { organization, division, service } = await setup();
+		await expect(
+			service.acquire({
+				organizationId: organization.id,
+				organizationTimezone: "UTC",
+				customerId: "customer-1",
+				payload: {
+					name: "Ava Piano",
+					email: "ava@example.com",
+					city: "Seattle",
+					phone: "+1 206 555 0100",
+					divisionIds: [division.id],
+				},
+			}),
+		).rejects.toMatchObject({ status: 422 });
 	});
 });
