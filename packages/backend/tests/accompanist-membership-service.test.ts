@@ -3,7 +3,8 @@ import { InMemoryOrganizationRepository } from "../src/repo/in-memory-organizati
 import { AccompanistMembershipService } from "../src/services/accompanist-membership-service.js";
 
 async function setup() {
-	const repository = new InMemoryOrganizationRepository();
+	let now = new Date("2026-09-12T12:00:00.000Z");
+	const repository = new InMemoryOrganizationRepository(() => now);
 	const organization = await repository.createOrganization({
 		name: "Festival",
 		slug: "festival",
@@ -13,11 +14,16 @@ async function setup() {
 		displayName: "Piano",
 		normalizedName: "piano",
 	});
-	const service = new AccompanistMembershipService(
+	const service = new AccompanistMembershipService(repository, () => now);
+	return {
 		repository,
-		() => new Date("2026-09-12T12:00:00.000Z"),
-	);
-	return { repository, organization, division, service };
+		organization,
+		division,
+		service,
+		setNow(value: string) {
+			now = new Date(value);
+		},
+	};
 }
 
 describe("AccompanistMembershipService", () => {
@@ -71,7 +77,8 @@ describe("AccompanistMembershipService", () => {
 	});
 
 	it("keeps the prior grant and schedules a successor inside the 30-day renewal window", async () => {
-		const { repository, organization, division, service } = await setup();
+		const { repository, organization, division, service, setNow } =
+			await setup();
 		const payload = {
 			name: "Ava Piano",
 			email: "ava@example.com",
@@ -86,11 +93,8 @@ describe("AccompanistMembershipService", () => {
 			verifiedShopifyCustomerEmail: "shopper@example.com",
 			payload,
 		});
-		const renewal = new AccompanistMembershipService(
-			repository,
-			() => new Date("2027-08-14T12:00:00.000Z"),
-		);
-		const scheduled = await renewal.acquire({
+		setNow("2027-08-14T12:00:00.000Z");
+		const scheduled = await service.acquire({
 			organizationId: organization.id,
 			organizationTimezone: "UTC",
 			customerId: "customer-1",
@@ -108,14 +112,44 @@ describe("AccompanistMembershipService", () => {
 			contact: { city: "Seattle" },
 		});
 		expect(grants[1]).toMatchObject({
-			status: "active",
-			isCurrent: true,
+			status: "scheduled",
+			isCurrent: false,
 			contact: { city: "Tacoma" },
 		});
 		expect(grants[1]?.startsOn).toBe(grants[0]?.endsOn);
-		expect(await renewal.listCurrentRoster(organization.id)).toMatchObject({
+		expect(await service.listCurrentRoster(organization.id)).toMatchObject({
 			accompanists: [{ startsOn: "2026-09-12" }],
 		});
+	});
+
+	it("derives expired status and excludes expired grants from current-only reads", async () => {
+		const { repository, organization, division, service, setNow } =
+			await setup();
+		await service.acquire({
+			organizationId: organization.id,
+			organizationTimezone: "UTC",
+			customerId: "customer-1",
+			verifiedShopifyCustomerEmail: "shopper@example.com",
+			payload: {
+				name: "Ava Piano",
+				email: "ava@example.com",
+				city: "Seattle",
+				phone: "+1 206 555 0100",
+				divisionIds: [division.id],
+			},
+		});
+		setNow("2027-09-12T12:00:00.000Z");
+		expect(
+			await repository.listAccompanistMembershipGrants({
+				organizationId: organization.id,
+			}),
+		).toMatchObject([{ status: "expired", isCurrent: false }]);
+		expect(
+			await repository.listAccompanistMembershipGrants({
+				organizationId: organization.id,
+				currentOnly: true,
+			}),
+		).toEqual([]);
 	});
 
 	it("uses the verified Shopify email instead of the submitted contact email", async () => {

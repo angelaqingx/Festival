@@ -20,6 +20,8 @@ import type {
 import {
 	assertValidEntitlementDurationDays,
 	assertValidEntitlementGrantSnapshotInput,
+	calendarDateInTimezone,
+	deriveEntitlementLifecycle,
 	EMPTY_SHOPIFY_CAPABILITIES,
 	isEntitlementClass,
 } from "@festival/common";
@@ -73,6 +75,7 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		string,
 		EntitlementRevocationRecord
 	>();
+	private readonly entitlementCohortVersions = new Map<string, number>();
 	private readonly divisions = new Map<
 		string,
 		OrganizationDivision & { normalizedName: string }
@@ -98,10 +101,13 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 			normalizedName: string;
 		}
 	>();
+
 	private readonly festivalClassConfigurations = new Map<
 		string,
 		FestivalClassConfiguration
 	>();
+
+	constructor(private readonly now: () => Date = () => new Date()) {}
 
 	async ensureReady(): Promise<void> {}
 
@@ -943,7 +949,7 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 			if (
 				!prior ||
 				prior.organizationId !== input.organizationId ||
-				!prior.isCurrent
+				!this.withAccompanistLifecycle(prior).isCurrent
 			) {
 				throw new Error("Current accompanist membership was not found.");
 			}
@@ -957,7 +963,8 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 			[...this.accompanistMembershipGrants.values()].some(
 				(grant) =>
 					grant.organizationId === input.organizationId &&
-					grant.isCurrent &&
+					grant.status !== "revoked" &&
+					grant.status !== "superseded" &&
 					(grant.customerId === input.customerId ||
 						grant.normalizedEmail === input.normalizedEmail) &&
 					grant.startsOn < input.endsOn &&
@@ -966,7 +973,7 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		) {
 			throw new Error("Accompanist membership intervals may not overlap.");
 		}
-		const grant: AccompanistMembershipGrant = {
+		const grant = this.withAccompanistLifecycle({
 			id: randomUUID(),
 			...input,
 			divisions: input.divisions.map((division) => ({ ...division })),
@@ -974,8 +981,13 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 			status: "active",
 			isCurrent: true,
 			createdAtIso: new Date().toISOString(),
-		};
+		});
 		this.accompanistMembershipGrants.set(grant.id, grant);
+		this.advanceEntitlementCohort(
+			grant.organizationId,
+			grant.customerId,
+			"accompanist_membership",
+		);
 		return grant;
 	}
 
@@ -986,6 +998,7 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		currentOnly?: boolean;
 	}): Promise<AccompanistMembershipGrant[]> {
 		return [...this.accompanistMembershipGrants.values()]
+			.map((grant) => this.withAccompanistLifecycle(grant))
 			.filter(
 				(grant) =>
 					grant.organizationId === input.organizationId &&
@@ -1262,7 +1275,11 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		const existing = this.entitlementRevocations.get(input.entitlementId);
 		if (existing) return { revocation: existing, existing: true };
 		const teacher = this.entitlementGrants.get(input.entitlementId);
+		let entitlementClass: EntitlementClass;
+		let customerId: string;
 		if (teacher?.organizationId === input.organizationId) {
+			entitlementClass = teacher.entitlementClass;
+			customerId = teacher.customerId;
 			this.entitlementGrants.set(input.entitlementId, {
 				...teacher,
 				status: "revoked",
@@ -1273,12 +1290,19 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 			);
 			if (!accompanist || accompanist.organizationId !== input.organizationId)
 				throw new Error("Entitlement was not found.");
+			entitlementClass = "accompanist_membership";
+			customerId = accompanist.customerId;
 			this.accompanistMembershipGrants.set(input.entitlementId, {
 				...accompanist,
 				status: "revoked",
 				isCurrent: false,
 			});
 		}
+		this.advanceEntitlementCohort(
+			input.organizationId,
+			customerId,
+			entitlementClass,
+		);
 		const revocation: EntitlementRevocationRecord = {
 			id: randomUUID(),
 			entitlementId: input.entitlementId,
@@ -1289,5 +1313,32 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		};
 		this.entitlementRevocations.set(input.entitlementId, revocation);
 		return { revocation, existing: false };
+	}
+
+	private withAccompanistLifecycle(
+		grant: AccompanistMembershipGrant,
+	): AccompanistMembershipGrant {
+		if (grant.status === "revoked" || grant.status === "superseded") {
+			return { ...grant, isCurrent: false };
+		}
+		const organization = this.organizations.get(grant.organizationId);
+		if (!organization) throw new Error("Organization not found.");
+		const status = deriveEntitlementLifecycle(
+			grant,
+			calendarDateInTimezone(this.now().toISOString(), organization.timezone),
+		);
+		return { ...grant, status, isCurrent: status === "active" };
+	}
+
+	private advanceEntitlementCohort(
+		organizationId: string,
+		customerId: string,
+		entitlementClass: EntitlementClass,
+	): void {
+		const key = `${organizationId}:${customerId}:${entitlementClass}`;
+		this.entitlementCohortVersions.set(
+			key,
+			(this.entitlementCohortVersions.get(key) ?? 0) + 1,
+		);
 	}
 }
