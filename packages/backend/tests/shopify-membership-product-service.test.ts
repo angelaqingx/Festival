@@ -15,7 +15,7 @@ import {
 	SHOPIFY_CLIENT_SECRET_PURPOSE,
 	ShopifySecretKeyring,
 } from "../src/shopify/encryption.js";
-import { ShopifyScopeError, ShopifyUserError } from "../src/shopify/errors.js";
+import { ShopifyUserError } from "../src/shopify/errors.js";
 import { ShopifyMembershipProductService } from "../src/shopify/shopify-membership-product-service.js";
 import type {
 	ShopifyAdminOperationContext,
@@ -255,10 +255,16 @@ async function saveIntegration(
 			lastTestedAtIso: new Date().toISOString(),
 			verifiedShopGid: "gid://shopify/Shop/1",
 			verifiedShopDomain: "example.myshopify.com",
-			grantedScopes: ["read_products", "write_products", "read_orders"],
+			grantedScopes: [
+				"read_products",
+				"write_products",
+				"write_inventory",
+				"read_orders",
+			],
 			capabilities: {
 				read_products: "granted",
 				write_products: "granted",
+				write_inventory: "granted",
 				read_orders: "granted",
 				write_orders: "disabled",
 			},
@@ -433,9 +439,22 @@ describe("ShopifyMembershipProductService", () => {
 		const organization = await createOrganization(repository);
 		const encryptor = await saveIntegration(repository, organization);
 		const client = new FakeShopifyProductClient();
-		client.updateInventoryItem = async () => {
-			throw new ShopifyScopeError();
-		};
+		await repository.updateShopifyVerification({
+			organizationId: organization.id,
+			verificationStatus: "ok",
+			verifiedAtIso: new Date().toISOString(),
+			lastTestedAtIso: new Date().toISOString(),
+			verifiedShopGid: "gid://shopify/Shop/1",
+			verifiedShopDomain: "example.myshopify.com",
+			grantedScopes: ["read_products", "write_products", "read_orders"],
+			capabilities: {
+				read_products: "granted",
+				write_products: "granted",
+				write_inventory: "missing",
+				read_orders: "granted",
+				write_orders: "disabled",
+			},
+		});
 		const service = new ShopifyMembershipProductService(
 			repository,
 			encryptor,
@@ -449,6 +468,7 @@ describe("ShopifyMembershipProductService", () => {
 				membershipInput(),
 			),
 		).rejects.toMatchObject({ status: 409 });
+		expect(client.createCalls).toBe(0);
 	});
 
 	it("lists current Shopify data for local membership product records", async () => {
@@ -762,6 +782,7 @@ describe("ShopifyMembershipProductService", () => {
 			capabilities: {
 				read_products: "granted",
 				write_products: "granted",
+				write_inventory: "granted",
 				read_orders: "missing",
 				write_orders: "disabled",
 			},

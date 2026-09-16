@@ -10,6 +10,7 @@ export type ShopifyVerificationStatus =
 export const SHOPIFY_ADMIN_CAPABILITIES = [
 	"read_products",
 	"write_products",
+	"write_inventory",
 	"read_orders",
 	"write_orders",
 ] as const;
@@ -39,6 +40,7 @@ export type ShopifyCapabilityDiagnostics = Record<
 export const EMPTY_SHOPIFY_CAPABILITIES: ShopifyCapabilityDiagnostics = {
 	read_products: "missing",
 	write_products: "missing",
+	write_inventory: "missing",
 	read_orders: "missing",
 	write_orders: "disabled",
 };
@@ -60,6 +62,7 @@ export function deriveShopifyCapabilities(
 	return {
 		read_products: scopes.has("read_products") ? "granted" : "missing",
 		write_products: scopes.has("write_products") ? "granted" : "missing",
+		write_inventory: scopes.has("write_inventory") ? "granted" : "missing",
 		read_orders: scopes.has("read_orders") ? "granted" : "missing",
 		write_orders: "disabled",
 	};

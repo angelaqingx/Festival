@@ -44,4 +44,13 @@ describe("PostgresOrganizationRepository", () => {
 		expect(createGrant).toContain("new AccompanistMembershipConflictError()");
 		expect(value).toContain("unique|duplicate|exclusion");
 	});
+
+	it("persists the write_inventory verification capability", async () => {
+		const value = await source();
+
+		expect(value).toContain("can_write_inventory");
+		expect(value).toContain(
+			'input.capabilities?.write_inventory === "granted"',
+		);
+	});
 });

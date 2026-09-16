@@ -609,6 +609,7 @@ CREATE TABLE orgs.shopify_integrations (
     granted_scopes text[] DEFAULT '{}'::text[] NOT NULL,
     can_read_products boolean DEFAULT false NOT NULL,
     can_write_products boolean DEFAULT false NOT NULL,
+    can_write_inventory boolean DEFAULT false NOT NULL,
     can_read_orders boolean DEFAULT false NOT NULL,
     integration_version bigint DEFAULT 1 NOT NULL,
     verified_at timestamp with time zone,

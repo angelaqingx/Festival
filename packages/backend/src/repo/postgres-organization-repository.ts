@@ -128,6 +128,7 @@ interface ShopifyIntegrationRow {
 	granted_scopes: string[];
 	can_read_products: boolean;
 	can_write_products: boolean;
+	can_write_inventory: boolean;
 	can_read_orders: boolean;
 	integration_version: number | string;
 	verified_at: string | null;
@@ -149,6 +150,7 @@ function capabilityDiagnostics(
 	return {
 		read_products: row.can_read_products ? "granted" : "missing",
 		write_products: row.can_write_products ? "granted" : "missing",
+		write_inventory: row.can_write_inventory ? "granted" : "missing",
 		read_orders: row.can_read_orders ? "granted" : "missing",
 		write_orders: "disabled",
 	};
@@ -1318,6 +1320,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				granted_scopes,
 				can_read_products,
 				can_write_products,
+				can_write_inventory,
 				can_read_orders,
 				integration_version,
 				verified_at,
@@ -1401,6 +1404,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				granted_scopes = '{}',
 				can_read_products = FALSE,
 				can_write_products = FALSE,
+				can_write_inventory = FALSE,
 				can_read_orders = FALSE,
 				integration_version = ${this.schema}.shopify_integrations.integration_version + 1,
 				verified_at = NULL,
@@ -1425,6 +1429,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				granted_scopes,
 				can_read_products,
 				can_write_products,
+				can_write_inventory,
 				can_read_orders,
 				integration_version,
 				verified_at,
@@ -1479,11 +1484,12 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				),
 				can_read_products = $6,
 				can_write_products = $7,
-				can_read_orders = $8,
-				verified_at = $9,
-				last_tested_at = $10,
-				last_error = $11,
-				last_failure_category = $12,
+				can_write_inventory = $8,
+				can_read_orders = $9,
+				verified_at = $10,
+				last_tested_at = $11,
+				last_error = $12,
+				last_failure_category = $13,
 				updated_at = NOW()
 			 WHERE organization_id = $1
 			RETURNING
@@ -1498,6 +1504,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				granted_scopes,
 				can_read_products,
 				can_write_products,
+				can_write_inventory,
 				can_read_orders,
 				integration_version,
 				verified_at,
@@ -1519,6 +1526,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 					grantedScopes.join(","),
 					input.capabilities?.read_products === "granted",
 					input.capabilities?.write_products === "granted",
+					input.capabilities?.write_inventory === "granted",
 					input.capabilities?.read_orders === "granted",
 					input.verifiedAtIso ?? null,
 					input.lastTestedAtIso,
@@ -1570,6 +1578,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				granted_scopes,
 				can_read_products,
 				can_write_products,
+				can_write_inventory,
 				can_read_orders,
 				integration_version,
 				verified_at,

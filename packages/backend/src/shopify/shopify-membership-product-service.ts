@@ -240,6 +240,7 @@ export class ShopifyMembershipProductService {
 			tenant,
 			"write_products",
 		);
+		await this.loadOperationContext(tenant, "write_inventory");
 		const readContext = await this.loadOperationContext(
 			tenant,
 			"read_products",
@@ -378,6 +379,7 @@ export class ShopifyMembershipProductService {
 			tenant,
 			"write_products",
 		);
+		await this.loadOperationContext(tenant, "write_inventory");
 		const readContext = await this.loadOperationContext(
 			tenant,
 			"read_products",
@@ -593,7 +595,9 @@ export class ShopifyMembershipProductService {
 		}
 		if (integration.capabilities[capability] !== "granted") {
 			throw new AppError(
-				"Shopify integration does not grant the required capability.",
+				capability === "write_inventory"
+					? "Shopify integration does not grant write_inventory. Save and verify Shopify settings after approving the scope."
+					: "Shopify integration does not grant the required capability.",
 				409,
 			);
 		}

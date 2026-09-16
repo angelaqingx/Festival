@@ -92,6 +92,7 @@ async function fixture(
 		capabilities: {
 			read_products: "missing",
 			write_products: "missing",
+			write_inventory: "missing",
 			read_orders: "granted",
 			write_orders: "disabled",
 		},

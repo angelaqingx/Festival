@@ -404,10 +404,16 @@ async function saveVerifiedShopifyIntegration(
 		lastTestedAtIso: new Date().toISOString(),
 		verifiedShopGid: "gid://shopify/Shop/1",
 		verifiedShopDomain: "example.myshopify.com",
-		grantedScopes: ["read_products", "write_products", "read_orders"],
+		grantedScopes: [
+			"read_products",
+			"write_products",
+			"write_inventory",
+			"read_orders",
+		],
 		capabilities: {
 			read_products: "granted",
 			write_products: "granted",
+			write_inventory: "granted",
 			read_orders: "granted",
 			write_orders: "disabled",
 		},

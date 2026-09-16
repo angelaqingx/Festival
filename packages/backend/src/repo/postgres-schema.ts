@@ -89,6 +89,7 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 			granted_scopes TEXT[] NOT NULL DEFAULT '{}',
 			can_read_products BOOLEAN NOT NULL DEFAULT FALSE,
 			can_write_products BOOLEAN NOT NULL DEFAULT FALSE,
+			can_write_inventory BOOLEAN NOT NULL DEFAULT FALSE,
 			can_read_orders BOOLEAN NOT NULL DEFAULT FALSE,
 			integration_version BIGINT NOT NULL DEFAULT 1 CHECK (integration_version > 0),
 			verified_at TIMESTAMPTZ NULL,
