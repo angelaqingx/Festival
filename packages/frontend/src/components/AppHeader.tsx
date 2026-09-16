@@ -18,6 +18,7 @@ export function AppHeader(props: AppHeaderProps) {
 		const route = props.app.route();
 		return route.kind === "org-root" ||
 			route.kind === "org-membership" ||
+			route.kind === "org-accompanist-membership" ||
 			route.kind === "org-customer-account-legacy" ||
 			route.kind === "org-customer-account-memberships" ||
 			route.kind === "org-customer-account-contact" ||

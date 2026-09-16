@@ -1831,7 +1831,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				return await sql.begin(async (transaction) => {
 					const entitlementId = randomUUID();
 					const identityRows = (await transaction.unsafe(
-						`INSERT INTO ${this.schema}.membership_identity_emails (organization_id, normalized_email, customer_id) VALUES ($1,$2,$3) ON CONFLICT (organization_id, normalized_email) DO UPDATE SET customer_id = ${this.schema}.membership_identity_emails.customer_id WHERE ${this.schema}.membership_identity_emails.customer_id = EXCLUDED.customer_id`,
+						`INSERT INTO ${this.schema}.membership_identity_emails (organization_id, normalized_email, customer_id) VALUES ($1,$2,$3) ON CONFLICT (organization_id, normalized_email) DO UPDATE SET customer_id = ${this.schema}.membership_identity_emails.customer_id WHERE ${this.schema}.membership_identity_emails.customer_id = EXCLUDED.customer_id RETURNING customer_id`,
 						[input.organizationId, input.normalizedEmail, input.customerId],
 					)) as Array<Record<string, unknown>>;
 					if (!identityRows[0])
