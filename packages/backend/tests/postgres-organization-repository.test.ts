@@ -30,4 +30,18 @@ describe("PostgresOrganizationRepository", () => {
 		expect(createInvite).toContain("VALUES ($1, $2, $3, $4, $5, $6)");
 		expect(createInvite).not.toContain("is_primary");
 	});
+
+	it("retries accompanist cohort contention and returns a typed conflict", async () => {
+		const value = await source();
+		const createGrant = value.slice(
+			value.indexOf("async createAccompanistMembershipGrant("),
+			value.indexOf("async listAccompanistMembershipGrants("),
+		);
+
+		expect(createGrant).toContain("attempt < 2");
+		expect(createGrant).toContain("AccompanistMembershipCohortContentionError");
+		expect(createGrant).toContain("attempt === 0");
+		expect(createGrant).toContain("new AccompanistMembershipConflictError()");
+		expect(value).toContain("unique|duplicate|exclusion");
+	});
 });

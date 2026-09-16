@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { InMemoryOrganizationRepository } from "../src/repo/in-memory-organization-repository.js";
+import { AccompanistMembershipConflictError } from "../src/repo/organization-repository.js";
 import { AccompanistMembershipService } from "../src/services/accompanist-membership-service.js";
 
 async function setup() {
@@ -72,6 +73,28 @@ describe("AccompanistMembershipService", () => {
 				customerId: "customer-1",
 				verifiedShopifyCustomerEmail: "shopper@example.com",
 				payload,
+			}),
+		).rejects.toMatchObject({ status: 409 });
+	});
+
+	it("returns a conflict when the repository settles a concurrent acquisition", async () => {
+		const { repository, organization, division, service } = await setup();
+		repository.createAccompanistMembershipGrant = async () => {
+			throw new AccompanistMembershipConflictError();
+		};
+		await expect(
+			service.acquire({
+				organizationId: organization.id,
+				organizationTimezone: "UTC",
+				customerId: "customer-1",
+				verifiedShopifyCustomerEmail: "shopper@example.com",
+				payload: {
+					name: "Ava Piano",
+					email: "ava@example.com",
+					city: "Seattle",
+					phone: "+1 206 555 0100",
+					divisionIds: [division.id],
+				},
 			}),
 		).rejects.toMatchObject({ status: 409 });
 	});

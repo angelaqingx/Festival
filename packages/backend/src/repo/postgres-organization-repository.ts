@@ -48,7 +48,10 @@ import type {
 	UpdateShopifyWebhookReadinessInput,
 	UpsertShopifyIntegrationInput,
 } from "./organization-repository.js";
-import { ShopifyShopOwnershipError } from "./organization-repository.js";
+import {
+	AccompanistMembershipConflictError,
+	ShopifyShopOwnershipError,
+} from "./organization-repository.js";
 import {
 	initializePostgresSchema,
 	postgresSchemaName,
@@ -500,6 +503,14 @@ function mapInvite(row: InviteRow): InviteWithOrganization {
 			createdAtIso: row.organization_created_at,
 		},
 	};
+}
+
+class AccompanistMembershipCohortContentionError extends Error {}
+
+function isAccompanistMembershipConflict(error: unknown): boolean {
+	return (
+		error instanceof Error && /unique|duplicate|exclusion/i.test(error.message)
+	);
 }
 
 export class PostgresOrganizationRepository implements OrganizationRepository {
@@ -1806,87 +1817,100 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 		input: CreateAccompanistMembershipGrantInput,
 	): Promise<AccompanistMembershipGrant> {
 		await this.ensureReady();
-		try {
-			return await sql.begin(async (transaction) => {
-				const entitlementId = randomUUID();
-				const identityRows = (await transaction.unsafe(
-					`INSERT INTO ${this.schema}.membership_identity_emails (organization_id, normalized_email, customer_id) VALUES ($1,$2,$3) ON CONFLICT (organization_id, normalized_email) DO UPDATE SET customer_id = ${this.schema}.membership_identity_emails.customer_id WHERE ${this.schema}.membership_identity_emails.customer_id = EXCLUDED.customer_id`,
-					[input.organizationId, input.normalizedEmail, input.customerId],
-				)) as Array<Record<string, unknown>>;
-				if (!identityRows[0])
-					throw new Error(
-						"Shopify identity email belongs to another customer.",
-					);
-				await transaction.unsafe(
-					`INSERT INTO ${this.schema}.membership_entitlement_cohorts (organization_id, customer_id, entitlement_class) VALUES ($1,$2,'accompanist_membership') ON CONFLICT DO NOTHING`,
-					[input.organizationId, input.customerId],
-				);
-				const cohort = (await transaction.unsafe(
-					`SELECT version FROM ${this.schema}.membership_entitlement_cohorts WHERE organization_id=$1 AND customer_id=$2 AND entitlement_class='accompanist_membership' FOR UPDATE`,
-					[input.organizationId, input.customerId],
-				)) as Array<{ version: number }>;
-				const advanced =
-					cohort[0] &&
-					(await transaction.unsafe(
-						`UPDATE ${this.schema}.membership_entitlement_cohorts SET version=version+1 WHERE organization_id=$1 AND customer_id=$2 AND entitlement_class='accompanist_membership' AND version=$3 RETURNING version`,
-						[input.organizationId, input.customerId, cohort[0].version],
-					));
-				if (!advanced || advanced.count !== 1)
-					throw new Error("Entitlement cohort compare-and-swap failed.");
-				const inserted = await transaction.unsafe(
-					`INSERT INTO ${this.schema}.membership_entitlements (id,organization_id,customer_id,entitlement_class,source,offering_id,starts_on,ends_on) VALUES ($1,$2,$3,'accompanist_membership','accompanist_form',NULL,$4::date,$5::date) RETURNING id`,
-					[
-						entitlementId,
-						input.organizationId,
-						input.customerId,
-						input.startsOn,
-						input.endsOn,
-					],
-				);
-				if (!inserted[0])
-					throw new Error("Unable to create accompanist membership.");
-				await transaction.unsafe(
-					`INSERT INTO ${this.schema}.accompanist_membership_entitlement_details (entitlement_id,contact_name,contact_email,contact_city,contact_phone) VALUES ($1,$2,$3,$4,$5)`,
-					[
-						entitlementId,
-						input.contact.name,
-						input.contact.email,
-						input.contact.city,
-						input.contact.phone,
-					],
-				);
-				for (const division of input.divisions)
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			try {
+				return await sql.begin(async (transaction) => {
+					const entitlementId = randomUUID();
+					const identityRows = (await transaction.unsafe(
+						`INSERT INTO ${this.schema}.membership_identity_emails (organization_id, normalized_email, customer_id) VALUES ($1,$2,$3) ON CONFLICT (organization_id, normalized_email) DO UPDATE SET customer_id = ${this.schema}.membership_identity_emails.customer_id WHERE ${this.schema}.membership_identity_emails.customer_id = EXCLUDED.customer_id`,
+						[input.organizationId, input.normalizedEmail, input.customerId],
+					)) as Array<Record<string, unknown>>;
+					if (!identityRows[0])
+						throw new Error(
+							"Shopify identity email belongs to another customer.",
+						);
 					await transaction.unsafe(
-						`INSERT INTO ${this.schema}.membership_entitlement_divisions (entitlement_id,organization_id,division_id,division_name_snapshot) VALUES ($1,$2,$3,$4)`,
+						`INSERT INTO ${this.schema}.membership_entitlement_cohorts (organization_id, customer_id, entitlement_class) VALUES ($1,$2,'accompanist_membership') ON CONFLICT DO NOTHING`,
+						[input.organizationId, input.customerId],
+					);
+					const cohort = (await transaction.unsafe(
+						`SELECT version FROM ${this.schema}.membership_entitlement_cohorts WHERE organization_id=$1 AND customer_id=$2 AND entitlement_class='accompanist_membership' FOR UPDATE`,
+						[input.organizationId, input.customerId],
+					)) as Array<{ version: number }>;
+					const advanced =
+						cohort[0] &&
+						(await transaction.unsafe(
+							`UPDATE ${this.schema}.membership_entitlement_cohorts SET version=version+1 WHERE organization_id=$1 AND customer_id=$2 AND entitlement_class='accompanist_membership' AND version=$3 RETURNING version`,
+							[input.organizationId, input.customerId, cohort[0].version],
+						));
+					if (!advanced || advanced.count !== 1)
+						throw new AccompanistMembershipCohortContentionError();
+					const inserted = await transaction.unsafe(
+						`INSERT INTO ${this.schema}.membership_entitlements (id,organization_id,customer_id,entitlement_class,source,offering_id,starts_on,ends_on) VALUES ($1,$2,$3,'accompanist_membership','accompanist_form',NULL,$4::date,$5::date) RETURNING id`,
 						[
 							entitlementId,
 							input.organizationId,
-							division.divisionId,
-							division.divisionName,
+							input.customerId,
+							input.startsOn,
+							input.endsOn,
 						],
 					);
-				return {
-					id: entitlementId,
-					organizationId: input.organizationId,
-					customerId: input.customerId,
-					normalizedEmail: input.normalizedEmail,
-					offeringId: input.offeringId,
-					offeringNameSnapshot: input.offeringNameSnapshot,
-					source: "accompanist_form",
-					contact: input.contact,
-					divisions: input.divisions,
-					startsOn: input.startsOn,
-					endsOn: input.endsOn,
-					status: "active",
-					isCurrent: true,
-					createdAtIso: new Date().toISOString(),
-				};
-			});
-		} catch (error) {
-			if (error instanceof Error && /unique|duplicate/i.test(error.message))
-				throw new Error("An active accompanist membership already exists.");
-			throw error;
+					if (!inserted[0])
+						throw new Error("Unable to create accompanist membership.");
+					await transaction.unsafe(
+						`INSERT INTO ${this.schema}.accompanist_membership_entitlement_details (entitlement_id,contact_name,contact_email,contact_city,contact_phone) VALUES ($1,$2,$3,$4,$5)`,
+						[
+							entitlementId,
+							input.contact.name,
+							input.contact.email,
+							input.contact.city,
+							input.contact.phone,
+						],
+					);
+					for (const division of input.divisions)
+						await transaction.unsafe(
+							`INSERT INTO ${this.schema}.membership_entitlement_divisions (entitlement_id,organization_id,division_id,division_name_snapshot) VALUES ($1,$2,$3,$4)`,
+							[
+								entitlementId,
+								input.organizationId,
+								division.divisionId,
+								division.divisionName,
+							],
+						);
+					return {
+						id: entitlementId,
+						organizationId: input.organizationId,
+						customerId: input.customerId,
+						normalizedEmail: input.normalizedEmail,
+						offeringId: input.offeringId,
+						offeringNameSnapshot: input.offeringNameSnapshot,
+						source: "accompanist_form",
+						contact: input.contact,
+						divisions: input.divisions,
+						startsOn: input.startsOn,
+						endsOn: input.endsOn,
+						status: "active",
+						isCurrent: true,
+						createdAtIso: new Date().toISOString(),
+					};
+				});
+			} catch (error) {
+				if (
+					error instanceof AccompanistMembershipCohortContentionError &&
+					attempt === 0
+				) {
+					continue;
+				}
+				if (
+					error instanceof AccompanistMembershipCohortContentionError ||
+					isAccompanistMembershipConflict(error)
+				) {
+					throw new AccompanistMembershipConflictError();
+				}
+				throw error;
+			}
 		}
+		throw new Error("Unreachable accompanist membership contention state.");
 	}
 
 	async listAccompanistMembershipGrants(input: {

@@ -1,5 +1,6 @@
 import {
 	type AccompanistContactSnapshot,
+	type AccompanistMembershipGrant,
 	addCalendarDays,
 	calendarDateInTimezone,
 	deriveEntitlementLifecycle,
@@ -8,7 +9,10 @@ import {
 	validateAccompanistDivisionSelection,
 } from "@festival/common";
 import { AppError } from "../errors/app-error.js";
-import type { OrganizationRepository } from "../repo/organization-repository.js";
+import {
+	AccompanistMembershipConflictError,
+	type OrganizationRepository,
+} from "../repo/organization-repository.js";
 
 const RENEWAL_WINDOW_DAYS = 30;
 const ACCOMPANIST_MEMBERSHIP_DISPLAY_NAME = "Accompanist Membership";
@@ -133,26 +137,40 @@ export class AccompanistMembershipService {
 			}
 			startsOn = prior.endsOn;
 		}
-		const grant = await this.organizations.createAccompanistMembershipGrant({
-			organizationId: input.organizationId,
-			customerId: input.customerId,
-			normalizedEmail: normalizedIdentityEmail,
-			offeringNameSnapshot: ACCOMPANIST_MEMBERSHIP_DISPLAY_NAME,
-			source: "accompanist_form",
-			contact,
-			divisions: selected.map((id) => {
-				const division = activeDivisions.find(
-					(candidate) => candidate.id === id,
-				);
-				if (!division) throw new Error("Validated division was not found.");
-				return { divisionId: division.id, divisionName: division.displayName };
-			}),
-			startsOn,
-			endsOn: addCalendarDays(
+		let grant: AccompanistMembershipGrant;
+		try {
+			grant = await this.organizations.createAccompanistMembershipGrant({
+				organizationId: input.organizationId,
+				customerId: input.customerId,
+				normalizedEmail: normalizedIdentityEmail,
+				offeringNameSnapshot: ACCOMPANIST_MEMBERSHIP_DISPLAY_NAME,
+				source: "accompanist_form",
+				contact,
+				divisions: selected.map((id) => {
+					const division = activeDivisions.find(
+						(candidate) => candidate.id === id,
+					);
+					if (!division) throw new Error("Validated division was not found.");
+					return {
+						divisionId: division.id,
+						divisionName: division.displayName,
+					};
+				}),
 				startsOn,
-				INITIAL_ACCOMPANIST_MEMBERSHIP_DURATION_DAYS,
-			),
-		});
+				endsOn: addCalendarDays(
+					startsOn,
+					INITIAL_ACCOMPANIST_MEMBERSHIP_DURATION_DAYS,
+				),
+			});
+		} catch (error) {
+			if (error instanceof AccompanistMembershipConflictError) {
+				throw new AppError(
+					"An active accompanist membership already exists.",
+					409,
+				);
+			}
+			throw error;
+		}
 		return {
 			membership: {
 				id: grant.id,

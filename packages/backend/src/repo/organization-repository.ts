@@ -139,6 +139,13 @@ export class ShopifyShopOwnershipError extends Error {
 	}
 }
 
+export class AccompanistMembershipConflictError extends Error {
+	constructor() {
+		super("An active accompanist membership already exists.");
+		this.name = "AccompanistMembershipConflictError";
+	}
+}
+
 export interface ProductRecord {
 	id: string;
 	organizationId: string;
