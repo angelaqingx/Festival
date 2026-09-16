@@ -1419,7 +1419,10 @@ export class ShopifyAdminApiClient
 			| "write_inventory"
 			| "read_orders",
 	): Promise<AcquiredAccessToken> {
-		const token = await this.fetchAccessToken(context.credentials);
+		let token = await this.fetchAccessToken(context.credentials);
+		if (!token.grantedScopes.includes(requiredCapability)) {
+			token = await this.fetchAccessToken(context.credentials, true);
+		}
 		if (!token.grantedScopes.includes(requiredCapability)) {
 			throw new ShopifyScopeError();
 		}

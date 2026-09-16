@@ -15,7 +15,7 @@ import {
 	SHOPIFY_CLIENT_SECRET_PURPOSE,
 	ShopifySecretKeyring,
 } from "../src/shopify/encryption.js";
-import { ShopifyUserError } from "../src/shopify/errors.js";
+import { ShopifyScopeError, ShopifyUserError } from "../src/shopify/errors.js";
 import { ShopifyMembershipProductService } from "../src/shopify/shopify-membership-product-service.js";
 import type {
 	ShopifyAdminOperationContext,
@@ -426,6 +426,29 @@ describe("ShopifyMembershipProductService", () => {
 		expect(client.deletedProductGids).toHaveLength(0);
 		expect(audit.readyCalls).toBe(0);
 		expect(audit.records).toHaveLength(0);
+	});
+
+	it("returns an actionable conflict when Shopify is missing inventory access", async () => {
+		const repository = new InMemoryOrganizationRepository();
+		const organization = await createOrganization(repository);
+		const encryptor = await saveIntegration(repository, organization);
+		const client = new FakeShopifyProductClient();
+		client.updateInventoryItem = async () => {
+			throw new ShopifyScopeError();
+		};
+		const service = new ShopifyMembershipProductService(
+			repository,
+			encryptor,
+			client,
+			new FakeAuditWriter(),
+		);
+
+		await expect(
+			service.createMembershipProduct(
+				tenantFor(organization),
+				membershipInput(),
+			),
+		).rejects.toMatchObject({ status: 409 });
 	});
 
 	it("lists current Shopify data for local membership product records", async () => {

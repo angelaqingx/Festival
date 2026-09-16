@@ -26,7 +26,7 @@ import {
 	SHOPIFY_CLIENT_SECRET_PURPOSE,
 	type ShopifySecretKeyring,
 } from "./encryption.js";
-import { ShopifyIntegrationError } from "./errors.js";
+import { ShopifyIntegrationError, ShopifyScopeError } from "./errors.js";
 import type {
 	ShopifyAdminOperationContext,
 	ShopifyAdminResult,
@@ -60,6 +60,12 @@ function isValidPrice(value: string): boolean {
 function toAppError(error: unknown): AppError {
 	if (error instanceof AppError) {
 		return error;
+	}
+	if (error instanceof ShopifyScopeError) {
+		return new AppError(
+			"Shopify integration is missing a required scope. Save and verify Shopify settings after approving write_inventory.",
+			409,
+		);
 	}
 
 	if (error instanceof ShopifyIntegrationError || error instanceof Error) {

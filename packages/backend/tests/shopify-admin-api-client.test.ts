@@ -72,13 +72,18 @@ describe("ShopifyAdminApiClient", () => {
 	it("updates membership shipping through the inventory item with write_inventory", async () => {
 		let mutation: { query: string; variables: Record<string, unknown> } | null =
 			null;
+		let tokenRequests = 0;
 		globalThis.fetch = (async (input, init) => {
 			const url = input instanceof Request ? input.url : input.toString();
 			if (url.endsWith("/admin/oauth/access_token")) {
+				tokenRequests += 1;
 				return Response.json({
 					access_token: "inventory-token",
 					expires_in: 3600,
-					scope: "read_products,write_products,write_inventory",
+					scope:
+						tokenRequests === 1
+							? "read_products,write_products"
+							: "read_products,write_products,write_inventory",
 				});
 			}
 			mutation = JSON.parse(String(init?.body));
@@ -111,6 +116,7 @@ describe("ShopifyAdminApiClient", () => {
 			id: "gid://shopify/InventoryItem/1",
 			input: { requiresShipping: false },
 		});
+		expect(tokenRequests).toBe(2);
 	});
 
 	it("does not reuse a token after the integration version changes", async () => {
@@ -778,7 +784,7 @@ describe("ShopifyAdminApiClient", () => {
 				"gid://shopify/Product/1",
 			]),
 		).rejects.toMatchObject({ failureCategory: "missing_scope" });
-		expect(fetchCalls).toBe(1);
+		expect(fetchCalls).toBe(2);
 
 		const orderContext = {
 			...operationContext,
