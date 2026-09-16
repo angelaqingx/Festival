@@ -116,7 +116,7 @@ interface ShopifyOrderNode {
 	id?: string;
 	fullyPaid?: boolean;
 	currencyCode?: string;
-	customer?: { id?: string } | null;
+	customer?: { id?: string; email?: string | null } | null;
 	customAttributes?: ShopifyOrderAttributeNode[];
 	lineItems?: {
 		nodes?: ShopifyOrderLineNode[];
@@ -355,6 +355,7 @@ function mapPaidOrderNode(node: ShopifyOrderNode): ShopifyPaidOrder {
 		node.customer?.id,
 		"Shopify order response did not include a customer.",
 	);
+	const customerEmail = node.customer?.email?.trim().toLowerCase();
 	if (typeof node.fullyPaid !== "boolean") {
 		throw new ShopifyAdminApiError(
 			"Shopify order response did not include a paid status.",
@@ -427,6 +428,7 @@ function mapPaidOrderNode(node: ShopifyOrderNode): ShopifyPaidOrder {
 	return {
 		id,
 		customerGid,
+		...(customerEmail ? { customerEmail } : {}),
 		fullyPaid: node.fullyPaid,
 		...(fullyPaidAtIso ? { fullyPaidAtIso } : {}),
 		currencyCode,
@@ -1049,6 +1051,7 @@ export class ShopifyAdminApiClient
 					currencyCode
 					customer {
 						id
+						email
 					}
 					customAttributes {
 						key
@@ -1196,6 +1199,7 @@ export class ShopifyAdminApiClient
 						currencyCode
 						customer {
 							id
+							email
 						}
 						customAttributes {
 							key

@@ -3,6 +3,8 @@
 --
 
 
+-- Dumped from database version 17.10 (Homebrew)
+-- Dumped by pg_dump version 17.10 (Homebrew)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -48,55 +50,15 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: accompanist_division_policies; Type: TABLE; Schema: orgs; Owner: -
+-- Name: accompanist_membership_entitlement_details; Type: TABLE; Schema: orgs; Owner: -
 --
 
-CREATE TABLE orgs.accompanist_division_policies (
-    organization_id text NOT NULL,
-    policy text DEFAULT 'one_to_all'::text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT accompanist_division_policies_policy_check CHECK ((policy = ANY (ARRAY['exactly_one'::text, 'one_to_two'::text, 'one_to_all'::text])))
-);
-
-
---
--- Name: accompanist_division_policy_history; Type: TABLE; Schema: orgs; Owner: -
---
-
-CREATE TABLE orgs.accompanist_division_policy_history (
-    id text NOT NULL,
-    organization_id text NOT NULL,
-    policy text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT accompanist_division_policy_history_policy_check CHECK ((policy = ANY (ARRAY['exactly_one'::text, 'one_to_two'::text, 'one_to_all'::text])))
-);
-
-
---
--- Name: accompanist_membership_grants; Type: TABLE; Schema: orgs; Owner: -
---
-
-CREATE TABLE orgs.accompanist_membership_grants (
-    id text NOT NULL,
-    organization_id text NOT NULL,
-    customer_id text NOT NULL,
-    normalized_email text NOT NULL,
-    offering_id text NOT NULL,
-    offering_name_snapshot text NOT NULL,
-    source text NOT NULL,
+CREATE TABLE orgs.accompanist_membership_entitlement_details (
+    entitlement_id text NOT NULL,
     contact_name text NOT NULL,
     contact_email text NOT NULL,
     contact_city text NOT NULL,
-    contact_phone text NOT NULL,
-    divisions jsonb NOT NULL,
-    starts_on date NOT NULL,
-    ends_on date NOT NULL,
-    status text NOT NULL,
-    is_current boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT accompanist_membership_grants_check CHECK ((ends_on > starts_on)),
-    CONSTRAINT accompanist_membership_grants_source_check CHECK ((source = 'accompanist_form'::text)),
-    CONSTRAINT accompanist_membership_grants_status_check CHECK ((status = ANY (ARRAY['active'::text, 'superseded'::text, 'expired'::text])))
+    contact_phone text NOT NULL
 );
 
 
@@ -160,36 +122,6 @@ CREATE TABLE orgs.checkout_intents (
     expires_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT checkout_intents_status_check CHECK ((status = ANY (ARRAY['creating'::text, 'ready'::text, 'checkout_started'::text, 'failed'::text, 'expired'::text, 'superseded'::text, 'approved'::text, 'rejected'::text, 'needs_review'::text])))
-);
-
-
---
--- Name: entitlement_grants; Type: TABLE; Schema: orgs; Owner: -
---
-
-CREATE TABLE orgs.entitlement_grants (
-    id text NOT NULL,
-    organization_id text NOT NULL,
-    customer_id text NOT NULL,
-    entitlement_class text NOT NULL,
-    offering_id text NOT NULL,
-    duration_days integer NOT NULL,
-    division_id text NOT NULL,
-    division_name_snapshot text NOT NULL,
-    paid_amount text NOT NULL,
-    paid_currency_code text NOT NULL,
-    checkout_intent_id text NOT NULL,
-    shopify_order_gid text NOT NULL,
-    shopify_order_line_gid text NOT NULL,
-    starts_on date NOT NULL,
-    ends_on date NOT NULL,
-    status text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT entitlement_grants_check CHECK ((ends_on > starts_on)),
-    CONSTRAINT entitlement_grants_duration_days_check CHECK (((duration_days > 0) AND (duration_days <= 36500))),
-    CONSTRAINT entitlement_grants_entitlement_class_check CHECK ((entitlement_class = ANY (ARRAY['teacher_membership'::text, 'accompanist_membership'::text]))),
-    CONSTRAINT entitlement_grants_paid_currency_code_check CHECK ((paid_currency_code ~ '^[A-Z]{3}$'::text)),
-    CONSTRAINT entitlement_grants_status_check CHECK ((status = ANY (ARRAY['active'::text, 'expired'::text, 'revoked'::text])))
 );
 
 
@@ -349,6 +281,95 @@ CREATE TABLE orgs.invites (
     invited_by_user_id text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     accepted_at timestamp with time zone
+);
+
+
+--
+-- Name: membership_division_policies; Type: TABLE; Schema: orgs; Owner: -
+--
+
+CREATE TABLE orgs.membership_division_policies (
+    organization_id text NOT NULL,
+    entitlement_class text NOT NULL,
+    policy text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT membership_division_policies_entitlement_class_check CHECK ((entitlement_class = ANY (ARRAY['teacher_membership'::text, 'accompanist_membership'::text]))),
+    CONSTRAINT membership_division_policies_policy_check CHECK ((policy = ANY (ARRAY['exactly_one'::text, 'one_to_two'::text, 'one_to_all'::text])))
+);
+
+
+--
+-- Name: membership_division_policy_history; Type: TABLE; Schema: orgs; Owner: -
+--
+
+CREATE TABLE orgs.membership_division_policy_history (
+    id text NOT NULL,
+    organization_id text NOT NULL,
+    entitlement_class text NOT NULL,
+    policy text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT membership_division_policy_history_entitlement_class_check CHECK ((entitlement_class = ANY (ARRAY['teacher_membership'::text, 'accompanist_membership'::text]))),
+    CONSTRAINT membership_division_policy_history_policy_check CHECK ((policy = ANY (ARRAY['exactly_one'::text, 'one_to_two'::text, 'one_to_all'::text])))
+);
+
+
+--
+-- Name: membership_entitlement_cohorts; Type: TABLE; Schema: orgs; Owner: -
+--
+
+CREATE TABLE orgs.membership_entitlement_cohorts (
+    organization_id text NOT NULL,
+    customer_id text NOT NULL,
+    entitlement_class text NOT NULL,
+    version bigint DEFAULT 0 NOT NULL,
+    CONSTRAINT membership_entitlement_cohorts_entitlement_class_check CHECK ((entitlement_class = ANY (ARRAY['teacher_membership'::text, 'accompanist_membership'::text]))),
+    CONSTRAINT membership_entitlement_cohorts_version_check CHECK ((version >= 0))
+);
+
+
+--
+-- Name: membership_entitlement_divisions; Type: TABLE; Schema: orgs; Owner: -
+--
+
+CREATE TABLE orgs.membership_entitlement_divisions (
+    entitlement_id text NOT NULL,
+    organization_id text NOT NULL,
+    division_id text NOT NULL,
+    division_name_snapshot text NOT NULL
+);
+
+
+--
+-- Name: membership_entitlements; Type: TABLE; Schema: orgs; Owner: -
+--
+
+CREATE TABLE orgs.membership_entitlements (
+    id text NOT NULL,
+    organization_id text NOT NULL,
+    customer_id text NOT NULL,
+    entitlement_class text NOT NULL,
+    source text NOT NULL,
+    offering_id text NOT NULL,
+    starts_on date NOT NULL,
+    ends_on date NOT NULL,
+    revoked_at timestamp with time zone,
+    revoked_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT membership_entitlements_check CHECK ((ends_on > starts_on)),
+    CONSTRAINT membership_entitlements_check1 CHECK ((((entitlement_class = 'teacher_membership'::text) AND (source = 'teacher_checkout'::text)) OR ((entitlement_class = 'accompanist_membership'::text) AND (source = 'accompanist_form'::text)))),
+    CONSTRAINT membership_entitlements_entitlement_class_check CHECK ((entitlement_class = ANY (ARRAY['teacher_membership'::text, 'accompanist_membership'::text]))),
+    CONSTRAINT membership_entitlements_source_check CHECK ((source = ANY (ARRAY['teacher_checkout'::text, 'accompanist_form'::text])))
+);
+
+
+--
+-- Name: membership_identity_emails; Type: TABLE; Schema: orgs; Owner: -
+--
+
+CREATE TABLE orgs.membership_identity_emails (
+    organization_id text NOT NULL,
+    normalized_email text NOT NULL,
+    customer_id text NOT NULL
 );
 
 
@@ -627,6 +648,23 @@ CREATE TABLE orgs.shopify_webhook_deliveries (
 
 
 --
+-- Name: teacher_membership_entitlement_details; Type: TABLE; Schema: orgs; Owner: -
+--
+
+CREATE TABLE orgs.teacher_membership_entitlement_details (
+    entitlement_id text NOT NULL,
+    checkout_intent_id text NOT NULL,
+    shopify_order_gid text NOT NULL,
+    shopify_order_line_gid text NOT NULL,
+    paid_amount text NOT NULL,
+    paid_currency_code text NOT NULL,
+    duration_days integer NOT NULL,
+    CONSTRAINT teacher_membership_entitlement_details_duration_days_check CHECK (((duration_days > 0) AND (duration_days <= 36500))),
+    CONSTRAINT teacher_membership_entitlement_details_paid_currency_code_check CHECK ((paid_currency_code ~ '^[A-Z]{3}$'::text))
+);
+
+
+--
 -- Name: user_login_event; Type: TABLE; Schema: orgs; Owner: -
 --
 
@@ -656,27 +694,11 @@ CREATE TABLE orgs.users (
 
 
 --
--- Name: accompanist_division_policies accompanist_division_policies_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
+-- Name: accompanist_membership_entitlement_details accompanist_membership_entitlement_details_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
 --
 
-ALTER TABLE ONLY orgs.accompanist_division_policies
-    ADD CONSTRAINT accompanist_division_policies_pkey PRIMARY KEY (organization_id);
-
-
---
--- Name: accompanist_division_policy_history accompanist_division_policy_history_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
---
-
-ALTER TABLE ONLY orgs.accompanist_division_policy_history
-    ADD CONSTRAINT accompanist_division_policy_history_pkey PRIMARY KEY (id);
-
-
---
--- Name: accompanist_membership_grants accompanist_membership_grants_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
---
-
-ALTER TABLE ONLY orgs.accompanist_membership_grants
-    ADD CONSTRAINT accompanist_membership_grants_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY orgs.accompanist_membership_entitlement_details
+    ADD CONSTRAINT accompanist_membership_entitlement_details_pkey PRIMARY KEY (entitlement_id);
 
 
 --
@@ -717,30 +739,6 @@ ALTER TABLE ONLY orgs.checkout_intents
 
 ALTER TABLE ONLY orgs.checkout_intents
     ADD CONSTRAINT checkout_intents_pkey PRIMARY KEY (id);
-
-
---
--- Name: entitlement_grants entitlement_grants_checkout_intent_id_key; Type: CONSTRAINT; Schema: orgs; Owner: -
---
-
-ALTER TABLE ONLY orgs.entitlement_grants
-    ADD CONSTRAINT entitlement_grants_checkout_intent_id_key UNIQUE (checkout_intent_id);
-
-
---
--- Name: entitlement_grants entitlement_grants_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
---
-
-ALTER TABLE ONLY orgs.entitlement_grants
-    ADD CONSTRAINT entitlement_grants_pkey PRIMARY KEY (id);
-
-
---
--- Name: entitlement_grants entitlement_grants_shopify_order_line_gid_key; Type: CONSTRAINT; Schema: orgs; Owner: -
---
-
-ALTER TABLE ONLY orgs.entitlement_grants
-    ADD CONSTRAINT entitlement_grants_shopify_order_line_gid_key UNIQUE (shopify_order_line_gid);
 
 
 --
@@ -856,6 +854,70 @@ ALTER TABLE ONLY orgs.invites
 
 
 --
+-- Name: membership_division_policies membership_division_policies_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_division_policies
+    ADD CONSTRAINT membership_division_policies_pkey PRIMARY KEY (organization_id, entitlement_class);
+
+
+--
+-- Name: membership_division_policy_history membership_division_policy_history_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_division_policy_history
+    ADD CONSTRAINT membership_division_policy_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: membership_entitlement_cohorts membership_entitlement_cohorts_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_entitlement_cohorts
+    ADD CONSTRAINT membership_entitlement_cohorts_pkey PRIMARY KEY (organization_id, customer_id, entitlement_class);
+
+
+--
+-- Name: membership_entitlement_divisions membership_entitlement_divisions_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_entitlement_divisions
+    ADD CONSTRAINT membership_entitlement_divisions_pkey PRIMARY KEY (entitlement_id, division_id);
+
+
+--
+-- Name: membership_entitlements membership_entitlements_organization_id_customer_id_entitl_excl; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_entitlements
+    ADD CONSTRAINT membership_entitlements_organization_id_customer_id_entitl_excl EXCLUDE USING gist (organization_id WITH =, customer_id WITH =, entitlement_class WITH =, daterange(starts_on, ends_on, '[)'::text) WITH &&) WHERE ((revoked_at IS NULL));
+
+
+--
+-- Name: membership_entitlements membership_entitlements_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_entitlements
+    ADD CONSTRAINT membership_entitlements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: membership_identity_emails membership_identity_emails_organization_id_customer_id_key; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_identity_emails
+    ADD CONSTRAINT membership_identity_emails_organization_id_customer_id_key UNIQUE (organization_id, customer_id);
+
+
+--
+-- Name: membership_identity_emails membership_identity_emails_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_identity_emails
+    ADD CONSTRAINT membership_identity_emails_pkey PRIMARY KEY (organization_id, normalized_email);
+
+
+--
 -- Name: membership_reconciliation_runs membership_reconciliation_runs_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
 --
 
@@ -893,6 +955,14 @@ ALTER TABLE ONLY orgs.membership_validation_decisions
 
 ALTER TABLE ONLY orgs.memberships
     ADD CONSTRAINT memberships_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: organization_divisions organization_divisions_id_organization_id_key; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.organization_divisions
+    ADD CONSTRAINT organization_divisions_id_organization_id_key UNIQUE (id, organization_id);
 
 
 --
@@ -1024,6 +1094,30 @@ ALTER TABLE ONLY orgs.shopify_webhook_deliveries
 
 
 --
+-- Name: teacher_membership_entitlement_details teacher_membership_entitlement_detai_shopify_order_line_gid_key; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.teacher_membership_entitlement_details
+    ADD CONSTRAINT teacher_membership_entitlement_detai_shopify_order_line_gid_key UNIQUE (shopify_order_line_gid);
+
+
+--
+-- Name: teacher_membership_entitlement_details teacher_membership_entitlement_details_checkout_intent_id_key; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.teacher_membership_entitlement_details
+    ADD CONSTRAINT teacher_membership_entitlement_details_checkout_intent_id_key UNIQUE (checkout_intent_id);
+
+
+--
+-- Name: teacher_membership_entitlement_details teacher_membership_entitlement_details_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.teacher_membership_entitlement_details
+    ADD CONSTRAINT teacher_membership_entitlement_details_pkey PRIMARY KEY (entitlement_id);
+
+
+--
 -- Name: user_login_event user_login_event_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
 --
 
@@ -1063,31 +1157,10 @@ CREATE UNIQUE INDEX checkout_intents_scope_key ON orgs.checkout_intents USING bt
 
 
 --
--- Name: idx_accompanist_current_customer; Type: INDEX; Schema: orgs; Owner: -
---
-
-CREATE UNIQUE INDEX idx_accompanist_current_customer ON orgs.accompanist_membership_grants USING btree (organization_id, customer_id) WHERE is_current;
-
-
---
--- Name: idx_accompanist_current_email; Type: INDEX; Schema: orgs; Owner: -
---
-
-CREATE UNIQUE INDEX idx_accompanist_current_email ON orgs.accompanist_membership_grants USING btree (organization_id, normalized_email) WHERE is_current;
-
-
---
 -- Name: idx_app_user_email_lower; Type: INDEX; Schema: orgs; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_app_user_email_lower ON orgs.app_user USING btree (lower((email)::text));
-
-
---
--- Name: idx_entitlement_grants_tenant_customer; Type: INDEX; Schema: orgs; Owner: -
---
-
-CREATE INDEX idx_entitlement_grants_tenant_customer ON orgs.entitlement_grants USING btree (organization_id, customer_id, created_at);
 
 
 --
@@ -1245,6 +1318,13 @@ CREATE INDEX idx_user_login_user_id ON orgs.user_login_event USING btree (user_i
 
 
 --
+-- Name: membership_entitlements_cohort_idx; Type: INDEX; Schema: orgs; Owner: -
+--
+
+CREATE INDEX membership_entitlements_cohort_idx ON orgs.membership_entitlements USING btree (organization_id, customer_id, entitlement_class, starts_on);
+
+
+--
 -- Name: membership_reconciliation_runs_tenant_idx; Type: INDEX; Schema: orgs; Owner: -
 --
 
@@ -1280,35 +1360,11 @@ CREATE TRIGGER enforce_shopify_shop_ownership BEFORE INSERT OR UPDATE OF store_d
 
 
 --
--- Name: accompanist_division_policies accompanist_division_policies_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+-- Name: accompanist_membership_entitlement_details accompanist_membership_entitlement_details_entitlement_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
 --
 
-ALTER TABLE ONLY orgs.accompanist_division_policies
-    ADD CONSTRAINT accompanist_division_policies_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: accompanist_division_policy_history accompanist_division_policy_history_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
---
-
-ALTER TABLE ONLY orgs.accompanist_division_policy_history
-    ADD CONSTRAINT accompanist_division_policy_history_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: accompanist_membership_grants accompanist_membership_grants_offering_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
---
-
-ALTER TABLE ONLY orgs.accompanist_membership_grants
-    ADD CONSTRAINT accompanist_membership_grants_offering_id_fkey FOREIGN KEY (offering_id) REFERENCES orgs.products(id);
-
-
---
--- Name: accompanist_membership_grants accompanist_membership_grants_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
---
-
-ALTER TABLE ONLY orgs.accompanist_membership_grants
-    ADD CONSTRAINT accompanist_membership_grants_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY orgs.accompanist_membership_entitlement_details
+    ADD CONSTRAINT accompanist_membership_entitlement_details_entitlement_id_fkey FOREIGN KEY (entitlement_id) REFERENCES orgs.membership_entitlements(id) ON DELETE CASCADE;
 
 
 --
@@ -1341,30 +1397,6 @@ ALTER TABLE ONLY orgs.checkout_intents
 
 ALTER TABLE ONLY orgs.checkout_intents
     ADD CONSTRAINT checkout_intents_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: entitlement_grants entitlement_grants_division_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
---
-
-ALTER TABLE ONLY orgs.entitlement_grants
-    ADD CONSTRAINT entitlement_grants_division_id_fkey FOREIGN KEY (division_id) REFERENCES orgs.organization_divisions(id);
-
-
---
--- Name: entitlement_grants entitlement_grants_offering_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
---
-
-ALTER TABLE ONLY orgs.entitlement_grants
-    ADD CONSTRAINT entitlement_grants_offering_id_fkey FOREIGN KEY (offering_id) REFERENCES orgs.products(id);
-
-
---
--- Name: entitlement_grants entitlement_grants_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
---
-
-ALTER TABLE ONLY orgs.entitlement_grants
-    ADD CONSTRAINT entitlement_grants_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
 
 
 --
@@ -1445,6 +1477,78 @@ ALTER TABLE ONLY orgs.invites
 
 ALTER TABLE ONLY orgs.invites
     ADD CONSTRAINT invites_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: membership_division_policies membership_division_policies_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_division_policies
+    ADD CONSTRAINT membership_division_policies_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: membership_division_policy_history membership_division_policy_history_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_division_policy_history
+    ADD CONSTRAINT membership_division_policy_history_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: membership_entitlement_cohorts membership_entitlement_cohorts_customer_id_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_entitlement_cohorts
+    ADD CONSTRAINT membership_entitlement_cohorts_customer_id_organization_id_fkey FOREIGN KEY (customer_id, organization_id) REFERENCES orgs.festival_customers(id, organization_id) ON DELETE CASCADE;
+
+
+--
+-- Name: membership_entitlement_divisions membership_entitlement_divisio_division_id_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_entitlement_divisions
+    ADD CONSTRAINT membership_entitlement_divisio_division_id_organization_id_fkey FOREIGN KEY (division_id, organization_id) REFERENCES orgs.organization_divisions(id, organization_id);
+
+
+--
+-- Name: membership_entitlement_divisions membership_entitlement_divisions_entitlement_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_entitlement_divisions
+    ADD CONSTRAINT membership_entitlement_divisions_entitlement_id_fkey FOREIGN KEY (entitlement_id) REFERENCES orgs.membership_entitlements(id) ON DELETE CASCADE;
+
+
+--
+-- Name: membership_entitlements membership_entitlements_customer_id_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_entitlements
+    ADD CONSTRAINT membership_entitlements_customer_id_organization_id_fkey FOREIGN KEY (customer_id, organization_id) REFERENCES orgs.festival_customers(id, organization_id) ON DELETE CASCADE;
+
+
+--
+-- Name: membership_entitlements membership_entitlements_offering_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_entitlements
+    ADD CONSTRAINT membership_entitlements_offering_id_fkey FOREIGN KEY (offering_id) REFERENCES orgs.products(id);
+
+
+--
+-- Name: membership_entitlements membership_entitlements_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_entitlements
+    ADD CONSTRAINT membership_entitlements_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: membership_identity_emails membership_identity_emails_customer_id_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.membership_identity_emails
+    ADD CONSTRAINT membership_identity_emails_customer_id_organization_id_fkey FOREIGN KEY (customer_id, organization_id) REFERENCES orgs.festival_customers(id, organization_id) ON DELETE CASCADE;
 
 
 --
@@ -1565,6 +1669,14 @@ ALTER TABLE ONLY orgs.shopify_order_projections
 
 ALTER TABLE ONLY orgs.shopify_webhook_deliveries
     ADD CONSTRAINT shopify_webhook_deliveries_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: teacher_membership_entitlement_details teacher_membership_entitlement_details_entitlement_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.teacher_membership_entitlement_details
+    ADD CONSTRAINT teacher_membership_entitlement_details_entitlement_id_fkey FOREIGN KEY (entitlement_id) REFERENCES orgs.membership_entitlements(id) ON DELETE CASCADE;
 
 
 --

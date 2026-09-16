@@ -56,6 +56,7 @@ export const validateAccompanistDivisionSelection =
 	validateMembershipDivisionSelection;
 
 export const ENTITLEMENT_GRANT_STATUSES = [
+	"scheduled",
 	"active",
 	"expired",
 	"revoked",
@@ -136,7 +137,7 @@ export function deriveEntitlementLifecycle(
 export type CreateEntitlementGrantSnapshotInput = Omit<
 	EntitlementGrantSnapshot,
 	"id" | "createdAtIso"
->;
+> & { verifiedIdentityEmail?: string };
 
 export function isEntitlementClass(value: unknown): value is EntitlementClass {
 	return ENTITLEMENT_CLASSES.includes(value as EntitlementClass);

@@ -954,10 +954,12 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 					grant.organizationId === input.organizationId &&
 					grant.isCurrent &&
 					(grant.customerId === input.customerId ||
-						grant.normalizedEmail === input.normalizedEmail),
+						grant.normalizedEmail === input.normalizedEmail) &&
+					grant.startsOn < input.endsOn &&
+					grant.endsOn > input.startsOn,
 			)
 		) {
-			throw new Error("An active accompanist membership already exists.");
+			throw new Error("Accompanist membership intervals may not overlap.");
 		}
 		const grant: AccompanistMembershipGrant = {
 			id: randomUUID(),

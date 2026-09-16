@@ -128,6 +128,8 @@ export interface ShopifyPaidOrderLine {
 export interface ShopifyPaidOrder {
 	readonly id: string;
 	readonly customerGid: string;
+	/** Shopify Admin customer identity email; used only to bind entitlement ownership. */
+	readonly customerEmail?: string;
 	readonly fullyPaid: boolean;
 	readonly fullyPaidAtIso?: string;
 	readonly currencyCode: string;

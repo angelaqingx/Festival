@@ -93,7 +93,7 @@ export class AccompanistMembershipService {
 		const offering = await this.offerings.resolveActiveFreeAccompanistOffering(
 			input.organizationId,
 		);
-		const startsOn = calendarDateInTimezone(
+		let startsOn = calendarDateInTimezone(
 			this.now().toISOString(),
 			input.organizationTimezone,
 		);
@@ -105,15 +105,17 @@ export class AccompanistMembershipService {
 				grant.customerId === input.customerId ||
 				grant.normalizedEmail === contact.email,
 		);
-		if (
-			prior &&
-			prior.endsOn > startsOn &&
-			calendarDaysUntil(startsOn, prior.endsOn) > RENEWAL_WINDOW_DAYS
-		) {
-			throw new AppError(
-				"An active accompanist membership already exists.",
-				409,
-			);
+		if (prior && prior.startsOn > startsOn) {
+			throw new AppError("An accompanist renewal is already scheduled.", 409);
+		}
+		if (prior && prior.endsOn > startsOn) {
+			if (calendarDaysUntil(startsOn, prior.endsOn) > RENEWAL_WINDOW_DAYS) {
+				throw new AppError(
+					"An active accompanist membership already exists.",
+					409,
+				);
+			}
+			startsOn = prior.endsOn;
 		}
 		const grant = await this.organizations.createAccompanistMembershipGrant({
 			organizationId: input.organizationId,
@@ -132,7 +134,6 @@ export class AccompanistMembershipService {
 			}),
 			startsOn,
 			endsOn: addCalendarDays(startsOn, offering.durationDays),
-			...(prior ? { supersedeGrantId: prior.id } : {}),
 		});
 		return {
 			membership: {

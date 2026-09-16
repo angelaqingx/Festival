@@ -2,6 +2,7 @@ import {
 	type CustomerMembershipStatusEntry,
 	type CustomerMembershipStatusResponse,
 	calendarDateInTimezone,
+	deriveEntitlementLifecycle,
 } from "@festival/common";
 import type { OrganizationRepository } from "../repo/organization-repository.js";
 import type { MembershipCommerceRepository } from "./membership-commerce-repository.js";
@@ -64,13 +65,12 @@ export class MembershipStatusService {
 				}
 				return [];
 			});
-		const entitlements: CustomerMembershipStatusEntry[] = grants
-			.filter((grant) => grant.status !== "revoked")
-			.map((grant) => ({
+		const entitlements: CustomerMembershipStatusEntry[] = grants.map(
+			(grant) => ({
 				status:
-					grant.status === "active" && grant.endsOn > today
-						? ("active" as const)
-						: ("expired" as const),
+					grant.status === "revoked"
+						? "revoked"
+						: deriveEntitlementLifecycle(grant, today),
 				entitlementClass: grant.entitlementClass,
 				displayName,
 				divisionName: grant.divisionNameSnapshot,
@@ -79,7 +79,8 @@ export class MembershipStatusService {
 				durationDays: grant.durationDays,
 				startsOn: grant.startsOn,
 				endsOn: grant.endsOn,
-			}));
+			}),
+		);
 		return { memberships: [...validation, ...entitlements] };
 	}
 }

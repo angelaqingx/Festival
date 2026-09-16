@@ -222,7 +222,7 @@ interface AccompanistMembershipGrantRow {
 	divisions: unknown;
 	starts_on: string;
 	ends_on: string;
-	status: "active" | "superseded" | "expired";
+	status: "active" | "superseded" | "expired" | "revoked";
 	is_current: boolean;
 	created_at: string;
 }
@@ -1809,14 +1809,30 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 		try {
 			return await sql.begin(async (transaction) => {
 				const entitlementId = randomUUID();
-				await transaction.unsafe(
+				const identityRows = (await transaction.unsafe(
 					`INSERT INTO ${this.schema}.membership_identity_emails (organization_id, normalized_email, customer_id) VALUES ($1,$2,$3) ON CONFLICT (organization_id, normalized_email) DO UPDATE SET customer_id = ${this.schema}.membership_identity_emails.customer_id WHERE ${this.schema}.membership_identity_emails.customer_id = EXCLUDED.customer_id`,
 					[input.organizationId, input.normalizedEmail, input.customerId],
-				);
+				)) as Array<Record<string, unknown>>;
+				if (!identityRows[0])
+					throw new Error(
+						"Shopify identity email belongs to another customer.",
+					);
 				await transaction.unsafe(
 					`INSERT INTO ${this.schema}.membership_entitlement_cohorts (organization_id, customer_id, entitlement_class) VALUES ($1,$2,'accompanist_membership') ON CONFLICT DO NOTHING`,
 					[input.organizationId, input.customerId],
 				);
+				const cohort = (await transaction.unsafe(
+					`SELECT version FROM ${this.schema}.membership_entitlement_cohorts WHERE organization_id=$1 AND customer_id=$2 AND entitlement_class='accompanist_membership' FOR UPDATE`,
+					[input.organizationId, input.customerId],
+				)) as Array<{ version: number }>;
+				const advanced =
+					cohort[0] &&
+					(await transaction.unsafe(
+						`UPDATE ${this.schema}.membership_entitlement_cohorts SET version=version+1 WHERE organization_id=$1 AND customer_id=$2 AND entitlement_class='accompanist_membership' AND version=$3 RETURNING version`,
+						[input.organizationId, input.customerId, cohort[0].version],
+					));
+				if (!advanced || advanced.count !== 1)
+					throw new Error("Entitlement cohort compare-and-swap failed.");
 				const inserted = await transaction.unsafe(
 					`INSERT INTO ${this.schema}.membership_entitlements (id,organization_id,customer_id,entitlement_class,source,offering_id,starts_on,ends_on) SELECT $1,$2,$3,'accompanist_membership','accompanist_form',$4,$5::date,$6::date FROM ${this.schema}.products WHERE id=$4 AND organization_id=$2 RETURNING id`,
 					[
@@ -1882,7 +1898,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 	}): Promise<AccompanistMembershipGrant[]> {
 		await this.ensureReady();
 		const rows = (await sql.unsafe(
-			`SELECT e.id,e.organization_id,e.customer_id,identity.normalized_email,e.offering_id,p.product_name_snapshot AS offering_name_snapshot,e.source,d.contact_name,d.contact_email,d.contact_city,d.contact_phone,COALESCE(jsonb_agg(jsonb_build_object('divisionId',ed.division_id,'divisionName',ed.division_name_snapshot)) FILTER (WHERE ed.division_id IS NOT NULL),'[]') AS divisions,e.starts_on::text,e.ends_on::text,CASE WHEN e.revoked_at IS NOT NULL THEN 'expired' WHEN e.ends_on <= (NOW() AT TIME ZONE o.timezone)::date THEN 'expired' ELSE 'active' END AS status,(e.revoked_at IS NULL AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date) AS is_current,e.created_at FROM ${this.schema}.membership_entitlements e JOIN ${this.schema}.organizations o ON o.id=e.organization_id JOIN ${this.schema}.products p ON p.id=e.offering_id JOIN ${this.schema}.accompanist_membership_entitlement_details d ON d.entitlement_id=e.id LEFT JOIN ${this.schema}.membership_identity_emails identity ON identity.organization_id=e.organization_id AND identity.customer_id=e.customer_id LEFT JOIN ${this.schema}.membership_entitlement_divisions ed ON ed.entitlement_id=e.id WHERE e.organization_id=$1 AND e.entitlement_class='accompanist_membership' AND ($2::text IS NULL OR e.customer_id=$2) AND ($3::text IS NULL OR identity.normalized_email=$3) GROUP BY e.id,identity.normalized_email,p.product_name_snapshot,d.contact_name,d.contact_email,d.contact_city,d.contact_phone,o.timezone ORDER BY e.created_at,e.id`,
+			`SELECT e.id,e.organization_id,e.customer_id,identity.normalized_email,e.offering_id,p.product_name_snapshot AS offering_name_snapshot,e.source,d.contact_name,d.contact_email,d.contact_city,d.contact_phone,COALESCE(jsonb_agg(jsonb_build_object('divisionId',ed.division_id,'divisionName',ed.division_name_snapshot)) FILTER (WHERE ed.division_id IS NOT NULL),'[]') AS divisions,e.starts_on::text,e.ends_on::text,CASE WHEN e.revoked_at IS NOT NULL THEN 'revoked' WHEN e.starts_on > (NOW() AT TIME ZONE o.timezone)::date THEN 'active' WHEN e.ends_on <= (NOW() AT TIME ZONE o.timezone)::date THEN 'expired' ELSE 'active' END AS status,(e.revoked_at IS NULL AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date) AS is_current,e.created_at FROM ${this.schema}.membership_entitlements e JOIN ${this.schema}.organizations o ON o.id=e.organization_id JOIN ${this.schema}.products p ON p.id=e.offering_id JOIN ${this.schema}.accompanist_membership_entitlement_details d ON d.entitlement_id=e.id LEFT JOIN ${this.schema}.membership_identity_emails identity ON identity.organization_id=e.organization_id AND identity.customer_id=e.customer_id LEFT JOIN ${this.schema}.membership_entitlement_divisions ed ON ed.entitlement_id=e.id WHERE e.organization_id=$1 AND e.entitlement_class='accompanist_membership' AND ($2::text IS NULL OR e.customer_id=$2) AND ($3::text IS NULL OR identity.normalized_email=$3) GROUP BY e.id,identity.normalized_email,p.product_name_snapshot,d.contact_name,d.contact_email,d.contact_city,d.contact_phone,o.timezone ORDER BY e.created_at,e.id`,
 			[
 				input.organizationId,
 				input.customerId ?? null,
@@ -2142,6 +2158,11 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 	): Promise<EntitlementGrantSnapshot> {
 		await this.ensureReady();
 		assertValidEntitlementGrantSnapshotInput(input);
+		if (input.entitlementClass !== "teacher_membership") {
+			throw new Error(
+				"Teacher checkout source requires a teacher entitlement.",
+			);
+		}
 
 		const id = randomUUID();
 		await sql.begin(async (transaction) => {
@@ -2192,7 +2213,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 	): Promise<EntitlementGrantSnapshot[]> {
 		await this.ensureReady();
 		const rows = (await sql.unsafe(
-			`SELECT e.id,e.organization_id,e.customer_id,e.entitlement_class,e.offering_id,d.duration_days,ed.division_id,ed.division_name_snapshot,d.paid_amount,d.paid_currency_code,d.checkout_intent_id,d.shopify_order_gid,d.shopify_order_line_gid,e.starts_on::text,e.ends_on::text,CASE WHEN e.revoked_at IS NOT NULL THEN 'revoked' WHEN e.ends_on <= (NOW() AT TIME ZONE o.timezone)::date THEN 'expired' ELSE 'active' END AS status,e.created_at FROM ${this.schema}.membership_entitlements e JOIN ${this.schema}.organizations o ON o.id=e.organization_id JOIN ${this.schema}.teacher_membership_entitlement_details d ON d.entitlement_id=e.id JOIN ${this.schema}.membership_entitlement_divisions ed ON ed.entitlement_id=e.id WHERE e.organization_id=$1 AND e.customer_id=$2
+			`SELECT e.id,e.organization_id,e.customer_id,e.entitlement_class,e.offering_id,d.duration_days,ed.division_id,ed.division_name_snapshot,d.paid_amount,d.paid_currency_code,d.checkout_intent_id,d.shopify_order_gid,d.shopify_order_line_gid,e.starts_on::text,e.ends_on::text,CASE WHEN e.revoked_at IS NOT NULL THEN 'revoked' WHEN e.starts_on > (NOW() AT TIME ZONE o.timezone)::date THEN 'scheduled' WHEN e.ends_on <= (NOW() AT TIME ZONE o.timezone)::date THEN 'expired' ELSE 'active' END AS status,e.created_at FROM ${this.schema}.membership_entitlements e JOIN ${this.schema}.organizations o ON o.id=e.organization_id JOIN ${this.schema}.teacher_membership_entitlement_details d ON d.entitlement_id=e.id JOIN ${this.schema}.membership_entitlement_divisions ed ON ed.entitlement_id=e.id WHERE e.organization_id=$1 AND e.customer_id=$2
 			 ORDER BY created_at ASC`,
 			[organizationId, customerId],
 		)) as EntitlementGrantRow[];

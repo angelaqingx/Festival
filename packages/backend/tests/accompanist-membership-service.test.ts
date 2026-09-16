@@ -77,7 +77,7 @@ describe("AccompanistMembershipService", () => {
 		).rejects.toMatchObject({ status: 409 });
 	});
 
-	it("supersedes rather than mutates the prior grant inside the 30-day renewal window", async () => {
+	it("keeps the prior grant and schedules a successor inside the 30-day renewal window", async () => {
 		const { repository, organization, division, service } = await setup();
 		const payload = {
 			name: "Ava Piano",
@@ -115,8 +115,8 @@ describe("AccompanistMembershipService", () => {
 		});
 		expect(grants).toHaveLength(2);
 		expect(grants[0]).toMatchObject({
-			status: "superseded",
-			isCurrent: false,
+			status: "active",
+			isCurrent: true,
 			contact: { city: "Seattle" },
 		});
 		expect(grants[1]).toMatchObject({
@@ -124,5 +124,6 @@ describe("AccompanistMembershipService", () => {
 			isCurrent: true,
 			contact: { city: "Tacoma" },
 		});
+		expect(grants[1]?.startsOn).toBe(grants[0]?.endsOn);
 	});
 });

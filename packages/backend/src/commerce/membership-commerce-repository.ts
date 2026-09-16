@@ -499,7 +499,7 @@ export class InMemoryMembershipCommerceRepository
 			customerId,
 		);
 		return grants.some(
-			(grant) => grant.status === "active" && grant.endsOn > today,
+			(grant) => grant.status === "active" && grant.startsOn > today,
 		);
 	}
 

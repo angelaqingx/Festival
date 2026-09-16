@@ -181,6 +181,7 @@ function paidOrder(correlationId: string): ShopifyPaidOrder {
 	return {
 		id: "gid://shopify/Order/1",
 		customerGid: "gid://shopify/Customer/1",
+		customerEmail: "customer@example.test",
 		fullyPaid: true,
 		fullyPaidAtIso: "2026-08-28T17:30:00.000Z",
 		currencyCode: "USD",
@@ -546,6 +547,7 @@ describe("Shopify order projection", () => {
 		f.orders.values.set(orderGid, {
 			id: orderGid,
 			customerGid: "gid://shopify/Customer/9381966446781",
+			customerEmail: "customer9381966446781@example.test",
 			fullyPaid: true,
 			fullyPaidAtIso: paidAtIso,
 			currencyCode: "USD",

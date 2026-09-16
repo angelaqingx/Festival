@@ -863,7 +863,9 @@ describe("ShopifyAdminApiClient", () => {
 		expect(graphqlBody?.query).toContain("fullyPaid");
 		expect(graphqlBody?.query).toContain("discountedTotalSet");
 		expect(graphqlBody?.query).toContain("transactions(first: 250)");
-		expect(graphqlBody?.query).not.toContain("email");
+		expect(graphqlBody?.query).toContain(
+			"customer {\n\t\t\t\t\t\tid\n\t\t\t\t\t\temail",
+		);
 		expect(graphqlBody?.query).not.toContain("phone");
 		expect(graphqlBody?.query).not.toContain("shippingAddress");
 	});

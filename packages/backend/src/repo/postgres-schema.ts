@@ -251,6 +251,7 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 			offering_id TEXT NOT NULL REFERENCES ${safeSchema}.products (id), starts_on DATE NOT NULL, ends_on DATE NOT NULL,
 			revoked_at TIMESTAMPTZ NULL, revoked_reason TEXT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			CHECK (ends_on > starts_on),
+			CHECK ((entitlement_class = 'teacher_membership' AND source = 'teacher_checkout') OR (entitlement_class = 'accompanist_membership' AND source = 'accompanist_form')),
 			FOREIGN KEY (customer_id, organization_id) REFERENCES ${safeSchema}.festival_customers(id, organization_id) ON DELETE CASCADE,
 			EXCLUDE USING gist (organization_id WITH =, customer_id WITH =, entitlement_class WITH =, daterange(starts_on, ends_on, '[)') WITH &&) WHERE (revoked_at IS NULL)
 		);

@@ -2,7 +2,8 @@ export type AccompanistMembershipSource = "accompanist_form";
 export type AccompanistMembershipGrantStatus =
 	| "active"
 	| "superseded"
-	| "expired";
+	| "expired"
+	| "revoked";
 
 export interface AccompanistContactSnapshot {
 	name: string;
