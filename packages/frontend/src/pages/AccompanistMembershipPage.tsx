@@ -2,6 +2,7 @@ import { createEffect, createSignal, For, onMount, Show } from "solid-js";
 import { Button } from "../components/Button.js";
 import {
 	acquireAccompanistMembership,
+	ApiError,
 	customerAccompanistMembershipSignInPath,
 	getAccompanistMembershipForm,
 	getCustomerProfile,
@@ -51,8 +52,12 @@ export function AccompanistMembershipPage(props: { slug: string }) {
 					: form.divisions.slice(0, 1).map((division) => division.id),
 			);
 			setAuthenticated(true);
-		} catch {
-			setError("Accompanist membership information could not be loaded.");
+		} catch (reason) {
+			setError(
+				reason instanceof ApiError && reason.status === 422
+					? reason.message
+					: "Accompanist membership information could not be loaded.",
+			);
 		} finally {
 			setLoading(false);
 		}
@@ -137,7 +142,14 @@ export function AccompanistMembershipPage(props: { slug: string }) {
 			<Show when={loading()}>
 				<p role="status">Checking your sign-in status…</p>
 			</Show>
-			<Show when={error()}>{(message) => <p role="alert">{message()}</p>}</Show>
+			<Show when={error()}>
+				{(message) => (
+					<div class="shopify-warning-banner" role="alert">
+						<strong>Accompanist membership needs attention.</strong>
+						<p>{message()}</p>
+					</div>
+				)}
+			</Show>
 			<Show when={needsSignIn()}>
 				<div class="modal-backdrop" role="presentation">
 					<section
