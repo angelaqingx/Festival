@@ -72,6 +72,7 @@ function toAppError(error: unknown): AppError {
 function assertSupportedProductShape(
 	product: ShopifyProductDetails,
 	expectedProductGid?: string,
+	requireDigital = true,
 ): ShopifyProductVariant {
 	if (!product.id) {
 		throw new AppError(
@@ -127,7 +128,7 @@ function assertSupportedProductShape(
 		);
 	}
 
-	if (variant.requiresShipping !== false) {
+	if (requireDigital && variant.requiresShipping !== false) {
 		throw new AppError(
 			"Shopify membership product variant must not require shipping.",
 			502,
@@ -245,18 +246,19 @@ export class ShopifyMembershipProductService {
 					description: validation.input.description,
 				}),
 			);
-			const priced = await this.attemptMutation(
-				writeContext,
-				"productVariantUpdate",
-				() =>
-					this.shopifyClient.updateVariantPrice(writeContext, {
-						productId: offering.shopifyProductGid,
-						variantId: offering.shopifyVariantGid,
-						price: validation.input.price,
-						requiresShipping: false,
-					}),
+			await this.attemptMutation(writeContext, "productVariantUpdate", () =>
+				this.shopifyClient.updateVariantPrice(writeContext, {
+					productId: offering.shopifyProductGid,
+					variantId: offering.shopifyVariantGid,
+					price: validation.input.price,
+				}),
 			);
-			assertSupportedProductShape(priced, offering.shopifyProductGid);
+			await this.setInventoryItemShipping(
+				writeContext,
+				readContext,
+				offering.shopifyVariantGid,
+				offering.shopifyProductGid,
+			);
 			const { value: confirmed } = await this.shopifyClient.readProductsByGid(
 				readContext,
 				[offering.shopifyProductGid],
@@ -389,7 +391,11 @@ export class ShopifyMembershipProductService {
 					createdProduct = product;
 				},
 			);
-			let variant = assertSupportedProductShape(createdProduct);
+			let variant = assertSupportedProductShape(
+				createdProduct,
+				undefined,
+				false,
+			);
 
 			const pricedProduct = await this.attemptMutation(
 				writeContext,
@@ -399,10 +405,19 @@ export class ShopifyMembershipProductService {
 						productId: createdProduct?.id ?? "",
 						variantId: variant.id,
 						price: validation.input.price,
-						requiresShipping: false,
 					}),
 			);
-			variant = assertSupportedProductShape(pricedProduct, createdProduct.id);
+			variant = assertSupportedProductShape(
+				pricedProduct,
+				createdProduct.id,
+				false,
+			);
+			await this.setInventoryItemShipping(
+				writeContext,
+				readContext,
+				variant.id,
+				createdProduct.id,
+			);
 			const { value: confirmedProducts } =
 				await this.shopifyClient.readProductsByGid(readContext, [
 					pricedProduct.id,
@@ -512,6 +527,44 @@ export class ShopifyMembershipProductService {
 			capability,
 			credentials,
 		};
+	}
+
+	private async setInventoryItemShipping(
+		context: ShopifyAdminOperationContext,
+		readContext: ShopifyAdminOperationContext,
+		variantId: string,
+		productId: string,
+	): Promise<void> {
+		const { value: products } = await this.shopifyClient.readProductsByGid(
+			readContext,
+			[productId],
+		);
+		const product = products[0];
+		if (!product) {
+			throw new AppError("Shopify membership product was not found.", 502);
+		}
+		const variant = assertSupportedProductShape(product, productId, false);
+		if (variant.id !== variantId || !variant.inventoryItemId) {
+			throw new AppError(
+				"Shopify membership product inventory item was not found.",
+				502,
+			);
+		}
+		const updated = await this.attemptMutation(
+			context,
+			"inventoryItemUpdate",
+			() =>
+				this.shopifyClient.updateInventoryItem(context, {
+					inventoryItemId: variant.inventoryItemId ?? "",
+					requiresShipping: false,
+				}),
+		);
+		if (updated.requiresShipping) {
+			throw new AppError(
+				"Shopify membership product variant must not require shipping.",
+				502,
+			);
+		}
 	}
 
 	private assertVerifiedIntegration(

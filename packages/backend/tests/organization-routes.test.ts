@@ -144,6 +144,7 @@ function shopifyProduct(
 				productId: id,
 				selectedOptions: [{ name: "Plan", value: "Standard" }],
 				requiresShipping: false,
+				inventoryItemId: "gid://shopify/InventoryItem/generated",
 			},
 		],
 		...overrides,
@@ -153,7 +154,7 @@ function shopifyProduct(
 class FakeShopifyProductClient implements ShopifyMembershipProductClient {
 	readonly deletedProductGids: string[] = [];
 	readonly readProductGids: string[][] = [];
-	readonly variantUpdates: Array<{ requiresShipping: boolean }> = [];
+	readonly inventoryItemUpdates: Array<{ requiresShipping: boolean }> = [];
 	createResponse = shopifyProduct();
 	updateResponse = shopifyProduct();
 	readResponse = [shopifyProduct()];
@@ -165,10 +166,18 @@ class FakeShopifyProductClient implements ShopifyMembershipProductClient {
 
 	async updateVariantPrice(
 		_context: ShopifyAdminOperationContext,
-		input: { requiresShipping: boolean },
 	): Promise<ShopifyAdminResult<ShopifyProductDetails>> {
-		this.variantUpdates.push({ requiresShipping: input.requiresShipping });
 		return { value: this.updateResponse };
+	}
+
+	async updateInventoryItem(
+		_context: ShopifyAdminOperationContext,
+		input: { inventoryItemId: string; requiresShipping: boolean },
+	): Promise<ShopifyAdminResult<{ requiresShipping: boolean }>> {
+		this.inventoryItemUpdates.push({
+			requiresShipping: input.requiresShipping,
+		});
+		return { value: { requiresShipping: input.requiresShipping } };
 	}
 
 	async updateProductDetails(): Promise<
@@ -1690,6 +1699,7 @@ describe("organization routes", () => {
 		});
 		expect(shopifyProductClient.readProductGids).toEqual([
 			["gid://shopify/Product/generated"],
+			["gid://shopify/Product/generated"],
 		]);
 		const records = await repository.listMembershipProductRecords(
 			organization.id,
@@ -1885,7 +1895,7 @@ describe("organization routes", () => {
 			entitlementClass: "accompanist_membership",
 			durationDays: 365,
 		});
-		expect(shopifyProductClient.variantUpdates[0]?.requiresShipping).toBe(
+		expect(shopifyProductClient.inventoryItemUpdates[0]?.requiresShipping).toBe(
 			false,
 		);
 	});

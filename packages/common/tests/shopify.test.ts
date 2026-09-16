@@ -4,6 +4,7 @@ import {
 	isMembershipProductPurchasable,
 	normalizeEffectiveShopifyScopes,
 	normalizeShopifyStoreDomain,
+	SHOPIFY_REQUIRED_SCOPES,
 	SHOPIFY_WEBHOOK_FAILURE_CATEGORIES,
 	SHOPIFY_WEBHOOK_READINESS_STATUSES,
 	validateMembershipProductInput,
@@ -11,6 +12,10 @@ import {
 } from "../src/shopify.js";
 
 describe("Shopify settings contract", () => {
+	it("requires inventory write access for digital membership products", () => {
+		expect(SHOPIFY_REQUIRED_SCOPES).toContain("write_inventory");
+	});
+
 	it("keeps webhook readiness and failure values closed and allowlisted", () => {
 		expect(SHOPIFY_WEBHOOK_READINESS_STATUSES).toEqual([
 			"unknown",

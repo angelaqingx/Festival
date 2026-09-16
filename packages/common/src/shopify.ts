@@ -19,6 +19,7 @@ export const SHOPIFY_REQUIRED_SCOPES = [
 	"read_orders",
 	"read_products",
 	"write_products",
+	"write_inventory",
 	"customer_read_customers",
 	"customer_read_draft_orders",
 	"customer_read_metaobjects",

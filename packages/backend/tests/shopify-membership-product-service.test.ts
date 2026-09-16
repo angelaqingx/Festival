@@ -64,6 +64,7 @@ function shopifyProduct(
 				productId: id,
 				selectedOptions: [{ name: "Plan", value: "Standard" }],
 				requiresShipping: false,
+				inventoryItemId: "gid://shopify/InventoryItem/not-a-number",
 			},
 		],
 		...overrides,
@@ -78,7 +79,10 @@ class FakeShopifyProductClient implements ShopifyMembershipProductClient {
 		productId: string;
 		variantId: string;
 		price: string;
-		requiresShipping?: boolean;
+	}> = [];
+	readonly inventoryItemUpdates: Array<{
+		inventoryItemId: string;
+		requiresShipping: boolean;
 	}> = [];
 	createResponse = shopifyProduct();
 	updateResponse = shopifyProduct();
@@ -103,11 +107,18 @@ class FakeShopifyProductClient implements ShopifyMembershipProductClient {
 			productId: string;
 			variantId: string;
 			price: string;
-			requiresShipping?: boolean;
 		},
 	): Promise<ShopifyAdminResult<ShopifyProductDetails>> {
 		this.variantUpdates.push(input);
 		return { value: this.updateResponse, requestId: "request-update" };
+	}
+
+	async updateInventoryItem(
+		_context: ShopifyAdminOperationContext,
+		input: { inventoryItemId: string; requiresShipping: boolean },
+	): Promise<ShopifyAdminResult<{ requiresShipping: boolean }>> {
+		this.inventoryItemUpdates.push(input);
+		return { value: { requiresShipping: input.requiresShipping } };
 	}
 
 	async updateProductDetails(): Promise<
@@ -299,6 +310,11 @@ describe("ShopifyMembershipProductService", () => {
 				productId: "gid://shopify/Product/not-a-number",
 				variantId: "gid://shopify/ProductVariant/not-a-number-either",
 				price: "75.00",
+			},
+		]);
+		expect(client.inventoryItemUpdates).toEqual([
+			{
+				inventoryItemId: "gid://shopify/InventoryItem/not-a-number",
 				requiresShipping: false,
 			},
 		]);
@@ -311,7 +327,7 @@ describe("ShopifyMembershipProductService", () => {
 				isActive: true,
 			},
 		]);
-		expect(audit.readyCalls).toBe(2);
+		expect(audit.readyCalls).toBe(3);
 		expect(
 			audit.records.map(({ operation, requestId, result }) => ({
 				operation,
@@ -328,6 +344,44 @@ describe("ShopifyMembershipProductService", () => {
 				operation: "productVariantUpdate",
 				requestId: "request-update",
 				result: "success",
+			},
+			{
+				operation: "inventoryItemUpdate",
+				result: "success",
+			},
+		]);
+	});
+
+	it("updates a newly created physical variant through its inventory item", async () => {
+		const repository = new InMemoryOrganizationRepository();
+		const organization = await createOrganization(repository);
+		const encryptor = await saveIntegration(repository, organization);
+		const client = new FakeShopifyProductClient();
+		client.createResponse = shopifyProduct({
+			variants: [
+				{
+					...shopifyProduct().variants[0],
+					requiresShipping: true,
+				},
+			],
+		});
+		const service = new ShopifyMembershipProductService(
+			repository,
+			encryptor,
+			client,
+			new FakeAuditWriter(),
+		);
+
+		await expect(
+			service.createMembershipProduct(
+				tenantFor(organization),
+				membershipInput(),
+			),
+		).resolves.toMatchObject({ id: expect.any(String) });
+		expect(client.inventoryItemUpdates).toEqual([
+			{
+				inventoryItemId: "gid://shopify/InventoryItem/not-a-number",
+				requiresShipping: false,
 			},
 		]);
 	});
@@ -612,6 +666,7 @@ describe("ShopifyMembershipProductService", () => {
 		expect(audit.records.map((record) => record.operation)).toEqual([
 			"productCreate",
 			"productVariantUpdate",
+			"inventoryItemUpdate",
 			"productDelete",
 		]);
 	});
