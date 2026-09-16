@@ -418,6 +418,10 @@ export class CustomerAccountService {
 		if (!offeringId && returnTo === landingPath) {
 			expected = landingPath;
 		}
+		const accompanistMembershipPath = `/org/${slug}/accompanist-membership`;
+		if (!offeringId && returnTo === accompanistMembershipPath) {
+			expected = accompanistMembershipPath;
+		}
 		// Preserve only the known checkout handoff; arbitrary return URLs remain forbidden.
 		if (!offeringId && returnTo === `${expected}?checkout=processing`) {
 			expected = returnTo;
