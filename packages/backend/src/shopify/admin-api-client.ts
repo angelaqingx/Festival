@@ -1113,7 +1113,7 @@ export class ShopifyAdminApiClient
 		}>(
 			credentials.storeDomain,
 			accessToken,
-			`mutation PublishMembershipProduct($id: ID!, $input: [PublicationInput!]!, $publicationId: ID!) { publishablePublish(id: $id, input: $input) { publishable { publishedOnPublication(publicationId: \$publicationId) } userErrors { field message } } }`,
+			`mutation PublishMembershipProduct($id: ID!, $input: [PublicationInput!]!, $publicationId: ID!) { publishablePublish(id: $id, input: $input) { publishable { publishedOnPublication(publicationId: $publicationId) } userErrors { field message } } }`,
 			{
 				id: productId,
 				input: [{ publicationId: matches[0].id }],

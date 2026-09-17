@@ -40,10 +40,10 @@ describe("PostgresOrganizationRepository", () => {
 
 		expect(createGrant).toContain("attempt < 2");
 		expect(createGrant).toContain("AccompanistMembershipCohortContentionError");
-			expect(createGrant).toContain("attempt === 0");
-			expect(createGrant).toContain("new AccompanistMembershipConflictError()");
-			expect(createGrant).toContain("RETURNING customer_id");
-			expect(value).toContain("unique|duplicate|exclusion");
+		expect(createGrant).toContain("attempt === 0");
+		expect(createGrant).toContain("new AccompanistMembershipConflictError()");
+		expect(createGrant).toContain("RETURNING customer_id");
+		expect(value).toContain("unique|duplicate|exclusion");
 	});
 
 	it("persists the write_inventory verification capability", async () => {
