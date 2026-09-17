@@ -120,11 +120,22 @@ describe("organization onboarding integration", () => {
 		);
 	});
 
+	it("renders the cold-start header on the home page", async () => {
+		const homePage = await Bun.file("src/pages/HomePage.tsx").text();
+		const appHeader = await Bun.file("src/components/AppHeader.tsx").text();
+
+		expect(homePage).toContain("<h1>Getting Started</h1>");
+		expect(homePage).toContain('<p class="lede">Sign up to get started.</p>');
+		expect(appHeader).toContain("<h1>Festival</h1>");
+		expect(appHeader).toContain('<p class="lede">General Informtion.</p>');
+	});
+
 	it("shows only safe Shopify identity and capability diagnostics", async () => {
 		const source = await readFrontendSource();
 		expect(source).toContain("Verified shop:");
 		expect(source).toContain("Verified required scopes");
-		expect(source).toContain("settings.verifiedScopes.includes(scope)");
+		expect(source).toContain("missingRequiredShopifyScopes");
+		expect(source).toContain("hasVerifiedShopifyScope");
 		expect(source).not.toContain("settings.grantedScopes");
 		expect(source).not.toContain("accessToken");
 	});
@@ -148,6 +159,9 @@ describe("organization onboarding integration", () => {
 			]),
 		).toEqual([
 			"read_customers",
+			"write_inventory",
+			"read_publications",
+			"write_publications",
 			"customer_read_customers",
 			"customer_read_draft_orders",
 			"customer_read_metaobjects",
@@ -159,6 +173,23 @@ describe("organization onboarding integration", () => {
 				"read_orders",
 				"read_products",
 				"write_products",
+				"write_inventory",
+				"read_publications",
+				"write_publications",
+				"customer_read_customers",
+				"customer_read_draft_orders",
+				"customer_read_metaobjects",
+				"customer_read_orders",
+			]),
+		).toEqual([]);
+		expect(
+			missingRequiredShopifyScopes([
+				"read_customers",
+				"read_orders",
+				"read_products",
+				"write_products",
+				"write_inventory",
+				"write_publications",
 				"customer_read_customers",
 				"customer_read_draft_orders",
 				"customer_read_metaobjects",
@@ -463,6 +494,14 @@ describe("organization onboarding integration", () => {
 		expect(source).toContain("ORGANIZATION_SHORT_NAME_PATTERN");
 		expect(source).toContain("shortName:");
 		expect(source).toContain("organizationShortName().trim().toLowerCase()");
+	});
+
+	it("resets every required festival draft field when onboarding state is cleared", async () => {
+		const appState = await Bun.file("src/app/createFestivalAppState.ts").text();
+
+		expect(appState).toContain(
+			'setFestivalDraft({\n\t\t\tshortName: "",\n\t\t\tname: "",',
+		);
 	});
 
 	it("keeps issue 63 onboarding validation and invite UX wired in the frontend", async () => {

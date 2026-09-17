@@ -247,12 +247,9 @@ export async function createApp(options: CreateAppOptions = {}) {
 	const membershipStatusService =
 		options.membershipStatusService ??
 		new MembershipStatusService(repository, commerceRepository);
-	const accompanistMembershipService = shopifyMembershipProductService
-		? new AccompanistMembershipService(
-				repository,
-				shopifyMembershipProductService,
-			)
-		: undefined;
+	const accompanistMembershipService = new AccompanistMembershipService(
+		repository,
+	);
 
 	const app = new Hono();
 	const allowedApiOrigins = new Set(env.allowedApiOrigins ?? LOCAL_API_ORIGINS);

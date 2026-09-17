@@ -4,8 +4,10 @@ export const CUSTOMER_MEMBERSHIP_STATUSES = [
 	"processing",
 	"rejected",
 	"needs_review",
+	"scheduled",
 	"active",
 	"expired",
+	"revoked",
 ] as const;
 
 export type CustomerMembershipStatus =

@@ -106,6 +106,14 @@ export function customerMembershipViewModel(
 				tone: "review",
 				details: grantDetails(membership),
 			};
+		case "scheduled":
+			return {
+				label: "Scheduled",
+				description:
+					"This membership is scheduled to begin on its start date. No active membership rights are available yet.",
+				tone: "processing",
+				details: grantDetails(membership),
+			};
 		case "active":
 			return {
 				label: "Active",
@@ -120,6 +128,18 @@ export function customerMembershipViewModel(
 				tone: "expired",
 				details: grantDetails(membership),
 			};
+		case "revoked":
+			return {
+				label: "Revoked",
+				description:
+					"This membership has been revoked. No active membership rights are available.",
+				tone: "rejected",
+				details: grantDetails(membership),
+			};
+		default: {
+			const unexpectedStatus: never = membership.status;
+			throw new Error(`Unsupported membership status: ${unexpectedStatus}`);
+		}
 	}
 }
 

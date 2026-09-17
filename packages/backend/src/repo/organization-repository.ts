@@ -139,6 +139,13 @@ export class ShopifyShopOwnershipError extends Error {
 	}
 }
 
+export class AccompanistMembershipConflictError extends Error {
+	constructor() {
+		super("An active accompanist membership already exists.");
+		this.name = "AccompanistMembershipConflictError";
+	}
+}
+
 export interface ProductRecord {
 	id: string;
 	organizationId: string;
@@ -189,6 +196,15 @@ export interface CreateAccompanistMembershipGrantInput
 		"id" | "createdAtIso" | "status" | "isCurrent"
 	> {
 	supersedeGrantId?: string;
+}
+
+export interface EntitlementRevocationRecord {
+	id: string;
+	entitlementId: string;
+	organizationId: string;
+	actorUserId: string;
+	reason: string;
+	revokedAtIso: string;
 }
 
 export interface OrganizationRepository {
@@ -378,4 +394,11 @@ export interface OrganizationRepository {
 		organizationId: string,
 		customerId: string,
 	): Promise<EntitlementGrantSnapshot[]>;
+	revokeEntitlement(input: {
+		organizationId: string;
+		entitlementId: string;
+		actorUserId: string;
+		reason: string;
+		revokedAtIso: string;
+	}): Promise<{ revocation: EntitlementRevocationRecord; existing: boolean }>;
 }

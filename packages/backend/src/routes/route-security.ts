@@ -24,6 +24,11 @@ export const CURRENT_ROUTE_SECURITY = [
 	{ method: "GET", path: "/health", authenticationClass: "private-health" },
 	{ method: "GET", path: "/api/bootstrap", authenticationClass: "public" },
 	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/entitlements/:entitlementId/revoke",
+		authenticationClass: "admin",
+	},
+	{
 		method: "GET",
 		path: "/api/firebase-session",
 		authenticationClass: "firebase",

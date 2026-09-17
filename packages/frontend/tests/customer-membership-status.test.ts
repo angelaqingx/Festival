@@ -30,6 +30,8 @@ describe("customer membership status presentation", () => {
 		const processing = customerMembershipViewModel(membership("processing"));
 		const rejected = customerMembershipViewModel(membership("rejected"));
 		const review = customerMembershipViewModel(membership("needs_review"));
+		const scheduled = customerMembershipViewModel(membership("scheduled"));
+		const revoked = customerMembershipViewModel(membership("revoked"));
 
 		expect(processing).toMatchObject({
 			label: "Processing",
@@ -40,9 +42,13 @@ describe("customer membership status presentation", () => {
 		expect(rejected.description).toContain("No active membership rights");
 		expect(review).toMatchObject({ label: "Needs review", tone: "review" });
 		expect(review.description).toContain("No active membership rights");
-		expect(JSON.stringify([processing, rejected, review])).not.toContain(
-			"reasonCode",
-		);
+		expect(scheduled).toMatchObject({ label: "Scheduled", tone: "processing" });
+		expect(scheduled.description).toContain("No active membership rights");
+		expect(revoked).toMatchObject({ label: "Revoked", tone: "rejected" });
+		expect(revoked.description).toContain("No active membership rights");
+		expect(
+			JSON.stringify([processing, rejected, review, scheduled, revoked]),
+		).not.toContain("reasonCode");
 	});
 
 	it("presents complete active and expired grant snapshots", () => {

@@ -228,7 +228,8 @@ export function createFestivalAppState() {
 		return (
 			settings?.verificationStatus === "ok" &&
 			settings.capabilities.read_products === "granted" &&
-			settings.capabilities.write_products === "granted"
+			settings.capabilities.write_products === "granted" &&
+			settings.capabilities.write_inventory === "granted"
 		);
 	});
 	const isAdminRoute = createMemo(() =>
@@ -346,6 +347,7 @@ export function createFestivalAppState() {
 			role: "Admin",
 		});
 		setFestivalDraft({
+			shortName: "",
 			name: "",
 			startDate: "",
 			endDate: "",

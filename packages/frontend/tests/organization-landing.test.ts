@@ -49,9 +49,10 @@ describe("public organization landing page", () => {
 			"/api/organizations/pafe/customer-auth/start?returnTo=%2Forg%2Fpafe",
 		);
 		expect(appHeader).toContain("isOrganizationPageRoute");
-		expect(appHeader).toContain("getCustomerSession");
-		expect(appHeader).toContain("logoutCustomer");
-		expect(appHeader).toContain('class="org-landing-header"');
+			expect(appHeader).toContain("getCustomerSession");
+			expect(appHeader).toContain("logoutCustomer");
+			expect(appHeader).toContain('route.kind === "org-accompanist-membership"');
+			expect(appHeader).toContain('class="org-landing-header"');
 		expect(page).not.toContain('class="org-landing-header"');
 		expect(page).not.toContain("handleLogout");
 	});

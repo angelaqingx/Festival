@@ -1,13 +1,17 @@
 import { createEffect, createSignal, For, onMount, Show } from "solid-js";
 import { Button } from "../components/Button.js";
 import {
+	ApiError,
 	acquireAccompanistMembership,
 	customerAccompanistMembershipSignInPath,
 	getAccompanistMembershipForm,
 	getCustomerProfile,
 	getCustomerSession,
 } from "../lib/api.js";
-import { buildOrgRootPath } from "../lib/routes.js";
+import {
+	buildOrgCustomerAccountMembershipsPath,
+	buildOrgRootPath,
+} from "../lib/routes.js";
 
 export function AccompanistMembershipPage(props: { slug: string }) {
 	const [csrfToken, setCsrfToken] = createSignal("");
@@ -25,7 +29,6 @@ export function AccompanistMembershipPage(props: { slug: string }) {
 	const [redirectingToShopify, setRedirectingToShopify] = createSignal(false);
 	const [submitting, setSubmitting] = createSignal(false);
 	const [error, setError] = createSignal("");
-	const [success, setSuccess] = createSignal("");
 	let signInDialog: HTMLElement | undefined;
 
 	onMount(async () => {
@@ -51,8 +54,12 @@ export function AccompanistMembershipPage(props: { slug: string }) {
 					: form.divisions.slice(0, 1).map((division) => division.id),
 			);
 			setAuthenticated(true);
-		} catch {
-			setError("Accompanist membership information could not be loaded.");
+		} catch (reason) {
+			setError(
+				reason instanceof ApiError && reason.status === 422
+					? reason.message
+					: "Accompanist membership information could not be loaded.",
+			);
 		} finally {
 			setLoading(false);
 		}
@@ -105,21 +112,18 @@ export function AccompanistMembershipPage(props: { slug: string }) {
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
 		setError("");
-		setSuccess("");
 		setSubmitting(true);
 		try {
-			const result = await acquireAccompanistMembership(
-				props.slug,
-				csrfToken(),
-				{
-					name: name(),
-					email: email(),
-					city: city(),
-					phone: phone(),
-					divisionIds: selected(),
-				},
+			await acquireAccompanistMembership(props.slug, csrfToken(), {
+				name: name(),
+				email: email(),
+				city: city(),
+				phone: phone(),
+				divisionIds: selected(),
+			});
+			window.location.assign(
+				buildOrgCustomerAccountMembershipsPath(props.slug),
 			);
-			setSuccess(`Membership active through ${result.membership.endsOn}.`);
 		} catch (reason) {
 			setError(
 				reason instanceof Error
@@ -137,7 +141,14 @@ export function AccompanistMembershipPage(props: { slug: string }) {
 			<Show when={loading()}>
 				<p role="status">Checking your sign-in status…</p>
 			</Show>
-			<Show when={error()}>{(message) => <p role="alert">{message()}</p>}</Show>
+			<Show when={error()}>
+				{(message) => (
+					<div class="shopify-warning-banner" role="alert">
+						<strong>Accompanist membership needs attention.</strong>
+						<p>{message()}</p>
+					</div>
+				)}
+			</Show>
 			<Show when={needsSignIn()}>
 				<div class="modal-backdrop" role="presentation">
 					<section
@@ -233,9 +244,6 @@ export function AccompanistMembershipPage(props: { slug: string }) {
 					<Button type="submit" disabled={submitting()}>
 						{submitting() ? "Saving…" : "Activate membership"}
 					</Button>
-					<Show when={success()}>
-						{(message) => <p role="status">{message()}</p>}
-					</Show>
 				</form>
 			</Show>
 		</section>

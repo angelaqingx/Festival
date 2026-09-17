@@ -1,8 +1,10 @@
 export type AccompanistMembershipSource = "accompanist_form";
 export type AccompanistMembershipGrantStatus =
+	| "scheduled"
 	| "active"
 	| "superseded"
-	| "expired";
+	| "expired"
+	| "revoked";
 
 export interface AccompanistContactSnapshot {
 	name: string;
@@ -21,7 +23,7 @@ export interface AccompanistMembershipGrant {
 	organizationId: string;
 	customerId: string;
 	normalizedEmail: string;
-	offeringId: string;
+	offeringId?: string;
 	offeringNameSnapshot: string;
 	source: AccompanistMembershipSource;
 	contact: AccompanistContactSnapshot;

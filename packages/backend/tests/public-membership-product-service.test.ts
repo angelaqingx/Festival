@@ -42,6 +42,7 @@ async function addTenant(
 		capabilities: {
 			read_products: "granted",
 			write_products: "missing",
+			write_inventory: "missing",
 			read_orders: "missing",
 			write_orders: "disabled",
 		},

@@ -149,6 +149,29 @@ export class InMemoryCustomerAccountRepository
 		);
 		return id ? (this.customers.get(id) ?? null) : null;
 	}
+	async recordVerifiedShopifyEmail(input: {
+		organizationId: string;
+		customerId: string;
+		email: string;
+		verifiedAtIso: string;
+	}) {
+		const customer = await this.getCustomer(
+			input.organizationId,
+			input.customerId,
+		);
+		if (!customer) return null;
+		const updated = {
+			...customer,
+			email: {
+				value: input.email,
+				source: "shopify" as const,
+				updatedAtIso: input.verifiedAtIso,
+			},
+			updatedAtIso: laterIso(customer.updatedAtIso, input.verifiedAtIso),
+		};
+		this.customers.set(updated.id, updated);
+		return updated;
+	}
 	async applyCustomerProfile(input: ApplyCustomerProfileInput) {
 		const current = await this.getCustomer(
 			input.organizationId,

@@ -10,6 +10,7 @@ export type ShopifyVerificationStatus =
 export const SHOPIFY_ADMIN_CAPABILITIES = [
 	"read_products",
 	"write_products",
+	"write_inventory",
 	"read_orders",
 	"write_orders",
 ] as const;
@@ -19,6 +20,9 @@ export const SHOPIFY_REQUIRED_SCOPES = [
 	"read_orders",
 	"read_products",
 	"write_products",
+	"write_inventory",
+	"read_publications",
+	"write_publications",
 	"customer_read_customers",
 	"customer_read_draft_orders",
 	"customer_read_metaobjects",
@@ -38,6 +42,7 @@ export type ShopifyCapabilityDiagnostics = Record<
 export const EMPTY_SHOPIFY_CAPABILITIES: ShopifyCapabilityDiagnostics = {
 	read_products: "missing",
 	write_products: "missing",
+	write_inventory: "missing",
 	read_orders: "missing",
 	write_orders: "disabled",
 };
@@ -46,8 +51,10 @@ export function normalizeEffectiveShopifyScopes(
 	grantedScopes: readonly string[],
 ): string[] {
 	const scopes = new Set(grantedScopes);
-	if (scopes.has("write_products")) {
-		scopes.add("read_products");
+	for (const scope of grantedScopes) {
+		if (scope.startsWith("write_")) {
+			scopes.add(`read_${scope.slice("write_".length)}`);
+		}
 	}
 	return [...scopes].sort();
 }
@@ -59,6 +66,7 @@ export function deriveShopifyCapabilities(
 	return {
 		read_products: scopes.has("read_products") ? "granted" : "missing",
 		write_products: scopes.has("write_products") ? "granted" : "missing",
+		write_inventory: scopes.has("write_inventory") ? "granted" : "missing",
 		read_orders: scopes.has("read_orders") ? "granted" : "missing",
 		write_orders: "disabled",
 	};
@@ -145,6 +153,7 @@ export interface SaveShopifyIntegrationResponse {
 export const SHOPIFY_INTEGRATION_DIAGNOSTIC_IDS = [
 	"orders_paid_webhook",
 	"public_storefront_access",
+	"private_storefront_token",
 ] as const;
 
 export type ShopifyIntegrationDiagnosticId =
