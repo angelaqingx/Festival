@@ -18,6 +18,7 @@ export function AppHeader(props: AppHeaderProps) {
 		const route = props.app.route();
 		return route.kind === "org-root" ||
 			route.kind === "org-membership" ||
+			route.kind === "org-accompanist-membership" ||
 			route.kind === "org-customer-account-legacy" ||
 			route.kind === "org-customer-account-memberships" ||
 			route.kind === "org-customer-account-contact" ||
@@ -66,8 +67,8 @@ export function AppHeader(props: AppHeaderProps) {
 							when={props.app.isAdminRoute()}
 							fallback={
 								<>
-									<h1>Get Started.</h1>
-									<p class="lede">Sign up to get started.</p>
+									<h1>Festival</h1>
+									<p class="lede">General Informtion.</p>
 								</>
 							}
 						>

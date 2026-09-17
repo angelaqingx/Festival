@@ -11,6 +11,11 @@ import {
 	membershipStatusSignature,
 } from "./customerMembershipStatus.js";
 
+function membershipDisplayName(entitlementClass: string): string {
+	const name = entitlementClass.split("_", 1)[0] ?? "";
+	return `${name.slice(0, 1).toUpperCase()}${name.slice(1)}`;
+}
+
 export function CustomerAccountMembershipsPage(props: { slug: string }) {
 	const [memberships, setMemberships] = createSignal<
 		CustomerMembershipStatusEntry[]
@@ -220,7 +225,9 @@ export function CustomerAccountMembershipsPage(props: { slug: string }) {
 												class={`customer-membership-card customer-membership-${view.tone}`}
 											>
 												<header>
-													<h3>{membership.displayName}</h3>
+													<h3>
+														{membershipDisplayName(membership.entitlementClass)}
+													</h3>
 													<span class="customer-membership-badge">
 														{view.label}
 													</span>

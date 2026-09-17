@@ -7,6 +7,7 @@ import type {
 } from "@festival/common";
 import {
 	deriveShopifyCapabilities,
+	normalizeEffectiveShopifyScopes,
 	SHOPIFY_REQUIRED_SCOPES,
 	validateShopifySettingsInput,
 } from "@festival/common";
@@ -78,7 +79,7 @@ function toPublicSettings(
 		verifiedShopGid: record.verifiedShopGid,
 		verifiedShopDomain: record.verifiedShopDomain,
 		verifiedScopes: SHOPIFY_REQUIRED_SCOPES.filter((scope) =>
-			record.grantedScopes.includes(scope),
+			normalizeEffectiveShopifyScopes(record.grantedScopes).includes(scope),
 		),
 		capabilities: { ...record.capabilities },
 		integrationVersion: record.integrationVersion,

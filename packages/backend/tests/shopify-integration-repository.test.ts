@@ -31,6 +31,7 @@ describe("Shopify integration repository", () => {
 			capabilities: {
 				read_products: "granted",
 				write_products: "granted",
+				write_inventory: "granted",
 				read_orders: "missing",
 				write_orders: "disabled",
 			},

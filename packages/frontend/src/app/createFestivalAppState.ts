@@ -37,6 +37,7 @@ const ADMIN_ROUTE_KINDS = [
 	"org-admin-memberships",
 	"org-admin-festivals",
 	"org-admin-divisions",
+	"org-admin-accompanists",
 ] as const;
 
 export const INVITE_FEEDBACK_DURATION_MS = 2200;
@@ -113,6 +114,7 @@ export function createFestivalAppState() {
 	const [inviteFeedback, setInviteFeedback] =
 		createSignal<InviteFeedback | null>(null);
 	const [festivalDraft, setFestivalDraft] = createSignal<FestivalDraft>({
+		shortName: "",
 		name: "",
 		startDate: "",
 		endDate: "",
@@ -226,7 +228,8 @@ export function createFestivalAppState() {
 		return (
 			settings?.verificationStatus === "ok" &&
 			settings.capabilities.read_products === "granted" &&
-			settings.capabilities.write_products === "granted"
+			settings.capabilities.write_products === "granted" &&
+			settings.capabilities.write_inventory === "granted"
 		);
 	});
 	const isAdminRoute = createMemo(() =>
@@ -238,7 +241,8 @@ export function createFestivalAppState() {
 			route().kind === "org-admin-integrations" ||
 			route().kind === "org-admin-memberships" ||
 			route().kind === "org-admin-festivals" ||
-			route().kind === "org-admin-divisions",
+			route().kind === "org-admin-divisions" ||
+			route().kind === "org-admin-accompanists",
 	);
 	const adminBreadcrumb = createMemo(() => {
 		switch (route().kind) {
@@ -343,6 +347,7 @@ export function createFestivalAppState() {
 			role: "Admin",
 		});
 		setFestivalDraft({
+			shortName: "",
 			name: "",
 			startDate: "",
 			endDate: "",

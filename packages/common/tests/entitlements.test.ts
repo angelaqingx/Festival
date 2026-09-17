@@ -5,11 +5,16 @@ import {
 	assertValidEntitlementGrantSnapshotInput,
 	calendarDateInTimezone,
 	deriveEntitlementDates,
+	deriveEntitlementLifecycle,
 	INITIAL_TEACHER_MEMBERSHIP_DURATION_DAYS,
+	isEntitlementClass,
 	MAX_ENTITLEMENT_DURATION_DAYS,
 } from "../src/entitlements.js";
 
 describe("Teacher Membership entitlement contracts", () => {
+	it("allows the bounded accompanist entitlement class without changing grant rules", () => {
+		expect(isEntitlementClass("accompanist_membership")).toBe(true);
+	});
 	it("accepts bounded positive integer durations", () => {
 		expect(
 			assertValidEntitlementDurationDays(
@@ -48,6 +53,25 @@ describe("Teacher Membership entitlement contracts", () => {
 		expect(
 			calendarDateInTimezone("2026-11-01T08:30:00.000Z", "America/Los_Angeles"),
 		).toBe("2026-11-01");
+	});
+
+	it("derives lifecycle state without persisting a state transition", () => {
+		const entitlement = { startsOn: "2026-08-14", endsOn: "2027-08-14" };
+		expect(deriveEntitlementLifecycle(entitlement, "2026-08-13")).toBe(
+			"scheduled",
+		);
+		expect(deriveEntitlementLifecycle(entitlement, "2026-08-14")).toBe(
+			"active",
+		);
+		expect(deriveEntitlementLifecycle(entitlement, "2027-08-14")).toBe(
+			"expired",
+		);
+		expect(
+			deriveEntitlementLifecycle(
+				{ ...entitlement, revokedAtIso: "2026-09-01T00:00:00Z" },
+				"2026-08-14",
+			),
+		).toBe("revoked");
 	});
 
 	it("rejects invalid dates, timestamps, and timezones explicitly", () => {

@@ -4,7 +4,11 @@ import type {
 	ShopifyFailureCategory,
 } from "@festival/common";
 import {
+	ACCOMPANIST_MEMBERSHIP_ENTITLEMENT_CLASS,
+	assertValidEntitlementDurationDays,
+	type EntitlementClass,
 	INITIAL_TEACHER_MEMBERSHIP_DURATION_DAYS,
+	normalizeEffectiveShopifyScopes,
 	TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
 	validateMembershipProductInput,
 } from "@festival/common";
@@ -23,7 +27,7 @@ import {
 	SHOPIFY_CLIENT_SECRET_PURPOSE,
 	type ShopifySecretKeyring,
 } from "./encryption.js";
-import { ShopifyIntegrationError } from "./errors.js";
+import { ShopifyIntegrationError, ShopifyScopeError } from "./errors.js";
 import type {
 	ShopifyAdminOperationContext,
 	ShopifyAdminResult,
@@ -58,6 +62,12 @@ function toAppError(error: unknown): AppError {
 	if (error instanceof AppError) {
 		return error;
 	}
+	if (error instanceof ShopifyScopeError) {
+		return new AppError(
+			"Shopify integration is missing a required scope. Save and verify Shopify settings after approving write_inventory.",
+			409,
+		);
+	}
 
 	if (error instanceof ShopifyIntegrationError || error instanceof Error) {
 		return new AppError("Shopify membership product operation failed.", 502);
@@ -69,6 +79,7 @@ function toAppError(error: unknown): AppError {
 function assertSupportedProductShape(
 	product: ShopifyProductDetails,
 	expectedProductGid?: string,
+	requireDigital = true,
 ): ShopifyProductVariant {
 	if (!product.id) {
 		throw new AppError(
@@ -124,6 +135,13 @@ function assertSupportedProductShape(
 		);
 	}
 
+	if (requireDigital && variant.requiresShipping !== false) {
+		throw new AppError(
+			"Shopify membership product variant must not require shipping.",
+			502,
+		);
+	}
+
 	return variant;
 }
 
@@ -161,6 +179,186 @@ export class ShopifyMembershipProductService {
 		tenant: TenantContext,
 		input: unknown,
 	): Promise<MembershipProductSummary> {
+		return this.createOffering(tenant, input, {
+			entitlementClass: TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
+			durationDays: INITIAL_TEACHER_MEMBERSHIP_DURATION_DAYS,
+		});
+	}
+
+	async createAccompanistOffering(
+		tenant: TenantContext,
+		input: unknown,
+	): Promise<MembershipProductSummary> {
+		if (!input || typeof input !== "object") {
+			throw new AppError("Accompanist offering is required.", 400);
+		}
+		let durationDays: number;
+		try {
+			durationDays = assertValidEntitlementDurationDays(
+				(input as { durationDays?: unknown }).durationDays,
+			);
+		} catch (error) {
+			throw new AppError(
+				error instanceof Error ? error.message : "Duration is invalid.",
+				400,
+			);
+		}
+		return this.createOffering(tenant, input, {
+			entitlementClass: ACCOMPANIST_MEMBERSHIP_ENTITLEMENT_CLASS,
+			durationDays,
+		});
+	}
+
+	async updateAccompanistOffering(
+		tenant: TenantContext,
+		offeringId: string,
+		input: unknown,
+	): Promise<MembershipProductSummary> {
+		if (!input || typeof input !== "object") {
+			throw new AppError("Accompanist offering is required.", 400);
+		}
+		const validation = validateMembershipProductInput(input);
+		if (!validation.valid) throw new AppError(validation.errors.join(" "), 400);
+		let durationDays: number;
+		try {
+			durationDays = assertValidEntitlementDurationDays(
+				(input as { durationDays?: unknown }).durationDays,
+			);
+		} catch (error) {
+			throw new AppError(
+				error instanceof Error ? error.message : "Duration is invalid.",
+				400,
+			);
+		}
+		const offering = await this.repository.findMembershipProductRecordByClass(
+			tenant.organization.id,
+			ACCOMPANIST_MEMBERSHIP_ENTITLEMENT_CLASS,
+		);
+		if (!offering || offering.id !== offeringId) {
+			throw new AppError("Accompanist offering was not found.", 404);
+		}
+		const writeContext = await this.loadOperationContext(
+			tenant,
+			"write_products",
+		);
+		await this.loadOperationContext(tenant, "write_inventory");
+		const readContext = await this.loadOperationContext(
+			tenant,
+			"read_products",
+		);
+		try {
+			await this.attemptMutation(writeContext, "productUpdate", () =>
+				this.shopifyClient.updateProductDetails(writeContext, {
+					productId: offering.shopifyProductGid,
+					name: validation.input.name,
+					description: validation.input.description,
+				}),
+			);
+			await this.attemptMutation(writeContext, "productVariantUpdate", () =>
+				this.shopifyClient.updateVariantPrice(writeContext, {
+					productId: offering.shopifyProductGid,
+					variantId: offering.shopifyVariantGid,
+					price: validation.input.price,
+				}),
+			);
+			await this.setInventoryItemShipping(
+				writeContext,
+				readContext,
+				offering.shopifyVariantGid,
+				offering.shopifyProductGid,
+			);
+			const { value: confirmed } = await this.shopifyClient.readProductsByGid(
+				readContext,
+				[offering.shopifyProductGid],
+			);
+			const product = confirmed[0];
+			if (!product)
+				throw new AppError("Shopify membership product was not found.", 502);
+			const variant = assertSupportedProductShape(
+				product,
+				offering.shopifyProductGid,
+			);
+			if (variant.id !== offering.shopifyVariantGid)
+				throw new AppError(
+					"Shopify membership product variant did not match the local association.",
+					502,
+				);
+			const updated = await this.repository.updateMembershipProductRecord({
+				organizationId: tenant.organization.id,
+				productId: offering.id,
+				productNameSnapshot: product.title,
+				durationDays,
+			});
+			if (!updated)
+				throw new AppError("Accompanist offering was not found.", 404);
+			return toSummary(updated, product, variant);
+		} catch (error) {
+			throw toAppError(error);
+		}
+	}
+
+	async resolveActiveFreeAccompanistOffering(
+		organizationId: string,
+	): Promise<ProductRecord> {
+		const offering = await this.repository.findMembershipProductRecordByClass(
+			organizationId,
+			ACCOMPANIST_MEMBERSHIP_ENTITLEMENT_CLASS,
+		);
+		if (!offering?.isActive)
+			throw new AppError("Accompanist offering is unavailable.", 409);
+		const integration =
+			await this.repository.getShopifyIntegration(organizationId);
+		this.assertVerifiedIntegration(integration, "read_products");
+		const context: ShopifyAdminOperationContext = {
+			organizationId,
+			firebaseActorUid: "accompanist-form",
+			verifiedShopGid: integration.verifiedShopGid,
+			verifiedShopDomain: integration.verifiedShopDomain,
+			integrationVersion: integration.integrationVersion,
+			grantedScopes: [...integration.grantedScopes],
+			capability: "read_products",
+			credentials: {
+				organizationId,
+				storeDomain: integration.storeDomain,
+				clientId: integration.clientId,
+				clientSecret: this.secretKeyring.decrypt(
+					integration.encryptedClientSecret,
+					{ organizationId, purpose: SHOPIFY_CLIENT_SECRET_PURPOSE },
+				),
+				integrationVersion: integration.integrationVersion,
+			},
+		};
+		try {
+			const { value } = await this.shopifyClient.readProductsByGid(context, [
+				offering.shopifyProductGid,
+			]);
+			const product = value[0];
+			if (!product)
+				throw new AppError("Accompanist offering is unavailable.", 409);
+			const variant = assertSupportedProductShape(
+				product,
+				offering.shopifyProductGid,
+			);
+			if (
+				variant.id !== offering.shopifyVariantGid ||
+				!/^0(?:\.0{1,2})?$/.test(variant.price.amount)
+			) {
+				throw new AppError(
+					"Accompanist offering is not available for free acquisition.",
+					409,
+				);
+			}
+			return offering;
+		} catch (error) {
+			throw toAppError(error);
+		}
+	}
+
+	private async createOffering(
+		tenant: TenantContext,
+		input: unknown,
+		options: { entitlementClass: EntitlementClass; durationDays: number },
+	): Promise<MembershipProductSummary> {
 		const validation = validateMembershipProductInput(input);
 		if (!validation.valid) {
 			throw new AppError(validation.errors.join(" "), 400);
@@ -169,7 +367,7 @@ export class ShopifyMembershipProductService {
 		const existingOffering =
 			await this.repository.findMembershipProductRecordByClass(
 				tenant.organization.id,
-				TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
+				options.entitlementClass,
 			);
 		if (existingOffering) {
 			throw new AppError(
@@ -177,11 +375,16 @@ export class ShopifyMembershipProductService {
 				409,
 			);
 		}
+		const integration = await this.repository.getShopifyIntegration(
+			tenant.organization.id,
+		);
+		this.assertPublicationScopes(integration);
 
 		const writeContext = await this.loadOperationContext(
 			tenant,
 			"write_products",
 		);
+		await this.loadOperationContext(tenant, "write_inventory");
 		const readContext = await this.loadOperationContext(
 			tenant,
 			"read_products",
@@ -201,7 +404,11 @@ export class ShopifyMembershipProductService {
 					createdProduct = product;
 				},
 			);
-			let variant = assertSupportedProductShape(createdProduct);
+			let variant = assertSupportedProductShape(
+				createdProduct,
+				undefined,
+				false,
+			);
 
 			const pricedProduct = await this.attemptMutation(
 				writeContext,
@@ -213,7 +420,17 @@ export class ShopifyMembershipProductService {
 						price: validation.input.price,
 					}),
 			);
-			variant = assertSupportedProductShape(pricedProduct, createdProduct.id);
+			variant = assertSupportedProductShape(
+				pricedProduct,
+				createdProduct.id,
+				false,
+			);
+			await this.setInventoryItemShipping(
+				writeContext,
+				readContext,
+				variant.id,
+				createdProduct.id,
+			);
 			const { value: confirmedProducts } =
 				await this.shopifyClient.readProductsByGid(readContext, [
 					pricedProduct.id,
@@ -226,11 +443,17 @@ export class ShopifyMembershipProductService {
 				confirmedProduct,
 				createdProduct.id,
 			);
+			await this.attemptMutation(writeContext, "productPublish", () =>
+				this.shopifyClient.publishProductToHeadlessStorefront(
+					writeContext,
+					confirmedProduct.id,
+				),
+			);
 
 			const record = await this.repository.createMembershipProductRecord({
 				organizationId: tenant.organization.id,
-				entitlementClass: TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
-				durationDays: INITIAL_TEACHER_MEMBERSHIP_DURATION_DAYS,
+				entitlementClass: options.entitlementClass,
+				durationDays: options.durationDays,
 				isActive: true,
 				shopifyProductGid: confirmedProduct.id,
 				shopifyVariantGid: variant.id,
@@ -325,6 +548,44 @@ export class ShopifyMembershipProductService {
 		};
 	}
 
+	private async setInventoryItemShipping(
+		context: ShopifyAdminOperationContext,
+		readContext: ShopifyAdminOperationContext,
+		variantId: string,
+		productId: string,
+	): Promise<void> {
+		const { value: products } = await this.shopifyClient.readProductsByGid(
+			readContext,
+			[productId],
+		);
+		const product = products[0];
+		if (!product) {
+			throw new AppError("Shopify membership product was not found.", 502);
+		}
+		const variant = assertSupportedProductShape(product, productId, false);
+		if (variant.id !== variantId || !variant.inventoryItemId) {
+			throw new AppError(
+				"Shopify membership product inventory item was not found.",
+				502,
+			);
+		}
+		const updated = await this.attemptMutation(
+			context,
+			"inventoryItemUpdate",
+			() =>
+				this.shopifyClient.updateInventoryItem(context, {
+					inventoryItemId: variant.inventoryItemId ?? "",
+					requiresShipping: false,
+				}),
+		);
+		if (updated.requiresShipping) {
+			throw new AppError(
+				"Shopify membership product variant must not require shipping.",
+				502,
+			);
+		}
+	}
+
 	private assertVerifiedIntegration(
 		integration: ShopifyIntegrationRecord | null,
 		capability: ShopifyAdminCapability,
@@ -345,7 +606,24 @@ export class ShopifyMembershipProductService {
 		}
 		if (integration.capabilities[capability] !== "granted") {
 			throw new AppError(
-				"Shopify integration does not grant the required capability.",
+				capability === "write_inventory"
+					? "Shopify integration does not grant write_inventory. Save and verify Shopify settings after approving the scope."
+					: "Shopify integration does not grant the required capability.",
+				409,
+			);
+		}
+	}
+
+	private assertPublicationScopes(
+		integration: ShopifyIntegrationRecord | null,
+	): void {
+		this.assertVerifiedIntegration(integration, "write_products");
+		const scopes = new Set(
+			normalizeEffectiveShopifyScopes(integration?.grantedScopes ?? []),
+		);
+		if (!scopes.has("read_publications") || !scopes.has("write_publications")) {
+			throw new AppError(
+				"Shopify integration must grant write_publications, which includes read_publications, to publish membership products to Headless. Save and verify Shopify settings after approving this scope.",
 				409,
 			);
 		}

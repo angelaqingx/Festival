@@ -1,5 +1,7 @@
 import type {
 	CustomerMailingAddress,
+	FestivalChildAgeSnapshot,
+	FestivalChildRecord,
 	UpdateCustomerProfileInput,
 } from "@festival/common";
 
@@ -142,6 +144,12 @@ export interface CustomerAccountRepository {
 		organizationId: string,
 		shopifyCustomerGid: string,
 	): Promise<FestivalCustomerRecord | null>;
+	recordVerifiedShopifyEmail(input: {
+		organizationId: string;
+		customerId: string;
+		email: string;
+		verifiedAtIso: string;
+	}): Promise<FestivalCustomerRecord | null>;
 	applyCustomerProfile(
 		input: ApplyCustomerProfileInput,
 	): Promise<FestivalCustomerRecord | null>;
@@ -173,4 +181,21 @@ export interface CustomerAccountRepository {
 		organizationId: string,
 		revokedAtIso: string,
 	): Promise<void>;
+	createChild(
+		input: Omit<FestivalChildRecord, "id" | "createdAtIso">,
+	): Promise<FestivalChildRecord>;
+	listChildren(
+		organizationId: string,
+		parentCustomerId: string,
+	): Promise<FestivalChildRecord[]>;
+	createChildAgeSnapshot(
+		input: Omit<
+			FestivalChildAgeSnapshot,
+			"id" | "createdAtIso" | "supersededAtIso"
+		>,
+	): Promise<FestivalChildAgeSnapshot>;
+	listChildAgeSnapshots(
+		organizationId: string,
+		childId: string,
+	): Promise<FestivalChildAgeSnapshot[]>;
 }
