@@ -347,6 +347,7 @@ export function createFestivalAppState() {
 			role: "Admin",
 		});
 		setFestivalDraft({
+			shortName: "",
 			name: "",
 			startDate: "",
 			endDate: "",

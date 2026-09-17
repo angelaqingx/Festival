@@ -496,6 +496,14 @@ describe("organization onboarding integration", () => {
 		expect(source).toContain("organizationShortName().trim().toLowerCase()");
 	});
 
+	it("resets every required festival draft field when onboarding state is cleared", async () => {
+		const appState = await Bun.file("src/app/createFestivalAppState.ts").text();
+
+		expect(appState).toContain(
+			'setFestivalDraft({\n\t\t\tshortName: "",\n\t\t\tname: "",',
+		);
+	});
+
 	it("keeps issue 63 onboarding validation and invite UX wired in the frontend", async () => {
 		const source = await readFrontendSource();
 		const styles = await Bun.file("src/styles.css").text();

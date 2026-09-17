@@ -31,7 +31,9 @@ describe("accompanist membership authentication gate", () => {
 	});
 
 	it("shows validation failures in the admin-style Shopify warning banner", () => {
-		expect(page).toContain("reason instanceof ApiError && reason.status === 422");
+		expect(page).toContain(
+			"reason instanceof ApiError && reason.status === 422",
+		);
 		expect(page).toContain('class="shopify-warning-banner" role="alert"');
 		expect(page).toContain("Accompanist membership needs attention.");
 	});
@@ -50,5 +52,13 @@ describe("accompanist membership authentication gate", () => {
 		);
 		expect(page).toContain("buildOrgRootPath(props.slug)");
 		expect(page).toContain("redirectingToShopify()");
+	});
+
+	it("redirects to the organization account memberships page after activation", () => {
+		expect(page).toContain("buildOrgCustomerAccountMembershipsPath");
+		expect(page).toContain("window.location.assign(");
+		expect(page).toContain(
+			"buildOrgCustomerAccountMembershipsPath(props.slug)",
+		);
 	});
 });

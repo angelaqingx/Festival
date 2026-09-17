@@ -121,6 +121,8 @@ describe("customer account frontend boundary", () => {
 		expect(membershipsPage).toContain("onCleanup");
 		expect(membershipsPage).toContain("membershipInitialSignature");
 		expect(membershipsPage).toContain("removeCheckoutProcessingQuery");
+		expect(membershipsPage).toContain("membershipDisplayName");
+		expect(membershipsPage).toContain('entitlementClass.split("_", 1)');
 		expect(membershipsPage).not.toContain("reasonCode");
 		expect(membershipsPage).not.toMatch(
 			/shopifyOrderGid|shopifyOrderLineGid|checkoutIntentId|accessToken|refreshToken|idToken/,
