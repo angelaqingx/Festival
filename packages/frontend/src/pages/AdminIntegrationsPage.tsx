@@ -1,4 +1,5 @@
 import {
+	normalizeEffectiveShopifyScopes,
 	SHOPIFY_AUTOMATICALLY_VERIFIED_SCOPES,
 	SHOPIFY_REQUIRED_SCOPES,
 	type ShopifyIntegrationDiagnosticCheck,
@@ -47,10 +48,19 @@ function diagnosticLabel(id: ShopifyIntegrationDiagnosticCheck["id"]): string {
 export function missingRequiredShopifyScopes(
 	verifiedScopes: readonly string[],
 ): string[] {
-	const grantedScopes = new Set(verifiedScopes);
+	const grantedScopes = new Set(
+		normalizeEffectiveShopifyScopes(verifiedScopes),
+	);
 	return SHOPIFY_AUTOMATICALLY_VERIFIED_SCOPES.filter(
 		(scope) => !grantedScopes.has(scope),
 	);
+}
+
+function hasVerifiedShopifyScope(
+	verifiedScopes: readonly string[],
+	scope: string,
+): boolean {
+	return normalizeEffectiveShopifyScopes(verifiedScopes).includes(scope);
 }
 
 export function buildShopifyAppUrl(origin: string, shortName: string): string {
@@ -196,7 +206,10 @@ export function AdminIntegrationsPage(props: AdminIntegrationsPageProps) {
 											{(scope) => (
 												<li>
 													{scope}:{" "}
-													{settings.verifiedScopes.includes(scope)
+													{hasVerifiedShopifyScope(
+														settings.verifiedScopes,
+														scope,
+													)
 														? "Granted"
 														: "Missing"}
 												</li>

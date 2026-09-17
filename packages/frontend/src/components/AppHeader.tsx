@@ -67,8 +67,8 @@ export function AppHeader(props: AppHeaderProps) {
 							when={props.app.isAdminRoute()}
 							fallback={
 								<>
-									<h1>Get Started.</h1>
-									<p class="lede">Sign up to get started.</p>
+									<h1>Festival</h1>
+									<p class="lede">General Informtion.</p>
 								</>
 							}
 						>

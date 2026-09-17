@@ -326,6 +326,30 @@ describe("ShopifyIntegrationService", () => {
 		expect(stored?.grantedScopes).toEqual(["read_products", "read_orders"]);
 	});
 
+	it("reports the read publication requirement as granted when write_publications is granted", async () => {
+		const repository = new InMemoryOrganizationRepository();
+		const service = new ShopifyIntegrationService(
+			repository,
+			createKeyring(),
+			new FakeShopifyTester(false, {
+				shopGid: "gid://shopify/Shop/1",
+				shopDomain: "example.myshopify.com",
+				grantedScopes: ["write_publications"],
+			}),
+		);
+		const tenant = await createTenant(repository);
+		const response = await service.saveAndTestForTenant(tenant, {
+			storeUrl: "example.myshopify.com",
+			clientId: "client-id",
+			clientSecret: "client-secret",
+		});
+
+		expect(response.settings.verifiedScopes).toEqual([
+			"read_publications",
+			"write_publications",
+		]);
+	});
+
 	it("preserves typed Admin authorization failure categories", async () => {
 		class UnauthorizedShopTester implements ShopifyConnectivityTester {
 			async testCredentials(): Promise<ShopifyVerificationResult> {

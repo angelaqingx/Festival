@@ -268,7 +268,6 @@ async function saveIntegration(
 				"read_products",
 				"write_products",
 				"write_inventory",
-				"read_publications",
 				"write_publications",
 				"read_orders",
 			],
@@ -293,7 +292,7 @@ async function saveIntegration(
 }
 
 describe("ShopifyMembershipProductService", () => {
-	it("creates a Shopify product, updates the single variant price, and stores opaque GIDs", async () => {
+	it("accepts write_publications as publication read access when creating a Shopify product", async () => {
 		const repository = new InMemoryOrganizationRepository();
 		const organization = await createOrganization(repository);
 		const encryptor = await saveIntegration(repository, organization);

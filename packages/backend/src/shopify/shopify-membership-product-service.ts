@@ -8,6 +8,7 @@ import {
 	assertValidEntitlementDurationDays,
 	type EntitlementClass,
 	INITIAL_TEACHER_MEMBERSHIP_DURATION_DAYS,
+	normalizeEffectiveShopifyScopes,
 	TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
 	validateMembershipProductInput,
 } from "@festival/common";
@@ -617,10 +618,12 @@ export class ShopifyMembershipProductService {
 		integration: ShopifyIntegrationRecord | null,
 	): void {
 		this.assertVerifiedIntegration(integration, "write_products");
-		const scopes = new Set(integration?.grantedScopes ?? []);
+		const scopes = new Set(
+			normalizeEffectiveShopifyScopes(integration?.grantedScopes ?? []),
+		);
 		if (!scopes.has("read_publications") || !scopes.has("write_publications")) {
 			throw new AppError(
-				"Shopify integration must grant read_publications and write_publications to publish membership products to Headless. Save and verify Shopify settings after approving these scopes.",
+				"Shopify integration must grant write_publications, which includes read_publications, to publish membership products to Headless. Save and verify Shopify settings after approving this scope.",
 				409,
 			);
 		}

@@ -39,8 +39,15 @@ describe("Shopify settings contract", () => {
 				"write_products",
 				"read_orders",
 				"write_products",
+				"write_publications",
 			]),
-		).toEqual(["read_orders", "read_products", "write_products"]);
+		).toEqual([
+			"read_orders",
+			"read_products",
+			"read_publications",
+			"write_products",
+			"write_publications",
+		]);
 		expect(
 			deriveShopifyCapabilities(["read_orders", "write_products"]),
 		).toEqual({
@@ -63,7 +70,7 @@ describe("Shopify settings contract", () => {
 			read_products: "granted",
 			write_products: "missing",
 			write_inventory: "missing",
-			read_orders: "missing",
+			read_orders: "granted",
 			write_orders: "disabled",
 		});
 	});

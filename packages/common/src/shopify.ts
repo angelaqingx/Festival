@@ -51,8 +51,10 @@ export function normalizeEffectiveShopifyScopes(
 	grantedScopes: readonly string[],
 ): string[] {
 	const scopes = new Set(grantedScopes);
-	if (scopes.has("write_products")) {
-		scopes.add("read_products");
+	for (const scope of grantedScopes) {
+		if (scope.startsWith("write_")) {
+			scopes.add(`read_${scope.slice("write_".length)}`);
+		}
 	}
 	return [...scopes].sort();
 }
