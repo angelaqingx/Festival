@@ -90,6 +90,10 @@ export interface ShopifyMembershipProductClient {
 		context: ShopifyAdminOperationContext,
 		input: { inventoryItemId: string; requiresShipping: boolean },
 	): Promise<ShopifyAdminResult<{ requiresShipping: boolean }>>;
+	publishProductToHeadlessStorefront(
+		context: ShopifyAdminOperationContext,
+		productId: string,
+	): Promise<ShopifyAdminResult<void>>;
 	updateProductDetails(
 		context: ShopifyAdminOperationContext,
 		input: { productId: string; name: string; description?: string },

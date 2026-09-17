@@ -5,6 +5,7 @@ import { MembershipStatusService } from "../src/commerce/membership-status-servi
 import { ShopifyOrderProjectionService } from "../src/commerce/shopify-order-projection-service.js";
 import { InMemoryCustomerAccountRepository } from "../src/customer/in-memory-customer-account-repository.js";
 import { InMemoryOrganizationRepository } from "../src/repo/in-memory-organization-repository.js";
+import { AccompanistMembershipService } from "../src/services/accompanist-membership-service.js";
 import { ShopifySecretKeyring } from "../src/shopify/encryption.js";
 import { ShopifyAdminApiError } from "../src/shopify/errors.js";
 import type {
@@ -225,6 +226,42 @@ async function delivery(
 }
 
 describe("Shopify order projection", () => {
+	it("returns an active accompanist-form entitlement in customer membership status", async () => {
+		const f = await fixture();
+		await new AccompanistMembershipService(f.organizations, () => NOW).acquire({
+			organizationId: f.organization.id,
+			organizationTimezone: "America/Los_Angeles",
+			customerId: f.customer.id,
+			verifiedShopifyCustomerEmail: "customer@example.test",
+			payload: {
+				name: "Ava Piano",
+				email: "ava@example.test",
+				city: "Seattle",
+				phone: "+1 206 555 0100",
+				divisionIds: [f.division.id],
+			},
+		});
+
+		expect(
+			await new MembershipStatusService(
+				f.organizations,
+				f.commerce,
+				() => NOW,
+			).listForCustomer(f.organization.id, f.customer.id),
+		).toEqual({
+			memberships: [
+				{
+					status: "active",
+					entitlementClass: "accompanist_membership",
+					displayName: "Accompanist Membership",
+					divisionName: "Piano",
+					startsOn: "2026-08-28",
+					endsOn: "2027-08-28",
+				},
+			],
+		});
+	});
+
 	it("records bounded Shopify read diagnostics and safely retries the delivery", async () => {
 		const f = await fixture();
 		f.orders.readFailure = new ShopifyAdminApiError(

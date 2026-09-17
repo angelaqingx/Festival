@@ -374,6 +374,10 @@ export class ShopifyMembershipProductService {
 				409,
 			);
 		}
+		const integration = await this.repository.getShopifyIntegration(
+			tenant.organization.id,
+		);
+		this.assertPublicationScopes(integration);
 
 		const writeContext = await this.loadOperationContext(
 			tenant,
@@ -437,6 +441,12 @@ export class ShopifyMembershipProductService {
 			variant = assertSupportedProductShape(
 				confirmedProduct,
 				createdProduct.id,
+			);
+			await this.attemptMutation(writeContext, "productPublish", () =>
+				this.shopifyClient.publishProductToHeadlessStorefront(
+					writeContext,
+					confirmedProduct.id,
+				),
 			);
 
 			const record = await this.repository.createMembershipProductRecord({
@@ -598,6 +608,19 @@ export class ShopifyMembershipProductService {
 				capability === "write_inventory"
 					? "Shopify integration does not grant write_inventory. Save and verify Shopify settings after approving the scope."
 					: "Shopify integration does not grant the required capability.",
+				409,
+			);
+		}
+	}
+
+	private assertPublicationScopes(
+		integration: ShopifyIntegrationRecord | null,
+	): void {
+		this.assertVerifiedIntegration(integration, "write_products");
+		const scopes = new Set(integration?.grantedScopes ?? []);
+		if (!scopes.has("read_publications") || !scopes.has("write_publications")) {
+			throw new AppError(
+				"Shopify integration must grant read_publications and write_publications to publish membership products to Headless. Save and verify Shopify settings after approving these scopes.",
 				409,
 			);
 		}

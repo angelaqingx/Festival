@@ -96,6 +96,11 @@ describe("ShopifyIntegrationDiagnosticService", () => {
 					status: "passed",
 					message: "Public Storefront access is available.",
 				},
+				{
+					id: "private_storefront_token",
+					status: "failed",
+					message: "No private Storefront token is configured.",
+				},
 			],
 		});
 		client.result = "locked";
@@ -108,6 +113,11 @@ describe("ShopifyIntegrationDiagnosticService", () => {
 					status: "failed",
 					message:
 						"Shopify's Online Store channel is locked. Public membership browsing is unavailable until the storefront is publicly accessible.",
+				},
+				{
+					id: "private_storefront_token",
+					status: "failed",
+					message: "No private Storefront token is configured.",
 				},
 			],
 		});
@@ -144,6 +154,11 @@ describe("ShopifyIntegrationDiagnosticService", () => {
 				id: "public_storefront_access",
 				status: "failed",
 				message: "Public Storefront diagnostics are temporarily unavailable.",
+			},
+			{
+				id: "private_storefront_token",
+				status: "failed",
+				message: "No private Storefront token is configured.",
 			},
 		]);
 		expect(JSON.stringify(failed)).not.toContain("sensitive-upstream-canary");
@@ -207,6 +222,11 @@ describe("ShopifyIntegrationDiagnosticService", () => {
 				id: "public_storefront_access",
 				status: "failed",
 				message: "Public Storefront diagnostics are temporarily unavailable.",
+			},
+			{
+				id: "private_storefront_token",
+				status: "failed",
+				message: "No private Storefront token is configured.",
 			},
 		]);
 		expect(JSON.stringify(result)).not.toContain("storefront-secret-canary");

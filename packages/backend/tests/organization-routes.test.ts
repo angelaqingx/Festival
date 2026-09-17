@@ -77,7 +77,13 @@ class FakeShopifyTester implements ShopifyConnectivityTester {
 		return {
 			shopGid: "gid://shopify/Shop/1",
 			shopDomain: credentials.storeDomain,
-			grantedScopes: ["read_products", "write_products", "read_orders"],
+			grantedScopes: [
+				"read_products",
+				"write_products",
+				"read_orders",
+				"read_publications",
+				"write_publications",
+			],
 		};
 	}
 }
@@ -178,6 +184,12 @@ class FakeShopifyProductClient implements ShopifyMembershipProductClient {
 			requiresShipping: input.requiresShipping,
 		});
 		return { value: { requiresShipping: input.requiresShipping } };
+	}
+
+	async publishProductToHeadlessStorefront(): Promise<
+		ShopifyAdminResult<void>
+	> {
+		return { value: undefined };
 	}
 
 	async updateProductDetails(): Promise<
@@ -408,6 +420,8 @@ async function saveVerifiedShopifyIntegration(
 			"read_products",
 			"write_products",
 			"write_inventory",
+			"read_publications",
+			"write_publications",
 			"read_orders",
 		],
 		capabilities: {
@@ -1362,6 +1376,11 @@ describe("organization routes", () => {
 					status: "passed",
 					message: "Public Storefront access is available.",
 				},
+				{
+					id: "private_storefront_token",
+					status: "failed",
+					message: "No private Storefront token is configured.",
+				},
 			],
 		});
 		expect(diagnosticClient.domains).toEqual(["example.myshopify.com"]);
@@ -1383,6 +1402,11 @@ describe("organization routes", () => {
 					status: "failed",
 					message:
 						"Shopify's Online Store channel is locked. Public membership browsing is unavailable until the storefront is publicly accessible.",
+				},
+				{
+					id: "private_storefront_token",
+					status: "failed",
+					message: "No private Storefront token is configured.",
 				},
 			],
 		});

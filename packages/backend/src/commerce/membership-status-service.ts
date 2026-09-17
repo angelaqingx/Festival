@@ -18,18 +18,23 @@ export class MembershipStatusService {
 		organizationId: string,
 		customerId: string,
 	): Promise<CustomerMembershipStatusResponse> {
-		const [timezone, grants, decisions, offering] = await Promise.all([
-			this.organizations.getOrganizationTimezone(organizationId),
-			this.organizations.listEntitlementGrantSnapshots(
-				organizationId,
-				customerId,
-			),
-			this.commerce.listCustomerDecisions(organizationId, customerId),
-			this.organizations.findMembershipProductRecordByClass(
-				organizationId,
-				"teacher_membership",
-			),
-		]);
+		const [timezone, grants, accompanistGrants, decisions, offering] =
+			await Promise.all([
+				this.organizations.getOrganizationTimezone(organizationId),
+				this.organizations.listEntitlementGrantSnapshots(
+					organizationId,
+					customerId,
+				),
+				this.organizations.listAccompanistMembershipGrants({
+					organizationId,
+					customerId,
+				}),
+				this.commerce.listCustomerDecisions(organizationId, customerId),
+				this.organizations.findMembershipProductRecordByClass(
+					organizationId,
+					"teacher_membership",
+				),
+			]);
 		const today = calendarDateInTimezone(this.now().toISOString(), timezone);
 		const displayName = offering?.productNameSnapshot ?? "Teacher Membership";
 		const validation: CustomerMembershipStatusEntry[] =
@@ -81,6 +86,22 @@ export class MembershipStatusService {
 				endsOn: grant.endsOn,
 			}),
 		);
-		return { memberships: [...validation, ...entitlements] };
+		const accompanistEntitlements: CustomerMembershipStatusEntry[] =
+			accompanistGrants.map((grant) => ({
+				status:
+					grant.status === "revoked"
+						? "revoked"
+						: deriveEntitlementLifecycle(grant, today),
+				entitlementClass: "accompanist_membership",
+				displayName: grant.offeringNameSnapshot,
+				divisionName:
+					grant.divisions.map((division) => division.divisionName).join(", ") ||
+					undefined,
+				startsOn: grant.startsOn,
+				endsOn: grant.endsOn,
+			}));
+		return {
+			memberships: [...validation, ...entitlements, ...accompanistEntitlements],
+		};
 	}
 }

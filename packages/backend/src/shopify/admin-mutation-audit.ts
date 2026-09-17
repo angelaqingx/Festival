@@ -13,6 +13,7 @@ const AUDIT_OPERATIONS = new Set<ShopifyMutationAuditOperation>([
 	"productUpdate",
 	"productVariantUpdate",
 	"inventoryItemUpdate",
+	"productPublish",
 	"productDelete",
 ]);
 const AUDIT_RESULTS = new Set(["success", "failure"]);
@@ -30,6 +31,7 @@ export type ShopifyMutationAuditOperation =
 	| "productUpdate"
 	| "productVariantUpdate"
 	| "inventoryItemUpdate"
+	| "productPublish"
 	| "productDelete";
 
 export interface ShopifyMutationAuditAttemptInput {

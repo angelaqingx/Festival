@@ -39,9 +39,9 @@ function webhookStatusLabel(status: string): string {
 }
 
 function diagnosticLabel(id: ShopifyIntegrationDiagnosticCheck["id"]): string {
-	return id === "orders_paid_webhook"
-		? "Paid-order webhook"
-		: "Public Storefront access";
+	if (id === "orders_paid_webhook") return "Paid-order webhook";
+	if (id === "private_storefront_token") return "Private Storefront token";
+	return "Public Storefront access";
 }
 
 export function missingRequiredShopifyScopes(

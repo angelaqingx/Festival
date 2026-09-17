@@ -74,6 +74,7 @@ function shopifyProduct(
 class FakeShopifyProductClient implements ShopifyMembershipProductClient {
 	createCalls = 0;
 	readonly deletedProductGids: string[] = [];
+	readonly publishedProductGids: string[] = [];
 	readonly readProductGids: string[][] = [];
 	readonly variantUpdates: Array<{
 		productId: string;
@@ -119,6 +120,14 @@ class FakeShopifyProductClient implements ShopifyMembershipProductClient {
 	): Promise<ShopifyAdminResult<{ requiresShipping: boolean }>> {
 		this.inventoryItemUpdates.push(input);
 		return { value: { requiresShipping: input.requiresShipping } };
+	}
+
+	async publishProductToHeadlessStorefront(
+		_context: ShopifyAdminOperationContext,
+		productId: string,
+	): Promise<ShopifyAdminResult<void>> {
+		this.publishedProductGids.push(productId);
+		return { value: undefined };
 	}
 
 	async updateProductDetails(): Promise<
@@ -259,6 +268,8 @@ async function saveIntegration(
 				"read_products",
 				"write_products",
 				"write_inventory",
+				"read_publications",
+				"write_publications",
 				"read_orders",
 			],
 			capabilities: {
@@ -324,6 +335,9 @@ describe("ShopifyMembershipProductService", () => {
 				requiresShipping: false,
 			},
 		]);
+		expect(client.publishedProductGids).toEqual([
+			"gid://shopify/Product/not-a-number",
+		]);
 		await expect(
 			repository.listMembershipProductRecords(organization.id),
 		).resolves.toMatchObject([
@@ -333,7 +347,7 @@ describe("ShopifyMembershipProductService", () => {
 				isActive: true,
 			},
 		]);
-		expect(audit.readyCalls).toBe(3);
+		expect(audit.readyCalls).toBe(4);
 		expect(
 			audit.records.map(({ operation, requestId, result }) => ({
 				operation,
@@ -353,6 +367,10 @@ describe("ShopifyMembershipProductService", () => {
 			},
 			{
 				operation: "inventoryItemUpdate",
+				result: "success",
+			},
+			{
+				operation: "productPublish",
 				result: "success",
 			},
 		]);
@@ -710,6 +728,7 @@ describe("ShopifyMembershipProductService", () => {
 			"productCreate",
 			"productVariantUpdate",
 			"inventoryItemUpdate",
+			"productPublish",
 			"productDelete",
 		]);
 	});
@@ -778,7 +797,12 @@ describe("ShopifyMembershipProductService", () => {
 			lastTestedAtIso: new Date().toISOString(),
 			verifiedShopGid: "gid://shopify/Shop/2",
 			verifiedShopDomain: "other.myshopify.com",
-			grantedScopes: ["read_products", "write_products"],
+			grantedScopes: [
+				"read_products",
+				"write_products",
+				"read_publications",
+				"write_publications",
+			],
 			capabilities: {
 				read_products: "granted",
 				write_products: "granted",

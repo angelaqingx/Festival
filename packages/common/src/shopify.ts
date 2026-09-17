@@ -21,6 +21,8 @@ export const SHOPIFY_REQUIRED_SCOPES = [
 	"read_products",
 	"write_products",
 	"write_inventory",
+	"read_publications",
+	"write_publications",
 	"customer_read_customers",
 	"customer_read_draft_orders",
 	"customer_read_metaobjects",
@@ -149,6 +151,7 @@ export interface SaveShopifyIntegrationResponse {
 export const SHOPIFY_INTEGRATION_DIAGNOSTIC_IDS = [
 	"orders_paid_webhook",
 	"public_storefront_access",
+	"private_storefront_token",
 ] as const;
 
 export type ShopifyIntegrationDiagnosticId =
