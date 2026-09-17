@@ -101,6 +101,11 @@ async function verify() {
 		"Confirmed server membership renders Active",
 	);
 	assert(
+		root?.textContent?.includes("Teacher") &&
+			!root?.textContent?.includes("Teacher Membership"),
+		"Membership heading uses the capitalized entitlement type",
+	);
+	assert(
 		!window.location.search,
 		"Confirmed membership clears the processing handoff",
 	);

@@ -8,6 +8,7 @@ import {
 	assertValidEntitlementDurationDays,
 	type EntitlementClass,
 	INITIAL_TEACHER_MEMBERSHIP_DURATION_DAYS,
+	normalizeEffectiveShopifyScopes,
 	TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
 	validateMembershipProductInput,
 } from "@festival/common";
@@ -26,7 +27,7 @@ import {
 	SHOPIFY_CLIENT_SECRET_PURPOSE,
 	type ShopifySecretKeyring,
 } from "./encryption.js";
-import { ShopifyIntegrationError } from "./errors.js";
+import { ShopifyIntegrationError, ShopifyScopeError } from "./errors.js";
 import type {
 	ShopifyAdminOperationContext,
 	ShopifyAdminResult,
@@ -61,6 +62,12 @@ function toAppError(error: unknown): AppError {
 	if (error instanceof AppError) {
 		return error;
 	}
+	if (error instanceof ShopifyScopeError) {
+		return new AppError(
+			"Shopify integration is missing a required scope. Save and verify Shopify settings after approving write_inventory.",
+			409,
+		);
+	}
 
 	if (error instanceof ShopifyIntegrationError || error instanceof Error) {
 		return new AppError("Shopify membership product operation failed.", 502);
@@ -72,6 +79,7 @@ function toAppError(error: unknown): AppError {
 function assertSupportedProductShape(
 	product: ShopifyProductDetails,
 	expectedProductGid?: string,
+	requireDigital = true,
 ): ShopifyProductVariant {
 	if (!product.id) {
 		throw new AppError(
@@ -127,7 +135,7 @@ function assertSupportedProductShape(
 		);
 	}
 
-	if (variant.requiresShipping !== false) {
+	if (requireDigital && variant.requiresShipping !== false) {
 		throw new AppError(
 			"Shopify membership product variant must not require shipping.",
 			502,
@@ -233,6 +241,7 @@ export class ShopifyMembershipProductService {
 			tenant,
 			"write_products",
 		);
+		await this.loadOperationContext(tenant, "write_inventory");
 		const readContext = await this.loadOperationContext(
 			tenant,
 			"read_products",
@@ -245,18 +254,19 @@ export class ShopifyMembershipProductService {
 					description: validation.input.description,
 				}),
 			);
-			const priced = await this.attemptMutation(
-				writeContext,
-				"productVariantUpdate",
-				() =>
-					this.shopifyClient.updateVariantPrice(writeContext, {
-						productId: offering.shopifyProductGid,
-						variantId: offering.shopifyVariantGid,
-						price: validation.input.price,
-						requiresShipping: false,
-					}),
+			await this.attemptMutation(writeContext, "productVariantUpdate", () =>
+				this.shopifyClient.updateVariantPrice(writeContext, {
+					productId: offering.shopifyProductGid,
+					variantId: offering.shopifyVariantGid,
+					price: validation.input.price,
+				}),
 			);
-			assertSupportedProductShape(priced, offering.shopifyProductGid);
+			await this.setInventoryItemShipping(
+				writeContext,
+				readContext,
+				offering.shopifyVariantGid,
+				offering.shopifyProductGid,
+			);
 			const { value: confirmed } = await this.shopifyClient.readProductsByGid(
 				readContext,
 				[offering.shopifyProductGid],
@@ -365,11 +375,16 @@ export class ShopifyMembershipProductService {
 				409,
 			);
 		}
+		const integration = await this.repository.getShopifyIntegration(
+			tenant.organization.id,
+		);
+		this.assertPublicationScopes(integration);
 
 		const writeContext = await this.loadOperationContext(
 			tenant,
 			"write_products",
 		);
+		await this.loadOperationContext(tenant, "write_inventory");
 		const readContext = await this.loadOperationContext(
 			tenant,
 			"read_products",
@@ -389,7 +404,11 @@ export class ShopifyMembershipProductService {
 					createdProduct = product;
 				},
 			);
-			let variant = assertSupportedProductShape(createdProduct);
+			let variant = assertSupportedProductShape(
+				createdProduct,
+				undefined,
+				false,
+			);
 
 			const pricedProduct = await this.attemptMutation(
 				writeContext,
@@ -399,10 +418,19 @@ export class ShopifyMembershipProductService {
 						productId: createdProduct?.id ?? "",
 						variantId: variant.id,
 						price: validation.input.price,
-						requiresShipping: false,
 					}),
 			);
-			variant = assertSupportedProductShape(pricedProduct, createdProduct.id);
+			variant = assertSupportedProductShape(
+				pricedProduct,
+				createdProduct.id,
+				false,
+			);
+			await this.setInventoryItemShipping(
+				writeContext,
+				readContext,
+				variant.id,
+				createdProduct.id,
+			);
 			const { value: confirmedProducts } =
 				await this.shopifyClient.readProductsByGid(readContext, [
 					pricedProduct.id,
@@ -414,6 +442,12 @@ export class ShopifyMembershipProductService {
 			variant = assertSupportedProductShape(
 				confirmedProduct,
 				createdProduct.id,
+			);
+			await this.attemptMutation(writeContext, "productPublish", () =>
+				this.shopifyClient.publishProductToHeadlessStorefront(
+					writeContext,
+					confirmedProduct.id,
+				),
 			);
 
 			const record = await this.repository.createMembershipProductRecord({
@@ -514,6 +548,44 @@ export class ShopifyMembershipProductService {
 		};
 	}
 
+	private async setInventoryItemShipping(
+		context: ShopifyAdminOperationContext,
+		readContext: ShopifyAdminOperationContext,
+		variantId: string,
+		productId: string,
+	): Promise<void> {
+		const { value: products } = await this.shopifyClient.readProductsByGid(
+			readContext,
+			[productId],
+		);
+		const product = products[0];
+		if (!product) {
+			throw new AppError("Shopify membership product was not found.", 502);
+		}
+		const variant = assertSupportedProductShape(product, productId, false);
+		if (variant.id !== variantId || !variant.inventoryItemId) {
+			throw new AppError(
+				"Shopify membership product inventory item was not found.",
+				502,
+			);
+		}
+		const updated = await this.attemptMutation(
+			context,
+			"inventoryItemUpdate",
+			() =>
+				this.shopifyClient.updateInventoryItem(context, {
+					inventoryItemId: variant.inventoryItemId ?? "",
+					requiresShipping: false,
+				}),
+		);
+		if (updated.requiresShipping) {
+			throw new AppError(
+				"Shopify membership product variant must not require shipping.",
+				502,
+			);
+		}
+	}
+
 	private assertVerifiedIntegration(
 		integration: ShopifyIntegrationRecord | null,
 		capability: ShopifyAdminCapability,
@@ -534,7 +606,24 @@ export class ShopifyMembershipProductService {
 		}
 		if (integration.capabilities[capability] !== "granted") {
 			throw new AppError(
-				"Shopify integration does not grant the required capability.",
+				capability === "write_inventory"
+					? "Shopify integration does not grant write_inventory. Save and verify Shopify settings after approving the scope."
+					: "Shopify integration does not grant the required capability.",
+				409,
+			);
+		}
+	}
+
+	private assertPublicationScopes(
+		integration: ShopifyIntegrationRecord | null,
+	): void {
+		this.assertVerifiedIntegration(integration, "write_products");
+		const scopes = new Set(
+			normalizeEffectiveShopifyScopes(integration?.grantedScopes ?? []),
+		);
+		if (!scopes.has("read_publications") || !scopes.has("write_publications")) {
+			throw new AppError(
+				"Shopify integration must grant write_publications, which includes read_publications, to publish membership products to Headless. Save and verify Shopify settings after approving this scope.",
 				409,
 			);
 		}

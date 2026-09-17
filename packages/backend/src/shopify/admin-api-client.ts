@@ -83,7 +83,10 @@ interface ShopifyVariantNode {
 	price?: string | { amount?: string; currencyCode?: string };
 	product?: { id?: string };
 	selectedOptions?: Array<{ name?: string; value?: string }>;
-	inventoryItem?: { requiresShipping?: boolean | null } | null;
+	inventoryItem?: {
+		id?: string;
+		requiresShipping?: boolean | null;
+	} | null;
 }
 
 interface ShopifyOrderAttributeNode {
@@ -116,7 +119,7 @@ interface ShopifyOrderNode {
 	id?: string;
 	fullyPaid?: boolean;
 	currencyCode?: string;
-	customer?: { id?: string } | null;
+	customer?: { id?: string; email?: string | null } | null;
 	customAttributes?: ShopifyOrderAttributeNode[];
 	lineItems?: {
 		nodes?: ShopifyOrderLineNode[];
@@ -205,6 +208,7 @@ function mapProductNode(
 						value: option.value ?? "",
 					})) ?? [],
 				requiresShipping: variant.inventoryItem?.requiresShipping ?? undefined,
+				inventoryItemId: variant.inventoryItem?.id,
 			};
 		}),
 	};
@@ -355,6 +359,7 @@ function mapPaidOrderNode(node: ShopifyOrderNode): ShopifyPaidOrder {
 		node.customer?.id,
 		"Shopify order response did not include a customer.",
 	);
+	const customerEmail = node.customer?.email?.trim().toLowerCase();
 	if (typeof node.fullyPaid !== "boolean") {
 		throw new ShopifyAdminApiError(
 			"Shopify order response did not include a paid status.",
@@ -427,6 +432,7 @@ function mapPaidOrderNode(node: ShopifyOrderNode): ShopifyPaidOrder {
 	return {
 		id,
 		customerGid,
+		...(customerEmail ? { customerEmail } : {}),
 		fullyPaid: node.fullyPaid,
 		...(fullyPaidAtIso ? { fullyPaidAtIso } : {}),
 		currencyCode,
@@ -765,6 +771,7 @@ export class ShopifyAdminApiClient
 									value
 								}
 								inventoryItem {
+									id
 									requiresShipping
 								}
 							}
@@ -781,6 +788,7 @@ export class ShopifyAdminApiClient
 				product: {
 					title: input.name,
 					descriptionHtml: input.description ?? "",
+					status: "ACTIVE",
 					productOptions: [
 						{
 							name: "Plan",
@@ -811,7 +819,6 @@ export class ShopifyAdminApiClient
 			productId: string;
 			variantId: string;
 			price: string;
-			requiresShipping?: boolean;
 		},
 	): Promise<ShopifyAdminResult<ShopifyProductDetails>> {
 		this.assertOperationContext(context, "write_products");
@@ -856,6 +863,7 @@ export class ShopifyAdminApiClient
 									value
 								}
 								inventoryItem {
+									id
 									requiresShipping
 								}
 							}
@@ -874,13 +882,6 @@ export class ShopifyAdminApiClient
 					{
 						id: input.variantId,
 						price: input.price,
-						...(input.requiresShipping === undefined
-							? {}
-							: {
-									inventoryItem: {
-										requiresShipping: input.requiresShipping,
-									},
-								}),
 					},
 				],
 			},
@@ -904,6 +905,50 @@ export class ShopifyAdminApiClient
 			),
 			requestId: response.requestId,
 		};
+	}
+
+	async updateInventoryItem(
+		context: ShopifyAdminOperationContext,
+		input: { inventoryItemId: string; requiresShipping: boolean },
+	): Promise<ShopifyAdminResult<{ requiresShipping: boolean }>> {
+		this.assertOperationContext(context, "write_products");
+		const { credentials } = context;
+		const { accessToken } = await this.fetchOperationAccessToken(
+			context,
+			"write_inventory",
+		);
+		const response = await this.graphqlRequest<{
+			inventoryItemUpdate?: {
+				inventoryItem?: { requiresShipping?: boolean | null };
+				userErrors?: ShopifyUserErrorPayload[];
+			};
+		}>(
+			credentials.storeDomain,
+			accessToken,
+			`mutation UpdateMembershipInventoryItem($id: ID!, $input: InventoryItemInput!) {
+				inventoryItemUpdate(id: $id, input: $input) {
+					inventoryItem { requiresShipping }
+					userErrors { field message }
+				}
+			}`,
+			{
+				id: input.inventoryItemId,
+				input: { requiresShipping: input.requiresShipping },
+			},
+		);
+		throwIfUserErrors(
+			response.value.inventoryItemUpdate?.userErrors,
+			response.requestId,
+		);
+		const requiresShipping =
+			response.value.inventoryItemUpdate?.inventoryItem?.requiresShipping;
+		if (typeof requiresShipping !== "boolean") {
+			throw new ShopifyAdminApiError(
+				"Shopify inventory item update returned no shipping status.",
+				{ requestId: response.requestId },
+			);
+		}
+		return { value: { requiresShipping }, requestId: response.requestId };
 	}
 
 	async updateProductDetails(
@@ -930,7 +975,7 @@ export class ShopifyAdminApiClient
 			accessToken,
 			`mutation UpdateMembershipProduct($product: ProductUpdateInput!) {
 				productUpdate(product: $product) {
-					product { id title descriptionHtml status variants(first: 2) { nodes { id title price product { id } selectedOptions { name value } inventoryItem { requiresShipping } } } }
+					product { id title descriptionHtml status variants(first: 2) { nodes { id title price product { id } selectedOptions { name value } inventoryItem { id requiresShipping } } } }
 					userErrors { field message }
 				}
 			}`,
@@ -1003,6 +1048,7 @@ export class ShopifyAdminApiClient
 									value
 								}
 								inventoryItem {
+									id
 									requiresShipping
 								}
 							}
@@ -1020,6 +1066,73 @@ export class ShopifyAdminApiClient
 				.map((node) => mapProductNode(node, shopCurrencyCode)),
 			requestId: response.requestId,
 		};
+	}
+
+	async publishProductToHeadlessStorefront(
+		context: ShopifyAdminOperationContext,
+		productId: string,
+	): Promise<ShopifyAdminResult<void>> {
+		this.assertOperationContext(context, "write_products");
+		const { credentials } = context;
+		const { accessToken } = await this.fetchOperationAccessToken(
+			context,
+			"write_products",
+		);
+		const publications = await this.graphqlRequest<{
+			publications?: {
+				nodes?: Array<{
+					id?: string;
+					channels?: {
+						nodes?: Array<{ app?: { title?: string } | null }>;
+					};
+				}>;
+			};
+		}>(
+			credentials.storeDomain,
+			accessToken,
+			`query HeadlessPublication { publications(first: 50) { nodes { id channels(first: 10) { nodes { app { title } } } } } }`,
+		);
+		const matches = (publications.value.publications?.nodes ?? []).filter(
+			(publication) =>
+				typeof publication.id === "string" &&
+				publication.channels?.nodes?.some(
+					(channel) => channel.app?.title === "Headless",
+				),
+		);
+		if (matches.length !== 1 || !matches[0]?.id) {
+			throw new ShopifyAdminApiError(
+				"Shopify Headless storefront publication could not be uniquely identified.",
+				{ requestId: publications.requestId },
+			);
+		}
+		const response = await this.graphqlRequest<{
+			publishablePublish?: {
+				publishable?: { publishedOnPublication?: boolean };
+				userErrors?: ShopifyUserErrorPayload[];
+			};
+		}>(
+			credentials.storeDomain,
+			accessToken,
+			`mutation PublishMembershipProduct($id: ID!, $input: [PublicationInput!]!, $publicationId: ID!) { publishablePublish(id: $id, input: $input) { publishable { publishedOnPublication(publicationId: \$publicationId) } userErrors { field message } } }`,
+			{
+				id: productId,
+				input: [{ publicationId: matches[0].id }],
+				publicationId: matches[0].id,
+			},
+		);
+		throwIfUserErrors(
+			response.value.publishablePublish?.userErrors,
+			response.requestId,
+		);
+		if (
+			!response.value.publishablePublish?.publishable?.publishedOnPublication
+		) {
+			throw new ShopifyAdminApiError(
+				"Shopify did not publish the membership product to Headless.",
+				{ requestId: response.requestId },
+			);
+		}
+		return { value: undefined, requestId: response.requestId };
 	}
 
 	async readPaidOrderByGid(
@@ -1049,6 +1162,7 @@ export class ShopifyAdminApiClient
 					currencyCode
 					customer {
 						id
+						email
 					}
 					customAttributes {
 						key
@@ -1196,6 +1310,7 @@ export class ShopifyAdminApiClient
 						currencyCode
 						customer {
 							id
+							email
 						}
 						customAttributes {
 							key
@@ -1366,9 +1481,16 @@ export class ShopifyAdminApiClient
 
 	private async fetchOperationAccessToken(
 		context: ShopifyAdminOperationContext,
-		requiredCapability: "read_products" | "write_products" | "read_orders",
+		requiredCapability:
+			| "read_products"
+			| "write_products"
+			| "write_inventory"
+			| "read_orders",
 	): Promise<AcquiredAccessToken> {
-		const token = await this.fetchAccessToken(context.credentials);
+		let token = await this.fetchAccessToken(context.credentials);
+		if (!token.grantedScopes.includes(requiredCapability)) {
+			token = await this.fetchAccessToken(context.credentials, true);
+		}
 		if (!token.grantedScopes.includes(requiredCapability)) {
 			throw new ShopifyScopeError();
 		}

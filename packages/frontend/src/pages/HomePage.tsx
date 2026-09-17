@@ -8,6 +8,10 @@ interface HomePageProps {
 export function HomePage(props: HomePageProps) {
 	return (
 		<section class="panel hero-panel">
+			<header>
+				<h1>Getting Started</h1>
+				<p class="lede">Sign up to get started.</p>
+			</header>
 			<h2>Start a new organization</h2>
 			<p>Sign-up. Create a Organization. Create a Festival. Invite Users.</p>
 			<div class="hero-actions">

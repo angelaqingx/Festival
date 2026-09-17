@@ -77,7 +77,13 @@ class FakeShopifyTester implements ShopifyConnectivityTester {
 		return {
 			shopGid: "gid://shopify/Shop/1",
 			shopDomain: credentials.storeDomain,
-			grantedScopes: ["read_products", "write_products", "read_orders"],
+			grantedScopes: [
+				"read_products",
+				"write_products",
+				"read_orders",
+				"read_publications",
+				"write_publications",
+			],
 		};
 	}
 }
@@ -144,6 +150,7 @@ function shopifyProduct(
 				productId: id,
 				selectedOptions: [{ name: "Plan", value: "Standard" }],
 				requiresShipping: false,
+				inventoryItemId: "gid://shopify/InventoryItem/generated",
 			},
 		],
 		...overrides,
@@ -153,7 +160,7 @@ function shopifyProduct(
 class FakeShopifyProductClient implements ShopifyMembershipProductClient {
 	readonly deletedProductGids: string[] = [];
 	readonly readProductGids: string[][] = [];
-	readonly variantUpdates: Array<{ requiresShipping: boolean }> = [];
+	readonly inventoryItemUpdates: Array<{ requiresShipping: boolean }> = [];
 	createResponse = shopifyProduct();
 	updateResponse = shopifyProduct();
 	readResponse = [shopifyProduct()];
@@ -165,10 +172,24 @@ class FakeShopifyProductClient implements ShopifyMembershipProductClient {
 
 	async updateVariantPrice(
 		_context: ShopifyAdminOperationContext,
-		input: { requiresShipping: boolean },
 	): Promise<ShopifyAdminResult<ShopifyProductDetails>> {
-		this.variantUpdates.push({ requiresShipping: input.requiresShipping });
 		return { value: this.updateResponse };
+	}
+
+	async updateInventoryItem(
+		_context: ShopifyAdminOperationContext,
+		input: { inventoryItemId: string; requiresShipping: boolean },
+	): Promise<ShopifyAdminResult<{ requiresShipping: boolean }>> {
+		this.inventoryItemUpdates.push({
+			requiresShipping: input.requiresShipping,
+		});
+		return { value: { requiresShipping: input.requiresShipping } };
+	}
+
+	async publishProductToHeadlessStorefront(): Promise<
+		ShopifyAdminResult<void>
+	> {
+		return { value: undefined };
 	}
 
 	async updateProductDetails(): Promise<
@@ -395,10 +416,18 @@ async function saveVerifiedShopifyIntegration(
 		lastTestedAtIso: new Date().toISOString(),
 		verifiedShopGid: "gid://shopify/Shop/1",
 		verifiedShopDomain: "example.myshopify.com",
-		grantedScopes: ["read_products", "write_products", "read_orders"],
+		grantedScopes: [
+			"read_products",
+			"write_products",
+			"write_inventory",
+			"read_publications",
+			"write_publications",
+			"read_orders",
+		],
 		capabilities: {
 			read_products: "granted",
 			write_products: "granted",
+			write_inventory: "granted",
 			read_orders: "granted",
 			write_orders: "disabled",
 		},
@@ -1347,6 +1376,11 @@ describe("organization routes", () => {
 					status: "passed",
 					message: "Public Storefront access is available.",
 				},
+				{
+					id: "private_storefront_token",
+					status: "failed",
+					message: "No private Storefront token is configured.",
+				},
 			],
 		});
 		expect(diagnosticClient.domains).toEqual(["example.myshopify.com"]);
@@ -1368,6 +1402,11 @@ describe("organization routes", () => {
 					status: "failed",
 					message:
 						"Shopify's Online Store channel is locked. Public membership browsing is unavailable until the storefront is publicly accessible.",
+				},
+				{
+					id: "private_storefront_token",
+					status: "failed",
+					message: "No private Storefront token is configured.",
 				},
 			],
 		});
@@ -1690,6 +1729,7 @@ describe("organization routes", () => {
 		});
 		expect(shopifyProductClient.readProductGids).toEqual([
 			["gid://shopify/Product/generated"],
+			["gid://shopify/Product/generated"],
 		]);
 		const records = await repository.listMembershipProductRecords(
 			organization.id,
@@ -1885,12 +1925,12 @@ describe("organization routes", () => {
 			entitlementClass: "accompanist_membership",
 			durationDays: 365,
 		});
-		expect(shopifyProductClient.variantUpdates[0]?.requiresShipping).toBe(
+		expect(shopifyProductClient.inventoryItemUpdates[0]?.requiresShipping).toBe(
 			false,
 		);
 	});
 
-	it("persists the Admin-only accompanist policy and defaults it to one-to-all", async () => {
+	it("persists the Admin-only accompanist policy and defaults it to exactly one", async () => {
 		const { app, repository } = await createTestAppWithMembershipProducts();
 		await createOrganizationViaApi(app);
 		const initial = await app.fetch(
@@ -1900,7 +1940,7 @@ describe("organization routes", () => {
 			),
 		);
 		expect(await initial.json()).toMatchObject({
-			policy: { policy: "one_to_all" },
+			policy: { policy: "exactly_one" },
 		});
 		const updated = await app.fetch(
 			new Request(

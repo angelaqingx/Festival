@@ -30,4 +30,28 @@ describe("PostgresOrganizationRepository", () => {
 		expect(createInvite).toContain("VALUES ($1, $2, $3, $4, $5, $6)");
 		expect(createInvite).not.toContain("is_primary");
 	});
+
+	it("retries accompanist cohort contention and returns a typed conflict", async () => {
+		const value = await source();
+		const createGrant = value.slice(
+			value.indexOf("async createAccompanistMembershipGrant("),
+			value.indexOf("async listAccompanistMembershipGrants("),
+		);
+
+		expect(createGrant).toContain("attempt < 2");
+		expect(createGrant).toContain("AccompanistMembershipCohortContentionError");
+			expect(createGrant).toContain("attempt === 0");
+			expect(createGrant).toContain("new AccompanistMembershipConflictError()");
+			expect(createGrant).toContain("RETURNING customer_id");
+			expect(value).toContain("unique|duplicate|exclusion");
+	});
+
+	it("persists the write_inventory verification capability", async () => {
+		const value = await source();
+
+		expect(value).toContain("can_write_inventory");
+		expect(value).toContain(
+			'input.capabilities?.write_inventory === "granted"',
+		);
+	});
 });

@@ -14,29 +14,32 @@ export const INITIAL_TEACHER_MEMBERSHIP_DURATION_DAYS = 365;
 export const INITIAL_ACCOMPANIST_MEMBERSHIP_DURATION_DAYS = 365;
 export const MAX_ENTITLEMENT_DURATION_DAYS = 36_500;
 
-export const ACCOMPANIST_DIVISION_SELECTION_POLICIES = [
+export const MEMBERSHIP_DIVISION_SELECTION_POLICIES = [
 	"exactly_one",
 	"one_to_two",
 	"one_to_all",
 ] as const;
+export type MembershipDivisionSelectionPolicy =
+	(typeof MEMBERSHIP_DIVISION_SELECTION_POLICIES)[number];
+/** @deprecated Membership policy applies equally to every entitlement class. */
 export type AccompanistDivisionSelectionPolicy =
-	(typeof ACCOMPANIST_DIVISION_SELECTION_POLICIES)[number];
+	MembershipDivisionSelectionPolicy;
 
 export function isAccompanistDivisionSelectionPolicy(
 	value: unknown,
-): value is AccompanistDivisionSelectionPolicy {
-	return ACCOMPANIST_DIVISION_SELECTION_POLICIES.includes(
-		value as AccompanistDivisionSelectionPolicy,
+): value is MembershipDivisionSelectionPolicy {
+	return MEMBERSHIP_DIVISION_SELECTION_POLICIES.includes(
+		value as MembershipDivisionSelectionPolicy,
 	);
 }
 
-export function validateAccompanistDivisionSelection(
-	policy: AccompanistDivisionSelectionPolicy,
+export function validateMembershipDivisionSelection(
+	policy: MembershipDivisionSelectionPolicy,
 	selectedDivisionIds: readonly string[],
 	activeDivisionCount: number,
 ): void {
 	if (new Set(selectedDivisionIds).size !== selectedDivisionIds.length) {
-		throw new Error("Each accompanist division may be selected only once.");
+		throw new Error("Each membership division may be selected only once.");
 	}
 	const count = selectedDivisionIds.length;
 	if (
@@ -44,13 +47,16 @@ export function validateAccompanistDivisionSelection(
 		(policy === "one_to_two" && (count < 1 || count > 2)) ||
 		(policy === "one_to_all" && (count < 1 || count > activeDivisionCount))
 	) {
-		throw new Error(
-			"Selected divisions do not satisfy the accompanist policy.",
-		);
+		throw new Error("Selected divisions do not satisfy the membership policy.");
 	}
 }
 
+/** @deprecated Use validateMembershipDivisionSelection. */
+export const validateAccompanistDivisionSelection =
+	validateMembershipDivisionSelection;
+
 export const ENTITLEMENT_GRANT_STATUSES = [
+	"scheduled",
 	"active",
 	"expired",
 	"revoked",
@@ -91,10 +97,47 @@ export interface EntitlementGrantSnapshot {
 	readonly createdAtIso: string;
 }
 
+export const ENTITLEMENT_LIFECYCLES = [
+	"scheduled",
+	"active",
+	"expired",
+	"revoked",
+] as const;
+export type EntitlementLifecycleState = (typeof ENTITLEMENT_LIFECYCLES)[number];
+
+/** Canonical clean-slate lifecycle record. State is intentionally derived. */
+export interface MembershipEntitlement {
+	readonly id: string;
+	readonly organizationId: string;
+	readonly customerId: string;
+	readonly entitlementClass: EntitlementClass;
+	readonly source: "teacher_checkout" | "accompanist_form";
+	readonly offeringId: string;
+	readonly startsOn: string;
+	readonly endsOn: string;
+	readonly revokedAtIso?: string;
+	readonly revokedReason?: string;
+	readonly createdAtIso: string;
+}
+
+export function deriveEntitlementLifecycle(
+	entitlement: Pick<
+		MembershipEntitlement,
+		"startsOn" | "endsOn" | "revokedAtIso"
+	>,
+	today: string,
+): EntitlementLifecycleState {
+	parseCalendarDate(today);
+	if (entitlement.revokedAtIso) return "revoked";
+	if (today < entitlement.startsOn) return "scheduled";
+	if (today >= entitlement.endsOn) return "expired";
+	return "active";
+}
+
 export type CreateEntitlementGrantSnapshotInput = Omit<
 	EntitlementGrantSnapshot,
 	"id" | "createdAtIso"
->;
+> & { verifiedIdentityEmail?: string };
 
 export function isEntitlementClass(value: unknown): value is EntitlementClass {
 	return ENTITLEMENT_CLASSES.includes(value as EntitlementClass);

@@ -418,6 +418,10 @@ export class CustomerAccountService {
 		if (!offeringId && returnTo === landingPath) {
 			expected = landingPath;
 		}
+		const accompanistMembershipPath = `/org/${slug}/accompanist-membership`;
+		if (!offeringId && returnTo === accompanistMembershipPath) {
+			expected = accompanistMembershipPath;
+		}
 		// Preserve only the known checkout handoff; arbitrary return URLs remain forbidden.
 		if (!offeringId && returnTo === `${expected}?checkout=processing`) {
 			expected = returnTo;
@@ -548,6 +552,12 @@ export class CustomerAccountService {
 			throw new AppError("Customer authentication response is invalid.", 401);
 		return claims;
 	}
+	private verifiedShopifyEmail(claims: Record<string, unknown>) {
+		if (claims.email_verified !== true || typeof claims.email !== "string")
+			return undefined;
+		const email = claims.email.trim().toLowerCase();
+		return email || undefined;
+	}
 	private async signingKeys(
 		integration: CustomerAccountIntegrationRecord,
 		discovery: Discovery,
@@ -667,7 +677,7 @@ export class CustomerAccountService {
 				code,
 			}),
 		);
-		await this.verifyIdToken(
+		const claims = await this.verifyIdToken(
 			bundle.idToken,
 			integration,
 			discovered.oidc,
@@ -693,7 +703,7 @@ export class CustomerAccountService {
 			organizationId: org.id,
 			purpose: SHOPIFY_CUSTOMER_TOKENS_PURPOSE,
 		});
-		await this.repository.createCustomerSession({
+		const { customer } = await this.repository.createCustomerSession({
 			sessionId,
 			organizationId: org.id,
 			shopifyCustomerGid: customerGid,
@@ -704,6 +714,15 @@ export class CustomerAccountService {
 			lastSeenAtIso: now.toISOString(),
 			expiresAtIso: expiresAt.toISOString(),
 		});
+		const verifiedEmail = this.verifiedShopifyEmail(claims);
+		if (verifiedEmail) {
+			await this.repository.recordVerifiedShopifyEmail({
+				organizationId: org.id,
+				customerId: customer.id,
+				email: verifiedEmail,
+				verifiedAtIso: now.toISOString(),
+			});
+		}
 		return {
 			sessionId,
 			returnTo: state.returnTo,
@@ -955,6 +974,10 @@ export class CustomerAccountService {
 			customerId: valid.customer.id,
 			name: valid.customer.name.value,
 			email: valid.customer.email.value,
+			verifiedShopifyCustomerEmail:
+				valid.customer.email.source === "shopify"
+					? valid.customer.email.value
+					: undefined,
 		};
 	}
 	/** Trusted server-side continuation after checkoutAccess has verified the session and CSRF token. */

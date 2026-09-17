@@ -13,13 +13,23 @@ test("canonical PostgreSQL schema defines the final empty-database shape only", 
 		"festival_children",
 		"festival_child_age_snapshots",
 		"checkout_intents",
-		"entitlement_grants",
+		"membership_entitlements",
+		"membership_entitlement_divisions",
+		"membership_entitlement_revocations",
+		"membership_entitlement_cohorts",
+		"membership_identity_emails",
+		"teacher_membership_entitlement_details",
+		"accompanist_membership_entitlement_details",
 		"shopify_webhook_deliveries",
 		"app_user",
 	]) {
 		expect(schema).toContain(`fresh_orgs.${table}`);
 	}
 	expect(schema).toContain("CREATE EXTENSION IF NOT EXISTS pgcrypto");
+	expect(schema).toContain("CREATE EXTENSION IF NOT EXISTS btree_gist");
+	expect(schema).toContain("EXCLUDE USING gist");
+	expect(schema).not.toContain("entitlement_grants");
+	expect(schema).not.toContain("accompanist_membership_grants");
 	expect(schema).toContain("enforce_shopify_shop_ownership");
 	expect(schema).not.toMatch(
 		/ALTER TABLE|DROP (?:COLUMN|CONSTRAINT|INDEX)|\n\s*(?:INSERT INTO|UPDATE [A-Za-z_])/,

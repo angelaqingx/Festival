@@ -673,6 +673,45 @@ export function buildApiRouter(
 	}
 
 	router.post(
+		"/organizations/:slug/admin/entitlements/:entitlementId/revoke",
+		requireAuth(authVerifier),
+		requireTenant(repository),
+		requireTenantRole(["Admin"]),
+		async (c) => {
+			try {
+				const payload = await c.req.json();
+				assertAllowedFields(
+					payload,
+					["reason"],
+					"Entitlement revocation request",
+				);
+				const reason =
+					payload && typeof payload === "object"
+						? (payload as { reason?: unknown }).reason
+						: undefined;
+				if (
+					typeof reason !== "string" ||
+					!reason.trim() ||
+					reason.trim().length > 500
+				)
+					throw new AppError("A revocation reason is required.", 400);
+				const tenant = getRequiredTenant(c);
+				return c.json(
+					await repository.revokeEntitlement({
+						organizationId: tenant.organization.id,
+						entitlementId: c.req.param("entitlementId"),
+						actorUserId: tenant.user.id,
+						reason: reason.trim(),
+						revokedAtIso: new Date().toISOString(),
+					}),
+				);
+			} catch (error) {
+				return toJsonError(c, error);
+			}
+		},
+	);
+
+	router.post(
 		"/organizations/:slug/admin/accompanist-policy",
 		requireAuth(authVerifier),
 		requireTenant(repository),

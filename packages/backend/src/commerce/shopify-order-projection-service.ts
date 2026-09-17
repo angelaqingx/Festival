@@ -136,6 +136,14 @@ function moneyInMinorUnits(value: string): bigint | undefined {
 	return BigInt(match[1]) * 100n + BigInt((match[2] ?? "").padEnd(2, "0"));
 }
 
+function verifiedIdentityEmail(value: string | undefined): string | undefined {
+	const normalized = value?.trim().toLowerCase();
+	if (!normalized) return undefined;
+	return (normalized.match(/[a-z0-9]/gi)?.length ?? 0) >= 8
+		? normalized
+		: undefined;
+}
+
 function hasMatchingPaidMoney(
 	expectedAmount: string,
 	expectedCurrencyCode: string,
@@ -276,13 +284,25 @@ export class ShopifyOrderProjectionService {
 				return "processed";
 			}
 			const line = order.lineItems[0];
+			const identityEmail = verifiedIdentityEmail(order.customerEmail);
 			if (
 				!line ||
 				!order.fullyPaidAtIso ||
 				!intent.divisionId ||
-				!intent.divisionNameSnapshot
+				!intent.divisionNameSnapshot ||
+				!identityEmail
 			) {
-				throw new Error("Validated paid order was incomplete.");
+				await this.finalize(
+					delivery,
+					{
+						customerId: intent.customerId,
+						checkoutIntentId: intent.id,
+						status: "needs_review",
+						reasonCode: "upstream_invalid",
+					},
+					projection,
+				);
+				return "processed";
 			}
 			const timezone = await this.organizations.getOrganizationTimezone(
 				delivery.organizationId,
@@ -315,6 +335,7 @@ export class ShopifyOrderProjectionService {
 						startsOn: dates.startsOn,
 						endsOn: dates.endsOn,
 						status: "active",
+						verifiedIdentityEmail: identityEmail,
 					},
 				},
 				projection,

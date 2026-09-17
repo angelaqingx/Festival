@@ -59,6 +59,7 @@ export interface ShopifyProductVariant {
 	}>;
 	/** Server-only confirmation that a membership is a digital product. */
 	requiresShipping?: boolean;
+	inventoryItemId?: string;
 }
 
 export interface ShopifyProductDetails {
@@ -83,9 +84,16 @@ export interface ShopifyMembershipProductClient {
 			productId: string;
 			variantId: string;
 			price: string;
-			requiresShipping?: boolean;
 		},
 	): Promise<ShopifyAdminResult<ShopifyProductDetails>>;
+	updateInventoryItem(
+		context: ShopifyAdminOperationContext,
+		input: { inventoryItemId: string; requiresShipping: boolean },
+	): Promise<ShopifyAdminResult<{ requiresShipping: boolean }>>;
+	publishProductToHeadlessStorefront(
+		context: ShopifyAdminOperationContext,
+		productId: string,
+	): Promise<ShopifyAdminResult<void>>;
 	updateProductDetails(
 		context: ShopifyAdminOperationContext,
 		input: { productId: string; name: string; description?: string },
@@ -128,6 +136,8 @@ export interface ShopifyPaidOrderLine {
 export interface ShopifyPaidOrder {
 	readonly id: string;
 	readonly customerGid: string;
+	/** Shopify Admin customer identity email; used only to bind entitlement ownership. */
+	readonly customerEmail?: string;
 	readonly fullyPaid: boolean;
 	readonly fullyPaidAtIso?: string;
 	readonly currencyCode: string;

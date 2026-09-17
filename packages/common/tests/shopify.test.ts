@@ -4,6 +4,7 @@ import {
 	isMembershipProductPurchasable,
 	normalizeEffectiveShopifyScopes,
 	normalizeShopifyStoreDomain,
+	SHOPIFY_REQUIRED_SCOPES,
 	SHOPIFY_WEBHOOK_FAILURE_CATEGORIES,
 	SHOPIFY_WEBHOOK_READINESS_STATUSES,
 	validateMembershipProductInput,
@@ -11,6 +12,10 @@ import {
 } from "../src/shopify.js";
 
 describe("Shopify settings contract", () => {
+	it("requires inventory write access for digital membership products", () => {
+		expect(SHOPIFY_REQUIRED_SCOPES).toContain("write_inventory");
+	});
+
 	it("keeps webhook readiness and failure values closed and allowlisted", () => {
 		expect(SHOPIFY_WEBHOOK_READINESS_STATUSES).toEqual([
 			"unknown",
@@ -34,13 +39,21 @@ describe("Shopify settings contract", () => {
 				"write_products",
 				"read_orders",
 				"write_products",
+				"write_publications",
 			]),
-		).toEqual(["read_orders", "read_products", "write_products"]);
+		).toEqual([
+			"read_orders",
+			"read_products",
+			"read_publications",
+			"write_products",
+			"write_publications",
+		]);
 		expect(
 			deriveShopifyCapabilities(["read_orders", "write_products"]),
 		).toEqual({
 			read_products: "granted",
 			write_products: "granted",
+			write_inventory: "missing",
 			read_orders: "granted",
 			write_orders: "disabled",
 		});
@@ -56,7 +69,8 @@ describe("Shopify settings contract", () => {
 		).toEqual({
 			read_products: "granted",
 			write_products: "missing",
-			read_orders: "missing",
+			write_inventory: "missing",
+			read_orders: "granted",
 			write_orders: "disabled",
 		});
 	});

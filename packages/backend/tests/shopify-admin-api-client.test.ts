@@ -69,6 +69,56 @@ describe("ShopifyAdminApiClient", () => {
 		expect(graphqlRequests).toBe(4);
 	});
 
+	it("updates membership shipping through the inventory item with write_inventory", async () => {
+		let mutation: { query: string; variables: Record<string, unknown> } | null =
+			null;
+		let tokenRequests = 0;
+		globalThis.fetch = (async (input, init) => {
+			const url = input instanceof Request ? input.url : input.toString();
+			if (url.endsWith("/admin/oauth/access_token")) {
+				tokenRequests += 1;
+				return Response.json({
+					access_token: "inventory-token",
+					expires_in: 3600,
+					scope:
+						tokenRequests === 1
+							? "read_products,write_products"
+							: "read_products,write_products,write_inventory",
+				});
+			}
+			mutation = JSON.parse(String(init?.body));
+			return Response.json({
+				data: {
+					inventoryItemUpdate: {
+						inventoryItem: { requiresShipping: false },
+						userErrors: [],
+					},
+				},
+			});
+		}) as typeof fetch;
+
+		const client = new ShopifyAdminApiClient();
+		await expect(
+			client.updateInventoryItem(
+				{
+					...operationContext,
+					capability: "write_products",
+					grantedScopes: ["read_products", "write_products", "write_inventory"],
+				},
+				{
+					inventoryItemId: "gid://shopify/InventoryItem/1",
+					requiresShipping: false,
+				},
+			),
+		).resolves.toEqual({ value: { requiresShipping: false } });
+		expect(mutation?.query).toContain("inventoryItemUpdate");
+		expect(mutation?.variables).toEqual({
+			id: "gid://shopify/InventoryItem/1",
+			input: { requiresShipping: false },
+		});
+		expect(tokenRequests).toBe(2);
+	});
+
 	it("does not reuse a token after the integration version changes", async () => {
 		let tokenRequests = 0;
 		globalThis.fetch = (async (input, init) => {
@@ -734,7 +784,7 @@ describe("ShopifyAdminApiClient", () => {
 				"gid://shopify/Product/1",
 			]),
 		).rejects.toMatchObject({ failureCategory: "missing_scope" });
-		expect(fetchCalls).toBe(1);
+		expect(fetchCalls).toBe(2);
 
 		const orderContext = {
 			...operationContext,
@@ -863,7 +913,9 @@ describe("ShopifyAdminApiClient", () => {
 		expect(graphqlBody?.query).toContain("fullyPaid");
 		expect(graphqlBody?.query).toContain("discountedTotalSet");
 		expect(graphqlBody?.query).toContain("transactions(first: 250)");
-		expect(graphqlBody?.query).not.toContain("email");
+		expect(graphqlBody?.query).toContain(
+			"customer {\n\t\t\t\t\t\tid\n\t\t\t\t\t\temail",
+		);
 		expect(graphqlBody?.query).not.toContain("phone");
 		expect(graphqlBody?.query).not.toContain("shippingAddress");
 	});
