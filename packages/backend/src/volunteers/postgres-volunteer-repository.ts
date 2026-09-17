@@ -144,7 +144,7 @@ export class PostgresVolunteerRepository implements VolunteerRepository {
 		return rows.map((row) => this.shift(row));
 	}
 
-	async bookShifts(input: {
+	async bookShifts(_input: {
 		organizationId: string;
 		volunteerId: string;
 		shiftIds: string[];

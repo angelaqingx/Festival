@@ -42,6 +42,16 @@ import type {
 
 const API_BASE = import.meta.env.FRONT_API_BASE ?? "";
 
+export interface VolunteerRole {
+	id: string;
+	organizationId: string;
+	slug: string;
+	description: string;
+	detailsUrl: string | null;
+	isRoomProctor: boolean;
+	createdAtIso: string;
+}
+
 export class ApiError extends Error {
 	constructor(
 		message: string,
@@ -496,6 +506,14 @@ export function saveShopifySettings(
 			method: "POST",
 			body: JSON.stringify(input),
 		},
+		idToken,
+	);
+}
+
+export function getVolunteerRoles(idToken: string, slug: string) {
+	return requestJson<VolunteerRole[]>(
+		`/api/organizations/${slug}/volunteers/roles`,
+		undefined,
 		idToken,
 	);
 }

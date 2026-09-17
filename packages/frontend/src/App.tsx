@@ -22,6 +22,7 @@ import { MembershipPage } from "./pages/MembershipPage.js";
 import { OrganizationChooser } from "./pages/OrganizationChooser.js";
 import { OrganizationRootPage } from "./pages/OrganizationRootPage.js";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage.js";
+import { VolunteerRolesPage } from "./pages/VolunteerRolesPage.js";
 
 export default function App() {
 	const app = useFestivalAppController();
@@ -106,6 +107,11 @@ export default function App() {
 						</Match>
 						<Match when={app.route().kind === "org-admin-divisions"}>
 							<AdminDivisionsPage app={app} />
+						</Match>
+						<Match when={app.route().kind === "org-admin-volunteers"}>
+							<VolunteerRolesPage
+								slug={(app.route() as { slug: string }).slug}
+							/>
 						</Match>
 					</Switch>
 				</div>
