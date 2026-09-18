@@ -24,6 +24,11 @@ export const CURRENT_ROUTE_SECURITY = [
 	{ method: "GET", path: "/health", authenticationClass: "private-health" },
 	{ method: "GET", path: "/api/bootstrap", authenticationClass: "public" },
 	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/entitlements/:entitlementId/revoke",
+		authenticationClass: "admin",
+	},
+	{
 		method: "GET",
 		path: "/api/firebase-session",
 		authenticationClass: "firebase",
@@ -69,8 +74,38 @@ export const CURRENT_ROUTE_SECURITY = [
 		authenticationClass: "customer",
 	},
 	{
+		method: "POST",
+		path: "/api/organizations/:slug/customer/accompanist-membership",
+		authenticationClass: "customer",
+	},
+	{
+		method: "GET",
+		path: "/api/organizations/:slug/customer/accompanist-membership",
+		authenticationClass: "customer",
+	},
+	{
+		method: "GET",
+		path: "/api/organizations/:slug/staff/accompanists",
+		authenticationClass: "firebase",
+	},
+	{
 		method: "GET",
 		path: "/api/organizations/:slug/customer/membership-status",
+		authenticationClass: "customer",
+	},
+	{
+		method: "GET",
+		path: "/api/organizations/:slug/customer/children",
+		authenticationClass: "customer",
+	},
+	{
+		method: "POST",
+		path: "/api/organizations/:slug/customer/children",
+		authenticationClass: "customer",
+	},
+	{
+		method: "POST",
+		path: "/api/organizations/:slug/customer/children/:childId/age-snapshot",
 		authenticationClass: "customer",
 	},
 	{
@@ -157,6 +192,16 @@ export const CURRENT_ROUTE_SECURITY = [
 		authenticationClass: "admin",
 	},
 	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/festivals/:festivalShortName/primary",
+		authenticationClass: "admin",
+	},
+	{
+		method: "GET",
+		path: "/api/organizations/:slug/primary",
+		authenticationClass: "public",
+	},
+	{
 		method: "GET",
 		path: "/api/organizations/:slug/divisions",
 		authenticationClass: "public",
@@ -219,6 +264,66 @@ export const CURRENT_ROUTE_SECURITY = [
 	{
 		method: "POST",
 		path: "/api/organizations/:slug/admin/membership-products",
+		authenticationClass: "admin",
+	},
+	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/accompanist-offering",
+		authenticationClass: "admin",
+	},
+	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/accompanist-offering/:offeringId",
+		authenticationClass: "admin",
+	},
+	{
+		method: "GET",
+		path: "/api/organizations/:slug/admin/accompanist-policy",
+		authenticationClass: "admin",
+	},
+	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/accompanist-policy",
+		authenticationClass: "admin",
+	},
+	{
+		method: "GET",
+		path: "/api/organizations/:slug/admin/registration-configuration",
+		authenticationClass: "admin",
+	},
+	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/registration-age-date",
+		authenticationClass: "admin",
+	},
+	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/class-subtypes",
+		authenticationClass: "admin",
+	},
+	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/instruments",
+		authenticationClass: "admin",
+	},
+	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/class-subtypes/reorder",
+		authenticationClass: "admin",
+	},
+	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/instruments/reorder",
+		authenticationClass: "admin",
+	},
+	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/class-subtypes/:id",
+		authenticationClass: "admin",
+	},
+	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/instruments/:id",
 		authenticationClass: "admin",
 	},
 	{

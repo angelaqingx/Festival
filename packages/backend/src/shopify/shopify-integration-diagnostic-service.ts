@@ -12,6 +12,8 @@ import type { ShopifyPublicStorefrontDiagnosticClient } from "./shopify-public-c
 const PASSED_MESSAGE = "Public Storefront access is available.";
 const LOCKED_MESSAGE =
 	"Shopify's Online Store channel is locked. Public membership browsing is unavailable until the storefront is publicly accessible.";
+const PRIVATE_TOKEN_PASSED_MESSAGE =
+	"Private Storefront token access is available.";
 
 export class ShopifyIntegrationDiagnosticService {
 	constructor(
@@ -78,10 +80,7 @@ export class ShopifyIntegrationDiagnosticService {
 			: undefined;
 		const storefrontCheck = (async () => {
 			try {
-				const result = await this.client.diagnosePublicStorefrontAccess(
-					domain,
-					await this.storefrontToken(tenant.organization.id),
-				);
+				const result = await this.client.diagnosePublicStorefrontAccess(domain);
 				return {
 					id: "public_storefront_access" as const,
 					status:
@@ -96,10 +95,43 @@ export class ShopifyIntegrationDiagnosticService {
 				};
 			}
 		})();
-		const [webhook, storefront] = await Promise.all([
+		const privateTokenCheck = (async () => {
+			try {
+				const token = await this.storefrontToken(tenant.organization.id);
+				if (!token) {
+					return {
+						id: "private_storefront_token" as const,
+						status: "failed" as const,
+						message: "No private Storefront token is configured.",
+					};
+				}
+				const result = await this.client.diagnosePublicStorefrontAccess(
+					domain,
+					token,
+				);
+				return {
+					id: "private_storefront_token" as const,
+					status:
+						result === "passed" ? ("passed" as const) : ("failed" as const),
+					message:
+						result === "passed" ? PRIVATE_TOKEN_PASSED_MESSAGE : LOCKED_MESSAGE,
+				};
+			} catch {
+				return {
+					id: "private_storefront_token" as const,
+					status: "failed" as const,
+					message:
+						"Private Storefront token diagnostics are temporarily unavailable.",
+				};
+			}
+		})();
+		const [webhook, storefront, privateToken] = await Promise.all([
 			webhookCheck,
 			storefrontCheck,
+			privateTokenCheck,
 		]);
-		return { checks: [...(webhook ? [webhook] : []), storefront] };
+		return {
+			checks: [...(webhook ? [webhook] : []), storefront, privateToken],
+		};
 	}
 }

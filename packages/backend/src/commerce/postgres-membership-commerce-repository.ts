@@ -3,8 +3,12 @@ import type {
 	CreateEntitlementGrantSnapshotInput,
 	EntitlementGrantSnapshot,
 } from "@festival/common";
-import { assertValidEntitlementGrantSnapshotInput } from "@festival/common";
+import {
+	addCalendarDays,
+	assertValidEntitlementGrantSnapshotInput,
+} from "@festival/common";
 import { sql } from "bun";
+import { initializePostgresSchema } from "../repo/postgres-schema.js";
 import type {
 	MembershipCommerceRepository,
 	MembershipDecisionStatus,
@@ -62,6 +66,19 @@ function delivery(row: Record<string, unknown>): ShopifyWebhookDelivery {
 			row.failure_category === null
 				? undefined
 				: (row.failure_category as ShopifyWebhookDelivery["failureCategory"]),
+		failureStage:
+			row.failure_stage == null
+				? undefined
+				: (row.failure_stage as ShopifyWebhookDelivery["failureStage"]),
+		failureCode:
+			row.failure_code == null
+				? undefined
+				: (row.failure_code as ShopifyWebhookDelivery["failureCode"]),
+		shopifyRequestId:
+			row.shopify_request_id == null
+				? undefined
+				: String(row.shopify_request_id),
+		failedAtIso: row.failed_at == null ? undefined : String(row.failed_at),
 		receivedAtIso: String(row.received_at),
 		processedAtIso:
 			row.processed_at === null ? undefined : String(row.processed_at),
@@ -70,28 +87,6 @@ function delivery(row: Record<string, unknown>): ShopifyWebhookDelivery {
 			row.processing_started_at === undefined
 				? undefined
 				: String(row.processing_started_at),
-	};
-}
-
-function grant(row: Record<string, unknown>): EntitlementGrantSnapshot {
-	return {
-		id: String(row.id),
-		organizationId: String(row.organization_id),
-		customerId: String(row.customer_id),
-		entitlementClass: "teacher_membership",
-		offeringId: String(row.offering_id),
-		durationDays: Number(row.duration_days),
-		divisionId: String(row.division_id),
-		divisionNameSnapshot: String(row.division_name_snapshot),
-		paidAmount: String(row.paid_amount),
-		paidCurrencyCode: String(row.paid_currency_code),
-		checkoutIntentId: String(row.checkout_intent_id),
-		shopifyOrderGid: String(row.shopify_order_gid),
-		shopifyOrderLineGid: String(row.shopify_order_line_gid),
-		startsOn: String(row.starts_on),
-		endsOn: String(row.ends_on),
-		status: row.status as EntitlementGrantSnapshot["status"],
-		createdAtIso: String(row.created_at),
 	};
 }
 
@@ -122,76 +117,7 @@ export class PostgresMembershipCommerceRepository
 	}
 
 	async ensureReady() {
-		await sql.unsafe(`
-			CREATE TABLE IF NOT EXISTS ${this.schema}.shopify_webhook_deliveries (
-				id TEXT PRIMARY KEY,
-				organization_id TEXT NOT NULL REFERENCES ${this.schema}.organizations (id) ON DELETE CASCADE,
-				shop_domain TEXT NOT NULL,
-				webhook_id TEXT NOT NULL,
-				topic TEXT NOT NULL CHECK (topic = 'orders/paid'),
-				api_version TEXT NOT NULL CHECK (api_version = '2026-07'),
-				shopify_order_gid TEXT NOT NULL,
-				payload_sha256 TEXT NOT NULL CHECK (payload_sha256 ~ '^[0-9a-f]{64}$'),
-				status TEXT NOT NULL CHECK (status IN ('received', 'processing', 'processed', 'failed')),
-				attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
-				failure_category TEXT NULL CHECK (failure_category IN ('upstream', 'persistence', 'invalid')),
-				received_at TIMESTAMPTZ NOT NULL,
-				processing_started_at TIMESTAMPTZ NULL,
-				processed_at TIMESTAMPTZ NULL,
-				UNIQUE (organization_id, webhook_id)
-			);
-			CREATE TABLE IF NOT EXISTS ${this.schema}.shopify_order_projections (
-				organization_id TEXT NOT NULL REFERENCES ${this.schema}.organizations (id) ON DELETE CASCADE,
-				shopify_order_gid TEXT NOT NULL,
-				shopify_customer_gid TEXT NULL,
-				correlation_id TEXT NULL,
-				fully_paid_at TIMESTAMPTZ NULL,
-				currency_code TEXT NULL,
-				created_at TIMESTAMPTZ NOT NULL,
-				updated_at TIMESTAMPTZ NOT NULL,
-				PRIMARY KEY (organization_id, shopify_order_gid)
-			);
-			CREATE TABLE IF NOT EXISTS ${this.schema}.membership_validation_decisions (
-				id TEXT PRIMARY KEY,
-				organization_id TEXT NOT NULL REFERENCES ${this.schema}.organizations (id) ON DELETE CASCADE,
-				customer_id TEXT NULL,
-				checkout_intent_id TEXT NULL,
-				shopify_order_gid TEXT NOT NULL,
-				shopify_order_line_gid TEXT NULL,
-				status TEXT NOT NULL CHECK (status IN ('pending_validation', 'approved', 'rejected', 'needs_review')),
-				reason_code TEXT NULL CHECK (reason_code IN ('correlation_missing', 'correlation_invalid', 'intent_expired', 'order_not_paid', 'payment_incomplete', 'payment_mismatch', 'customer_mismatch', 'offering_mismatch', 'division_invalid', 'duplicate_purchase', 'policy_mismatch', 'upstream_invalid')),
-				created_at TIMESTAMPTZ NOT NULL,
-				updated_at TIMESTAMPTZ NOT NULL,
-				UNIQUE (organization_id, shopify_order_gid),
-				UNIQUE (organization_id, shopify_order_line_gid)
-			);
-			ALTER TABLE ${this.schema}.shopify_webhook_deliveries
-				ADD COLUMN IF NOT EXISTS processing_started_at TIMESTAMPTZ NULL;
-			CREATE INDEX IF NOT EXISTS membership_validation_customer_idx
-				ON ${this.schema}.membership_validation_decisions (organization_id, customer_id, created_at DESC);
-			CREATE UNIQUE INDEX IF NOT EXISTS membership_validation_checkout_intent_idx
-				ON ${this.schema}.membership_validation_decisions (organization_id, checkout_intent_id)
-				WHERE checkout_intent_id IS NOT NULL;
-			CREATE INDEX IF NOT EXISTS shopify_webhook_reclaim_idx
-				ON ${this.schema}.shopify_webhook_deliveries (organization_id, status, received_at);
-			ALTER TABLE ${this.schema}.membership_validation_decisions
-				DROP CONSTRAINT IF EXISTS membership_validation_decisions_reason_code_check;
-			ALTER TABLE ${this.schema}.membership_validation_decisions
-				ADD CONSTRAINT membership_validation_decisions_reason_code_check
-				CHECK (reason_code IS NULL OR reason_code IN ('correlation_missing', 'correlation_invalid', 'intent_expired', 'order_not_paid', 'payment_incomplete', 'payment_mismatch', 'customer_mismatch', 'offering_mismatch', 'division_invalid', 'duplicate_purchase', 'policy_mismatch', 'upstream_invalid'));
-			CREATE TABLE IF NOT EXISTS ${this.schema}.membership_reconciliation_runs (
-				id TEXT PRIMARY KEY,
-				organization_id TEXT NOT NULL REFERENCES ${this.schema}.organizations (id) ON DELETE CASCADE,
-				status TEXT NOT NULL CHECK (status IN ('completed', 'failed')),
-				discovered_count INTEGER NOT NULL CHECK (discovered_count >= 0),
-				processed_count INTEGER NOT NULL CHECK (processed_count >= 0),
-				started_at TIMESTAMPTZ NOT NULL,
-				finished_at TIMESTAMPTZ NOT NULL,
-				failure_category TEXT NULL CHECK (failure_category IN ('upstream', 'persistence', 'invalid'))
-			);
-			CREATE INDEX IF NOT EXISTS membership_reconciliation_runs_tenant_idx
-				ON ${this.schema}.membership_reconciliation_runs (organization_id, finished_at DESC);
-		`);
+		await initializePostgresSchema(this.schema);
 	}
 
 	async recordDelivery(input: {
@@ -247,11 +173,29 @@ export class PostgresMembershipCommerceRepository
 
 	async markDeliveryFailed(
 		deliveryId: string,
-		failureCategory: "upstream" | "persistence" | "invalid",
+		failure: {
+			category: "upstream" | "persistence" | "invalid";
+			stage: "order_read" | "projection";
+			code:
+				| "shopify_upstream"
+				| "shopify_transport"
+				| "invalid_data"
+				| "persistence"
+				| "unexpected";
+			requestId?: string;
+			failedAtIso: string;
+		},
 	) {
 		await sql.unsafe(
-			`UPDATE ${this.schema}.shopify_webhook_deliveries SET status = 'failed', failure_category = $1, processing_started_at = NULL WHERE id = $2 AND status = 'processing'`,
-			[failureCategory, deliveryId],
+			`UPDATE ${this.schema}.shopify_webhook_deliveries SET status = 'failed', failure_category = $1, failure_stage = $2, failure_code = $3, shopify_request_id = $4, failed_at = $5::timestamptz, processing_started_at = NULL WHERE id = $6 AND status = 'processing'`,
+			[
+				failure.category,
+				failure.stage,
+				failure.code,
+				failure.requestId ?? null,
+				failure.failedAtIso,
+				deliveryId,
+			],
 		);
 	}
 
@@ -419,17 +363,125 @@ export class PostgresMembershipCommerceRepository
 			let finalDecision = input.decision;
 			let grantInput = input.grant;
 			if (grantInput && finalDecision.customerId) {
-				const activeGrantRows = (await tx.unsafe(
-					`SELECT 1 FROM ${this.schema}.entitlement_grants grants JOIN ${this.schema}.organizations organization ON organization.id = grants.organization_id WHERE grants.organization_id = $1 AND grants.customer_id = $2 AND grants.status = 'active' AND grants.ends_on > (NOW() AT TIME ZONE organization.timezone)::date LIMIT 1`,
-					[finalDecision.organizationId, finalDecision.customerId],
-				)) as Array<Record<string, unknown>>;
-				if (activeGrantRows[0]) {
+				if (!grantInput.verifiedIdentityEmail) {
 					finalDecision = {
 						...finalDecision,
-						status: "rejected",
-						reasonCode: "duplicate_purchase",
+						status: "needs_review",
+						reasonCode: "upstream_invalid",
 					};
 					grantInput = undefined;
+				} else {
+					const identityRows = (await tx.unsafe(
+						`INSERT INTO ${this.schema}.membership_identity_emails (organization_id, normalized_email, customer_id) VALUES ($1,$2,$3) ON CONFLICT (organization_id, normalized_email) DO UPDATE SET customer_id = EXCLUDED.customer_id WHERE ${this.schema}.membership_identity_emails.customer_id = EXCLUDED.customer_id RETURNING customer_id`,
+						[
+							finalDecision.organizationId,
+							grantInput.verifiedIdentityEmail ?? "",
+							finalDecision.customerId,
+						],
+					)) as Array<Record<string, unknown>>;
+					if (!identityRows[0]) {
+						finalDecision = {
+							...finalDecision,
+							status: "needs_review",
+							reasonCode: "upstream_invalid",
+						};
+						grantInput = undefined;
+					} else {
+						const entitlementRows = (await tx.unsafe(
+							`SELECT e.ends_on::text, e.starts_on > (NOW() AT TIME ZONE o.timezone)::date AS scheduled FROM ${this.schema}.membership_entitlements e JOIN ${this.schema}.organizations o ON o.id=e.organization_id WHERE e.organization_id=$1 AND e.customer_id=$2 AND e.entitlement_class=$3 AND e.revoked_at IS NULL AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date ORDER BY e.starts_on FOR UPDATE`,
+							[
+								finalDecision.organizationId,
+								finalDecision.customerId,
+								grantInput.entitlementClass,
+							],
+						)) as Array<{ ends_on: string; scheduled: boolean }>;
+						if (entitlementRows.some((row) => row.scheduled)) {
+							finalDecision = {
+								...finalDecision,
+								status: "needs_review",
+								reasonCode: "duplicate_purchase",
+							};
+							grantInput = undefined;
+						} else if (entitlementRows[0]) {
+							const startsOn = entitlementRows[0].ends_on;
+							grantInput = {
+								...grantInput,
+								startsOn,
+								endsOn: addCalendarDays(startsOn, grantInput.durationDays),
+							};
+						}
+						if (grantInput) {
+							await tx.unsafe(
+								`INSERT INTO ${this.schema}.membership_entitlement_cohorts (organization_id,customer_id,entitlement_class) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+								[
+									finalDecision.organizationId,
+									finalDecision.customerId,
+									grantInput.entitlementClass,
+								],
+							);
+							const cohort = (await tx.unsafe(
+								`SELECT version FROM ${this.schema}.membership_entitlement_cohorts WHERE organization_id=$1 AND customer_id=$2 AND entitlement_class=$3 FOR UPDATE`,
+								[
+									finalDecision.organizationId,
+									finalDecision.customerId,
+									grantInput.entitlementClass,
+								],
+							)) as Array<{ version: number }>;
+							const advanced =
+								cohort[0] &&
+								(await tx.unsafe(
+									`UPDATE ${this.schema}.membership_entitlement_cohorts SET version=version+1 WHERE organization_id=$1 AND customer_id=$2 AND entitlement_class=$3 AND version=$4 RETURNING version`,
+									[
+										finalDecision.organizationId,
+										finalDecision.customerId,
+										grantInput.entitlementClass,
+										cohort[0].version,
+									],
+								));
+							if (!advanced || advanced.count !== 1) {
+								const refreshedCohort = (await tx.unsafe(
+									`SELECT version FROM ${this.schema}.membership_entitlement_cohorts WHERE organization_id=$1 AND customer_id=$2 AND entitlement_class=$3 FOR UPDATE`,
+									[
+										finalDecision.organizationId,
+										finalDecision.customerId,
+										grantInput.entitlementClass,
+									],
+								)) as Array<{ version: number }>;
+								const retried =
+									refreshedCohort[0] &&
+									(await tx.unsafe(
+										`UPDATE ${this.schema}.membership_entitlement_cohorts SET version=version+1 WHERE organization_id=$1 AND customer_id=$2 AND entitlement_class=$3 AND version=$4 RETURNING version`,
+										[
+											finalDecision.organizationId,
+											finalDecision.customerId,
+											grantInput.entitlementClass,
+											refreshedCohort[0].version,
+										],
+									));
+								if (!retried || retried.count !== 1) {
+									const refreshedEntitlements = (await tx.unsafe(
+										`SELECT 1 FROM ${this.schema}.membership_entitlements e JOIN ${this.schema}.organizations o ON o.id=e.organization_id WHERE e.organization_id=$1 AND e.customer_id=$2 AND e.entitlement_class=$3 AND e.revoked_at IS NULL AND e.starts_on > (NOW() AT TIME ZONE o.timezone)::date LIMIT 1 FOR UPDATE`,
+										[
+											finalDecision.organizationId,
+											finalDecision.customerId,
+											grantInput.entitlementClass,
+										],
+									)) as Array<Record<string, unknown>>;
+									if (!refreshedEntitlements[0]) {
+										throw new Error(
+											"Entitlement cohort compare-and-swap retry failed.",
+										);
+									}
+									finalDecision = {
+										...finalDecision,
+										status: "needs_review",
+										reasonCode: "duplicate_purchase",
+									};
+									grantInput = undefined;
+								}
+							}
+						}
+					}
 				}
 			}
 			if (input.projection) {
@@ -448,30 +500,47 @@ export class PostgresMembershipCommerceRepository
 			}
 			let createdGrant: EntitlementGrantSnapshot | undefined;
 			if (grantInput) {
-				const grantRows = (await tx.unsafe(
-					`INSERT INTO ${this.schema}.entitlement_grants (id, organization_id, customer_id, entitlement_class, offering_id, duration_days, division_id, division_name_snapshot, paid_amount, paid_currency_code, checkout_intent_id, shopify_order_gid, shopify_order_line_gid, starts_on, ends_on, status) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::date,$15::date,$16 FROM ${this.schema}.products offering JOIN ${this.schema}.organization_divisions division ON division.id = $7 WHERE offering.id = $5 AND offering.organization_id = $2 AND division.organization_id = $2 RETURNING id, organization_id, customer_id, entitlement_class, offering_id, duration_days, division_id, division_name_snapshot, paid_amount, paid_currency_code, checkout_intent_id, shopify_order_gid, shopify_order_line_gid, starts_on::text, ends_on::text, status, created_at::text`,
+				const entitlementId = randomUUID();
+				const entitlementRows = (await tx.unsafe(
+					`INSERT INTO ${this.schema}.membership_entitlements (id,organization_id,customer_id,entitlement_class,source,offering_id,starts_on,ends_on) SELECT $1,$2,$3,$4,'teacher_checkout',$5,$6::date,$7::date FROM ${this.schema}.products WHERE id=$5 AND organization_id=$2 RETURNING id`,
 					[
-						randomUUID(),
+						entitlementId,
 						grantInput.organizationId,
 						grantInput.customerId,
 						grantInput.entitlementClass,
 						grantInput.offeringId,
-						grantInput.durationDays,
+						grantInput.startsOn,
+						grantInput.endsOn,
+					],
+				)) as Array<Record<string, unknown>>;
+				if (!entitlementRows[0])
+					throw new Error("Entitlement offering was not found.");
+				await tx.unsafe(
+					`INSERT INTO ${this.schema}.membership_entitlement_divisions (entitlement_id,organization_id,division_id,division_name_snapshot) VALUES ($1,$2,$3,$4)`,
+					[
+						entitlementId,
+						grantInput.organizationId,
 						grantInput.divisionId,
 						grantInput.divisionNameSnapshot,
-						grantInput.paidAmount,
-						grantInput.paidCurrencyCode,
+					],
+				);
+				await tx.unsafe(
+					`INSERT INTO ${this.schema}.teacher_membership_entitlement_details (entitlement_id,checkout_intent_id,shopify_order_gid,shopify_order_line_gid,paid_amount,paid_currency_code,duration_days) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+					[
+						entitlementId,
 						grantInput.checkoutIntentId,
 						grantInput.shopifyOrderGid,
 						grantInput.shopifyOrderLineGid,
-						grantInput.startsOn,
-						grantInput.endsOn,
-						grantInput.status,
+						grantInput.paidAmount,
+						grantInput.paidCurrencyCode,
+						grantInput.durationDays,
 					],
-				)) as Array<Record<string, unknown>>;
-				if (!grantRows[0])
-					throw new Error("Entitlement offering or division was not found.");
-				createdGrant = grant(grantRows[0]);
+				);
+				createdGrant = {
+					...grantInput,
+					id: entitlementId,
+					createdAtIso: new Date().toISOString(),
+				};
 			}
 			const now = finalDecision.updatedAtIso;
 			const decisionRows = existingRows[0]
@@ -530,7 +599,7 @@ export class PostgresMembershipCommerceRepository
 		today: string,
 	) {
 		const rows = (await sql.unsafe(
-			`SELECT 1 FROM ${this.schema}.entitlement_grants WHERE organization_id = $1 AND customer_id = $2 AND status = 'active' AND ends_on > $3::date LIMIT 1`,
+			`SELECT 1 FROM ${this.schema}.membership_entitlements WHERE organization_id = $1 AND customer_id = $2 AND revoked_at IS NULL AND starts_on > $3::date LIMIT 1`,
 			[organizationId, customerId, today],
 		)) as Array<Record<string, unknown>>;
 		return Boolean(rows[0]);

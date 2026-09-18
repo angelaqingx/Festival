@@ -1,0 +1,43 @@
+import { expect, test } from "bun:test";
+import {
+	buildCanonicalPostgresSchemaSql,
+	postgresSchemaName,
+} from "../src/repo/postgres-schema.js";
+
+test("canonical PostgreSQL schema defines the final empty-database shape only", () => {
+	const schema = buildCanonicalPostgresSchemaSql("fresh_orgs");
+
+	for (const table of [
+		"organizations",
+		"festivals",
+		"festival_children",
+		"festival_child_age_snapshots",
+		"checkout_intents",
+		"membership_entitlements",
+		"membership_entitlement_divisions",
+		"membership_entitlement_revocations",
+		"membership_entitlement_cohorts",
+		"membership_identity_emails",
+		"teacher_membership_entitlement_details",
+		"accompanist_membership_entitlement_details",
+		"shopify_webhook_deliveries",
+		"app_user",
+	]) {
+		expect(schema).toContain(`fresh_orgs.${table}`);
+	}
+	expect(schema).toContain("CREATE EXTENSION IF NOT EXISTS pgcrypto");
+	expect(schema).toContain("CREATE EXTENSION IF NOT EXISTS btree_gist");
+	expect(schema).toContain("EXCLUDE USING gist");
+	expect(schema).not.toContain("entitlement_grants");
+	expect(schema).not.toContain("accompanist_membership_grants");
+	expect(schema).toContain("enforce_shopify_shop_ownership");
+	expect(schema).not.toMatch(
+		/ALTER TABLE|DROP (?:COLUMN|CONSTRAINT|INDEX)|\n\s*(?:INSERT INTO|UPDATE [A-Za-z_])/,
+	);
+});
+
+test("canonical PostgreSQL schema rejects unsafe schema identifiers", () => {
+	expect(() => postgresSchemaName("orgs; DROP SCHEMA orgs")).toThrow(
+		"Database schema is invalid.",
+	);
+});

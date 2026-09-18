@@ -31,6 +31,7 @@ import { buildApiRouter } from "./routes/api-router.js";
 import { buildAuthRouter } from "./routes/auth-router.js";
 import { assertRouteSecurityInventory } from "./routes/route-security.js";
 import { apiRequestSecurity } from "./security/request-security.js";
+import { AccompanistMembershipService } from "./services/accompanist-membership-service.js";
 import { OrganizationService } from "./services/organization-service.js";
 import { ShopifyAdminApiClient } from "./shopify/admin-api-client.js";
 import { FileShopifyMutationAuditWriter } from "./shopify/admin-mutation-audit.js";
@@ -252,6 +253,9 @@ export async function createApp(options: CreateAppOptions = {}) {
 	const membershipStatusService =
 		options.membershipStatusService ??
 		new MembershipStatusService(repository, commerceRepository);
+	const accompanistMembershipService = new AccompanistMembershipService(
+		repository,
+	);
 	const volunteerRepository =
 		options.volunteerRepository ??
 		(env.databaseSchema
@@ -329,6 +333,7 @@ export async function createApp(options: CreateAppOptions = {}) {
 			shopifyIntegrationDiagnosticService,
 			membershipCheckoutService,
 			membershipStatusService,
+			accompanistMembershipService,
 			volunteerRepository,
 		),
 	);

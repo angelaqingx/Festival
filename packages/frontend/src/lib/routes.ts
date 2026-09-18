@@ -4,10 +4,14 @@ export type AppRoute =
 	| { kind: "create-org" }
 	| { kind: "invite"; token: string }
 	| { kind: "org-root"; slug: string }
+	| { kind: "festival-public"; slug: string; festivalSlug: string }
+	| { kind: "festival-admin"; slug: string; festivalSlug: string }
 	| { kind: "org-membership"; slug: string }
+	| { kind: "org-accompanist-membership"; slug: string }
 	| { kind: "org-customer-account-legacy"; slug: string }
 	| { kind: "org-customer-account-memberships"; slug: string }
 	| { kind: "org-customer-account-contact"; slug: string }
+	| { kind: "org-customer-account-children"; slug: string }
 	| { kind: "org-customer-account-orders"; slug: string }
 	| { kind: "org-admin"; slug: string }
 	| { kind: "org-admin-users"; slug: string }
@@ -15,6 +19,7 @@ export type AppRoute =
 	| { kind: "org-admin-memberships"; slug: string }
 	| { kind: "org-admin-festivals"; slug: string }
 	| { kind: "org-admin-divisions"; slug: string }
+	| { kind: "org-admin-accompanists"; slug: string }
 	| { kind: "org-admin-volunteers"; slug: string };
 
 export function buildOrgPath(slug: string): string {
@@ -29,6 +34,10 @@ export function buildOrgMembershipPath(slug: string): string {
 	return `/org/${slug}/membership`;
 }
 
+export function buildOrgAccompanistMembershipPath(slug: string): string {
+	return `/org/${slug}/accompanist-membership`;
+}
+
 export function buildOrgCustomerAccountPath(slug: string): string {
 	return buildOrgCustomerAccountMembershipsPath(slug);
 }
@@ -39,6 +48,9 @@ export function buildOrgCustomerAccountMembershipsPath(slug: string): string {
 
 export function buildOrgCustomerAccountContactPath(slug: string): string {
 	return `/org/${slug}/account/contact`;
+}
+export function buildOrgCustomerAccountChildrenPath(slug: string): string {
+	return `/org/${slug}/account/children`;
 }
 
 export function buildOrgCustomerAccountOrdersPath(slug: string): string {
@@ -64,6 +76,9 @@ export function buildOrgAdminFestivalsPath(slug: string): string {
 export function buildOrgAdminDivisionsPath(slug: string): string {
 	return `/org/${slug}/admin/divisions`;
 }
+export function buildOrgAdminAccompanistsPath(slug: string): string {
+	return `/org/${slug}/admin/accompanists`;
+}
 
 export function buildOrgAdminVolunteersPath(slug: string): string {
 	return `/org/${slug}/admin/volunteers`;
@@ -80,10 +95,14 @@ export function buildPrivacyPolicyPath(): string {
 export function isOrganizationPageRoute(route: AppRoute): boolean {
 	return (
 		route.kind === "org-root" ||
+		route.kind === "festival-public" ||
+		route.kind === "festival-admin" ||
 		route.kind === "org-membership" ||
+		route.kind === "org-accompanist-membership" ||
 		route.kind === "org-customer-account-legacy" ||
 		route.kind === "org-customer-account-memberships" ||
 		route.kind === "org-customer-account-contact" ||
+		route.kind === "org-customer-account-children" ||
 		route.kind === "org-customer-account-orders"
 	);
 }
@@ -110,10 +129,37 @@ export function parseRoute(pathname: string): AppRoute {
 	if (orgRootMatch) {
 		return { kind: "org-root", slug: orgRootMatch[1] ?? "" };
 	}
+	const festivalAdminMatch = pathname.match(
+		/^\/org\/([^/]+)\/festival\/([^/]+)\/admin$/,
+	);
+	if (festivalAdminMatch)
+		return {
+			kind: "festival-admin",
+			slug: festivalAdminMatch[1] ?? "",
+			festivalSlug: festivalAdminMatch[2] ?? "",
+		};
+	const festivalPublicMatch = pathname.match(
+		/^\/org\/([^/]+)\/festival\/([^/]+)$/,
+	);
+	if (festivalPublicMatch)
+		return {
+			kind: "festival-public",
+			slug: festivalPublicMatch[1] ?? "",
+			festivalSlug: festivalPublicMatch[2] ?? "",
+		};
 
 	const orgMembershipMatch = pathname.match(/^\/org\/([^/]+)\/membership$/);
 	if (orgMembershipMatch) {
 		return { kind: "org-membership", slug: orgMembershipMatch[1] ?? "" };
+	}
+	const accompanistMembershipMatch = pathname.match(
+		/^\/org\/([^/]+)\/accompanist-membership$/,
+	);
+	if (accompanistMembershipMatch) {
+		return {
+			kind: "org-accompanist-membership",
+			slug: accompanistMembershipMatch[1] ?? "",
+		};
 	}
 
 	const customerAccountMatch = pathname.match(/^\/org\/([^/]+)\/account\/?$/);
@@ -154,6 +200,14 @@ export function parseRoute(pathname: string): AppRoute {
 	if (orgAdminMatch) {
 		return { kind: "org-admin", slug: orgAdminMatch[1] ?? "" };
 	}
+	const customerAccountChildrenMatch = pathname.match(
+		/^\/org\/([^/]+)\/account\/children$/,
+	);
+	if (customerAccountChildrenMatch)
+		return {
+			kind: "org-customer-account-children",
+			slug: customerAccountChildrenMatch[1] ?? "",
+		};
 
 	const orgAdminUsersMatch = pathname.match(/^\/org\/([^/]+)\/admin\/users$/);
 	if (orgAdminUsersMatch) {
@@ -199,6 +253,14 @@ export function parseRoute(pathname: string): AppRoute {
 			slug: orgAdminDivisionsMatch[1] ?? "",
 		};
 	}
+	const orgAdminAccompanistsMatch = pathname.match(
+		/^\/org\/([^/]+)\/admin\/accompanists$/,
+	);
+	if (orgAdminAccompanistsMatch)
+		return {
+			kind: "org-admin-accompanists",
+			slug: orgAdminAccompanistsMatch[1] ?? "",
+		};
 
 	const orgAdminVolunteersMatch = pathname.match(
 		/^\/org\/([^/]+)\/admin\/volunteers$/,

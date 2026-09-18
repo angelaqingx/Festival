@@ -1,8 +1,11 @@
 import type {
+	AccompanistDivisionSelectionPolicy,
+	AccompanistMembershipGrant,
 	AuthenticatedUser,
 	CreateEntitlementGrantSnapshotInput,
 	EntitlementClass,
 	EntitlementGrantSnapshot,
+	FestivalClassConfiguration,
 	FestivalRecord,
 	OrganizationAdminUserEntry,
 	OrganizationDivision,
@@ -10,6 +13,8 @@ import type {
 	OrganizationMembershipRecord,
 	OrganizationRecord,
 	OrganizationUserRecord,
+	RegistrationAgeConfiguration,
+	RegistrationCatalogValue,
 	ShopifyCapabilityDiagnostics,
 	ShopifyFailureCategory,
 	ShopifyVerificationStatus,
@@ -45,6 +50,7 @@ export interface CreateFestivalRecordInput {
 	id: string;
 	organizationId: string;
 	code: string;
+	shortName: string;
 	name: string;
 	startDate: string;
 	endDate: string;
@@ -133,6 +139,13 @@ export class ShopifyShopOwnershipError extends Error {
 	}
 }
 
+export class AccompanistMembershipConflictError extends Error {
+	constructor() {
+		super("An active accompanist membership already exists.");
+		this.name = "AccompanistMembershipConflictError";
+	}
+}
+
 export interface ProductRecord {
 	id: string;
 	organizationId: string;
@@ -155,6 +168,43 @@ export interface CreateMembershipProductRecordInput {
 	shopifyProductGid: string;
 	shopifyVariantGid: string;
 	productNameSnapshot: string;
+}
+
+export interface AccompanistDivisionPolicyRecord {
+	organizationId: string;
+	policy: AccompanistDivisionSelectionPolicy;
+	updatedAtIso: string;
+}
+
+export interface AccompanistDivisionPolicyHistoryRecord
+	extends AccompanistDivisionPolicyRecord {
+	id: string;
+	createdAtIso: string;
+}
+
+export type RegistrationCatalogKind = "class_subtype" | "instrument";
+
+export interface CreateFestivalClassConfigurationInput
+	extends Omit<
+		FestivalClassConfiguration,
+		"id" | "createdAtIso" | "updatedAtIso" | "isActive"
+	> {}
+
+export interface CreateAccompanistMembershipGrantInput
+	extends Omit<
+		AccompanistMembershipGrant,
+		"id" | "createdAtIso" | "status" | "isCurrent"
+	> {
+	supersedeGrantId?: string;
+}
+
+export interface EntitlementRevocationRecord {
+	id: string;
+	entitlementId: string;
+	organizationId: string;
+	actorUserId: string;
+	reason: string;
+	revokedAtIso: string;
 }
 
 export interface OrganizationRepository {
@@ -231,6 +281,14 @@ export interface OrganizationRepository {
 		organizationId: string,
 		name: string,
 	): Promise<FestivalRecord | null>;
+	findFestivalByShortName(
+		organizationId: string,
+		shortName: string,
+	): Promise<FestivalRecord | null>;
+	setPrimaryFestival(
+		organizationId: string,
+		festivalId: string,
+	): Promise<FestivalRecord>;
 	dismissWelcome(
 		userId: string,
 		organizationId: string,
@@ -265,6 +323,64 @@ export interface OrganizationRepository {
 		organizationId: string,
 		entitlementClass: EntitlementClass,
 	): Promise<ProductRecord | null>;
+	getAccompanistDivisionPolicy(
+		organizationId: string,
+	): Promise<AccompanistDivisionPolicyRecord>;
+	updateAccompanistDivisionPolicy(input: {
+		organizationId: string;
+		policy: AccompanistDivisionSelectionPolicy;
+	}): Promise<AccompanistDivisionPolicyRecord>;
+	listAccompanistDivisionPolicyHistory(
+		organizationId: string,
+	): Promise<AccompanistDivisionPolicyHistoryRecord[]>;
+	createAccompanistMembershipGrant(
+		input: CreateAccompanistMembershipGrantInput,
+	): Promise<AccompanistMembershipGrant>;
+	listAccompanistMembershipGrants(input: {
+		organizationId: string;
+		customerId?: string;
+		normalizedEmail?: string;
+		currentOnly?: boolean;
+	}): Promise<AccompanistMembershipGrant[]>;
+	getRegistrationAgeConfiguration(
+		organizationId: string,
+	): Promise<RegistrationAgeConfiguration | null>;
+	updateRegistrationAgeConfiguration(input: {
+		organizationId: string;
+		registrationAgeDate: string;
+	}): Promise<RegistrationAgeConfiguration>;
+	listRegistrationCatalogValues(
+		organizationId: string,
+		kind: RegistrationCatalogKind,
+		activeOnly?: boolean,
+	): Promise<RegistrationCatalogValue[]>;
+	createRegistrationCatalogValue(input: {
+		organizationId: string;
+		kind: RegistrationCatalogKind;
+		displayName: string;
+		normalizedName: string;
+	}): Promise<RegistrationCatalogValue>;
+	updateRegistrationCatalogValue(input: {
+		organizationId: string;
+		kind: RegistrationCatalogKind;
+		id: string;
+		displayName?: string;
+		normalizedName?: string;
+		isActive?: boolean;
+	}): Promise<RegistrationCatalogValue | null>;
+	reorderRegistrationCatalogValues(
+		organizationId: string,
+		kind: RegistrationCatalogKind,
+		ids: string[],
+	): Promise<RegistrationCatalogValue[]>;
+	createFestivalClassConfiguration(
+		input: CreateFestivalClassConfigurationInput,
+	): Promise<FestivalClassConfiguration>;
+	listFestivalClassConfigurations(
+		organizationId: string,
+		festivalId: string,
+		activeOnly?: boolean,
+	): Promise<FestivalClassConfiguration[]>;
 	findProductRecordByShopifyProductGid(
 		shopifyProductGid: string,
 	): Promise<ProductRecord | null>;
@@ -278,4 +394,11 @@ export interface OrganizationRepository {
 		organizationId: string,
 		customerId: string,
 	): Promise<EntitlementGrantSnapshot[]>;
+	revokeEntitlement(input: {
+		organizationId: string;
+		entitlementId: string;
+		actorUserId: string;
+		reason: string;
+		revokedAtIso: string;
+	}): Promise<{ revocation: EntitlementRevocationRecord; existing: boolean }>;
 }

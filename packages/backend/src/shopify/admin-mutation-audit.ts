@@ -10,7 +10,10 @@ const ORGANIZATION_UUID =
 const SHOPIFY_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const AUDIT_OPERATIONS = new Set<ShopifyMutationAuditOperation>([
 	"productCreate",
+	"productUpdate",
 	"productVariantUpdate",
+	"inventoryItemUpdate",
+	"productPublish",
 	"productDelete",
 ]);
 const AUDIT_RESULTS = new Set(["success", "failure"]);
@@ -25,7 +28,10 @@ const FAILURE_CATEGORIES = new Set<ShopifyFailureCategory>([
 
 export type ShopifyMutationAuditOperation =
 	| "productCreate"
+	| "productUpdate"
 	| "productVariantUpdate"
+	| "inventoryItemUpdate"
+	| "productPublish"
 	| "productDelete";
 
 export interface ShopifyMutationAuditAttemptInput {
