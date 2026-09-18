@@ -1,11 +1,10 @@
 import {
 	deriveEntitlementLifecycle,
+	type EntitlementLifecycleInput,
 	type EntitlementLifecycleState,
 } from "@festival/common";
 
-type LifecycleReadableEntitlement = {
-	startsOn: string;
-	endsOn: string;
+type LifecycleReadableEntitlement = EntitlementLifecycleInput & {
 	status?: string;
 };
 

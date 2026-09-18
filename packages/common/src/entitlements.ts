@@ -105,26 +105,27 @@ export const ENTITLEMENT_LIFECYCLES = [
 ] as const;
 export type EntitlementLifecycleState = (typeof ENTITLEMENT_LIFECYCLES)[number];
 
+/** Minimal immutable data needed to derive an entitlement's lifecycle. */
+export interface EntitlementLifecycleInput {
+	readonly startsOn: string;
+	readonly endsOn: string;
+	readonly revokedAtIso?: string;
+}
+
 /** Canonical clean-slate lifecycle record. State is intentionally derived. */
-export interface MembershipEntitlement {
+export interface MembershipEntitlement extends EntitlementLifecycleInput {
 	readonly id: string;
 	readonly organizationId: string;
 	readonly customerId: string;
 	readonly entitlementClass: EntitlementClass;
 	readonly source: "teacher_checkout" | "accompanist_form";
 	readonly offeringId: string;
-	readonly startsOn: string;
-	readonly endsOn: string;
-	readonly revokedAtIso?: string;
 	readonly revokedReason?: string;
 	readonly createdAtIso: string;
 }
 
 export function deriveEntitlementLifecycle(
-	entitlement: Pick<
-		MembershipEntitlement,
-		"startsOn" | "endsOn" | "revokedAtIso"
-	>,
+	entitlement: EntitlementLifecycleInput,
 	today: string,
 ): EntitlementLifecycleState {
 	parseCalendarDate(today);
