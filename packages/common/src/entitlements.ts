@@ -138,7 +138,16 @@ export function deriveEntitlementLifecycle(
 export type CreateEntitlementGrantSnapshotInput = Omit<
 	EntitlementGrantSnapshot,
 	"id" | "createdAtIso"
-> & { verifiedIdentityEmail?: string };
+> & { verifiedIdentityEmail: string };
+
+/** Normalizes an email already verified by Shopify before it binds entitlement ownership. */
+export function normalizeVerifiedShopifyIdentityEmail(value: string): string {
+	const normalized = value.trim().toLowerCase();
+	if ((normalized.match(/[a-z0-9]/gi) ?? []).length < 8) {
+		throw new Error("Verified Shopify identity email is required.");
+	}
+	return normalized;
+}
 
 export function isEntitlementClass(value: unknown): value is EntitlementClass {
 	return ENTITLEMENT_CLASSES.includes(value as EntitlementClass);
@@ -185,7 +194,7 @@ function parseCalendarDate(value: string): Date {
 }
 
 export function assertValidEntitlementGrantSnapshotInput(
-	input: CreateEntitlementGrantSnapshotInput,
+	input: Omit<CreateEntitlementGrantSnapshotInput, "verifiedIdentityEmail">,
 ): void {
 	if (!isEntitlementClass(input.entitlementClass)) {
 		throw new Error("Entitlement class is invalid.");

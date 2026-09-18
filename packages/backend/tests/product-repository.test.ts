@@ -99,6 +99,7 @@ describe("product repository", () => {
 			startsOn: "2026-08-14",
 			endsOn: "2027-08-14",
 			status: "active",
+			verifiedIdentityEmail: "shopper@example.com",
 		});
 
 		await repository.updateDivision({
@@ -173,6 +174,7 @@ describe("product repository", () => {
 			startsOn: "2026-08-14",
 			endsOn: "2027-08-14",
 			status: "active" as const,
+			verifiedIdentityEmail: "shopper@example.com",
 		};
 
 		await expect(
@@ -225,6 +227,7 @@ describe("product repository", () => {
 				startsOn: "2026-08-14",
 				endsOn: "2027-08-14",
 				status: "active",
+				verifiedIdentityEmail: "shopper@example.com",
 			}),
 		).rejects.toThrow("offering was not found");
 	});
@@ -258,7 +261,7 @@ describe("product repository", () => {
 			startsOn: "2026-08-14",
 			endsOn: "2027-08-14",
 			status: "active" as const,
-			verifiedIdentityEmail: "shopper@example.com",
+			verifiedIdentityEmail: "Shopper@Example.com",
 		};
 		await repository.createEntitlementGrantSnapshot({
 			...input,
@@ -272,6 +275,7 @@ describe("product repository", () => {
 			repository.createEntitlementGrantSnapshot({
 				...input,
 				customerId: "customer-2",
+				verifiedIdentityEmail: "shopper@example.com",
 				checkoutIntentId: "checkout-identity-2",
 				shopifyOrderGid: "gid://shopify/Order/identity-2",
 				shopifyOrderLineGid: "gid://shopify/LineItem/identity-2",
@@ -434,6 +438,7 @@ describe("product repository", () => {
 			startsOn: "2026-09-01",
 			endsOn: "2027-09-01",
 			status: "active",
+			verifiedIdentityEmail: "shopper@example.com",
 		});
 
 		const statuses = async () =>

@@ -24,6 +24,7 @@ import {
 	deriveEntitlementLifecycle,
 	EMPTY_SHOPIFY_CAPABILITIES,
 	isEntitlementClass,
+	normalizeVerifiedShopifyIdentityEmail,
 } from "@festival/common";
 import type {
 	AccompanistDivisionPolicyHistoryRecord,
@@ -1221,6 +1222,9 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		input: CreateEntitlementGrantSnapshotInput,
 	): Promise<EntitlementGrantSnapshot> {
 		assertValidEntitlementGrantSnapshotInput(input);
+		const verifiedIdentityEmail = normalizeVerifiedShopifyIdentityEmail(
+			input.verifiedIdentityEmail,
+		);
 		const offering = this.products.get(input.offeringId);
 		if (
 			!offering ||
@@ -1256,13 +1260,11 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 			id: randomUUID(),
 			createdAtIso: new Date().toISOString(),
 		});
-		if (input.verifiedIdentityEmail) {
-			this.bindMembershipIdentityEmail(
-				input.organizationId,
-				input.verifiedIdentityEmail,
-				input.customerId,
-			);
-		}
+		this.bindMembershipIdentityEmail(
+			input.organizationId,
+			verifiedIdentityEmail,
+			input.customerId,
+		);
 		this.entitlementGrants.set(record.id, record);
 		return this.withTeacherLifecycle(record);
 	}
