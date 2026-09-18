@@ -953,11 +953,6 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 	async createAccompanistMembershipGrant(
 		input: CreateAccompanistMembershipGrantInput,
 	): Promise<AccompanistMembershipGrant> {
-		this.bindMembershipIdentityEmail(
-			input.organizationId,
-			input.normalizedEmail,
-			input.customerId,
-		);
 		if (input.supersedeGrantId) {
 			throw new Error("Superseding accompanist entitlements is not supported.");
 		}
@@ -982,6 +977,11 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 			contact: { ...input.contact },
 			createdAtIso: new Date().toISOString(),
 		};
+		this.bindMembershipIdentityEmail(
+			input.organizationId,
+			input.normalizedEmail,
+			input.customerId,
+		);
 		this.accompanistMembershipGrants.set(grant.id, grant);
 		this.advanceEntitlementCohort(
 			grant.organizationId,
@@ -1221,13 +1221,6 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		input: CreateEntitlementGrantSnapshotInput,
 	): Promise<EntitlementGrantSnapshot> {
 		assertValidEntitlementGrantSnapshotInput(input);
-		if (input.verifiedIdentityEmail) {
-			this.bindMembershipIdentityEmail(
-				input.organizationId,
-				input.verifiedIdentityEmail,
-				input.customerId,
-			);
-		}
 		const offering = this.products.get(input.offeringId);
 		if (
 			!offering ||
@@ -1263,6 +1256,13 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 			id: randomUUID(),
 			createdAtIso: new Date().toISOString(),
 		});
+		if (input.verifiedIdentityEmail) {
+			this.bindMembershipIdentityEmail(
+				input.organizationId,
+				input.verifiedIdentityEmail,
+				input.customerId,
+			);
+		}
 		this.entitlementGrants.set(record.id, record);
 		return this.withTeacherLifecycle(record);
 	}

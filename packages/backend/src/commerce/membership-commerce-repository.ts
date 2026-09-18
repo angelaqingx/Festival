@@ -497,6 +497,18 @@ export class InMemoryMembershipCommerceRepository
 		entitlementClass: EntitlementClass,
 		today: string,
 	) {
+		if (entitlementClass === "accompanist_membership") {
+			const grants = await this.organizations.listAccompanistMembershipGrants({
+				organizationId,
+				customerId,
+			});
+			return grants.some(
+				(grant) =>
+					grant.status !== "revoked" &&
+					grant.startsOn > today &&
+					grant.endsOn > grant.startsOn,
+			);
+		}
 		const grants = await this.organizations.listEntitlementGrantSnapshots(
 			organizationId,
 			customerId,

@@ -78,7 +78,7 @@ export class MembershipCheckoutService {
 				)
 			) {
 				throw new AppError(
-					"An active Teacher Membership already exists.",
+					"A Teacher Membership renewal is already scheduled.",
 					409,
 					"membership_active",
 				);

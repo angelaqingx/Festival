@@ -279,6 +279,58 @@ describe("product repository", () => {
 		).rejects.toThrow("identity email belongs to another customer");
 	});
 
+	it("does not bind identity email when Teacher entitlement validation fails", async () => {
+		const repository = new InMemoryOrganizationRepository();
+		const organization = await createOrganization(repository);
+		const division = await repository.createDivision({
+			organizationId: organization.id,
+			displayName: "Strings",
+			normalizedName: "strings",
+		});
+		const offering = await repository.createMembershipProductRecord({
+			organizationId: organization.id,
+			entitlementClass: TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
+			durationDays: 365,
+			isActive: true,
+			shopifyProductGid: "gid://shopify/Product/binding",
+			shopifyVariantGid: "gid://shopify/ProductVariant/binding",
+			productNameSnapshot: "Teacher Membership",
+		});
+		const input = {
+			organizationId: organization.id,
+			entitlementClass: TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
+			durationDays: 365,
+			divisionId: division.id,
+			divisionNameSnapshot: division.displayName,
+			paidAmount: "75.00",
+			paidCurrencyCode: "USD",
+			startsOn: "2026-08-14",
+			endsOn: "2027-08-14",
+			status: "active" as const,
+			verifiedIdentityEmail: "shopper@example.com",
+		};
+		await expect(
+			repository.createEntitlementGrantSnapshot({
+				...input,
+				customerId: "customer-1",
+				offeringId: "missing-offering",
+				checkoutIntentId: "checkout-binding-invalid",
+				shopifyOrderGid: "gid://shopify/Order/binding-invalid",
+				shopifyOrderLineGid: "gid://shopify/LineItem/binding-invalid",
+			}),
+		).rejects.toThrow("offering was not found");
+		await expect(
+			repository.createEntitlementGrantSnapshot({
+				...input,
+				customerId: "customer-2",
+				offeringId: offering.id,
+				checkoutIntentId: "checkout-binding-valid",
+				shopifyOrderGid: "gid://shopify/Order/binding-valid",
+				shopifyOrderLineGid: "gid://shopify/LineItem/binding-valid",
+			}),
+		).resolves.toMatchObject({ customerId: "customer-2" });
+	});
+
 	it("allows one Shopify customer to hold Teacher and Accompanist entitlements", async () => {
 		const repository = new InMemoryOrganizationRepository();
 		const organization = await createOrganization(repository);
