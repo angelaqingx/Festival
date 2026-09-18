@@ -39,4 +39,53 @@ describe("membership commerce repository", () => {
 			),
 		).toMatchObject([{ id: recorded.delivery.id, status: "failed" }]);
 	});
+
+	it("checks scheduled entitlements within their own membership class", async () => {
+		const organizations = new InMemoryOrganizationRepository();
+		const organization = await organizations.createOrganization({
+			name: "Festival",
+			slug: "festival",
+		});
+		const division = await organizations.createDivision({
+			organizationId: organization.id,
+			displayName: "Piano",
+			normalizedName: "piano",
+		});
+		await organizations.createAccompanistMembershipGrant({
+			organizationId: organization.id,
+			customerId: "customer-1",
+			normalizedEmail: "shopper@example.com",
+			offeringNameSnapshot: "Accompanist Membership",
+			source: "accompanist_form",
+			contact: {
+				name: "Ava",
+				email: "ava@example.com",
+				city: "Seattle",
+				phone: "+1 206 555 0100",
+			},
+			divisions: [
+				{ divisionId: division.id, divisionName: division.displayName },
+			],
+			startsOn: "2026-09-01",
+			endsOn: "2027-09-01",
+		});
+		const commerce = new InMemoryMembershipCommerceRepository(organizations);
+
+		expect(
+			await commerce.hasScheduledEntitlement(
+				organization.id,
+				"customer-1",
+				"accompanist_membership",
+				"2026-08-14",
+			),
+		).toBe(true);
+		expect(
+			await commerce.hasScheduledEntitlement(
+				organization.id,
+				"customer-1",
+				"teacher_membership",
+				"2026-08-14",
+			),
+		).toBe(false);
+	});
 });

@@ -47,6 +47,12 @@ import type {
 } from "./organization-repository.js";
 import { ShopifyShopOwnershipError } from "./organization-repository.js";
 
+type StoredTeacherEntitlement = Omit<EntitlementGrantSnapshot, "status">;
+type StoredAccompanistEntitlement = Omit<
+	AccompanistMembershipGrant,
+	"status" | "isCurrent"
+>;
+
 export class InMemoryOrganizationRepository implements OrganizationRepository {
 	private readonly users = new Map<string, OrganizationUserRecord>();
 	private readonly usersByUid = new Map<string, string>();
@@ -69,7 +75,7 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 	private readonly products = new Map<string, ProductRecord>();
 	private readonly entitlementGrants = new Map<
 		string,
-		EntitlementGrantSnapshot
+		StoredTeacherEntitlement
 	>();
 	private readonly entitlementRevocations = new Map<
 		string,
@@ -93,7 +99,7 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		[];
 	private readonly accompanistMembershipGrants = new Map<
 		string,
-		AccompanistMembershipGrant
+		StoredAccompanistEntitlement
 	>();
 	private readonly registrationAgeConfigurations = new Map<
 		string,
@@ -947,34 +953,14 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 	async createAccompanistMembershipGrant(
 		input: CreateAccompanistMembershipGrantInput,
 	): Promise<AccompanistMembershipGrant> {
-		this.bindMembershipIdentityEmail(
-			input.organizationId,
-			input.normalizedEmail,
-			input.customerId,
-		);
 		if (input.supersedeGrantId) {
-			const prior = this.accompanistMembershipGrants.get(
-				input.supersedeGrantId,
-			);
-			if (
-				!prior ||
-				prior.organizationId !== input.organizationId ||
-				!this.withAccompanistLifecycle(prior).isCurrent
-			) {
-				throw new Error("Current accompanist membership was not found.");
-			}
-			this.accompanistMembershipGrants.set(prior.id, {
-				...prior,
-				isCurrent: false,
-				status: "superseded",
-			});
+			throw new Error("Superseding accompanist entitlements is not supported.");
 		}
 		if (
 			[...this.accompanistMembershipGrants.values()].some(
 				(grant) =>
 					grant.organizationId === input.organizationId &&
-					grant.status !== "revoked" &&
-					grant.status !== "superseded" &&
+					!this.entitlementRevocations.has(grant.id) &&
 					(grant.customerId === input.customerId ||
 						grant.normalizedEmail === input.normalizedEmail) &&
 					grant.startsOn < input.endsOn &&
@@ -983,22 +969,26 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		) {
 			throw new Error("Accompanist membership intervals may not overlap.");
 		}
-		const grant = this.withAccompanistLifecycle({
+		const { supersedeGrantId: _supersedeGrantId, ...snapshot } = input;
+		const grant: StoredAccompanistEntitlement = {
 			id: randomUUID(),
-			...input,
+			...snapshot,
 			divisions: input.divisions.map((division) => ({ ...division })),
 			contact: { ...input.contact },
-			status: "active",
-			isCurrent: true,
 			createdAtIso: new Date().toISOString(),
-		});
+		};
+		this.bindMembershipIdentityEmail(
+			input.organizationId,
+			input.normalizedEmail,
+			input.customerId,
+		);
 		this.accompanistMembershipGrants.set(grant.id, grant);
 		this.advanceEntitlementCohort(
 			grant.organizationId,
 			grant.customerId,
 			"accompanist_membership",
 		);
-		return grant;
+		return this.withAccompanistLifecycle(grant);
 	}
 
 	async listAccompanistMembershipGrants(input: {
@@ -1231,13 +1221,6 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		input: CreateEntitlementGrantSnapshotInput,
 	): Promise<EntitlementGrantSnapshot> {
 		assertValidEntitlementGrantSnapshotInput(input);
-		if (input.verifiedIdentityEmail) {
-			this.bindMembershipIdentityEmail(
-				input.organizationId,
-				input.verifiedIdentityEmail,
-				input.customerId,
-			);
-		}
 		const offering = this.products.get(input.offeringId);
 		if (
 			!offering ||
@@ -1263,13 +1246,25 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		) {
 			throw new Error("Entitlement grant correlation is already recorded.");
 		}
-		const record: EntitlementGrantSnapshot = Object.freeze({
-			...input,
+		const {
+			status: _status,
+			verifiedIdentityEmail: _verifiedIdentityEmail,
+			...snapshot
+		} = input;
+		const record: StoredTeacherEntitlement = Object.freeze({
+			...snapshot,
 			id: randomUUID(),
 			createdAtIso: new Date().toISOString(),
 		});
+		if (input.verifiedIdentityEmail) {
+			this.bindMembershipIdentityEmail(
+				input.organizationId,
+				input.verifiedIdentityEmail,
+				input.customerId,
+			);
+		}
 		this.entitlementGrants.set(record.id, record);
-		return { ...record };
+		return this.withTeacherLifecycle(record);
 	}
 
 	async listEntitlementGrantSnapshots(
@@ -1283,7 +1278,7 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 					grant.customerId === customerId,
 			)
 			.sort((a, b) => a.createdAtIso.localeCompare(b.createdAtIso))
-			.map((grant) => ({ ...grant }));
+			.map((grant) => this.withTeacherLifecycle(grant));
 	}
 
 	async revokeEntitlement(input: {
@@ -1301,10 +1296,6 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		if (teacher?.organizationId === input.organizationId) {
 			entitlementClass = teacher.entitlementClass;
 			customerId = teacher.customerId;
-			this.entitlementGrants.set(input.entitlementId, {
-				...teacher,
-				status: "revoked",
-			});
 		} else {
 			const accompanist = this.accompanistMembershipGrants.get(
 				input.entitlementId,
@@ -1313,11 +1304,6 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 				throw new Error("Entitlement was not found.");
 			entitlementClass = "accompanist_membership";
 			customerId = accompanist.customerId;
-			this.accompanistMembershipGrants.set(input.entitlementId, {
-				...accompanist,
-				status: "revoked",
-				isCurrent: false,
-			});
 		}
 		this.advanceEntitlementCohort(
 			input.organizationId,
@@ -1337,18 +1323,37 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 	}
 
 	private withAccompanistLifecycle(
-		grant: AccompanistMembershipGrant,
+		grant: StoredAccompanistEntitlement,
 	): AccompanistMembershipGrant {
-		if (grant.status === "revoked" || grant.status === "superseded") {
-			return { ...grant, isCurrent: false };
-		}
 		const organization = this.organizations.get(grant.organizationId);
 		if (!organization) throw new Error("Organization not found.");
-		const status = deriveEntitlementLifecycle(
-			grant,
-			calendarDateInTimezone(this.now().toISOString(), organization.timezone),
-		);
+		const status = this.entitlementRevocations.has(grant.id)
+			? "revoked"
+			: deriveEntitlementLifecycle(
+					grant,
+					calendarDateInTimezone(
+						this.now().toISOString(),
+						organization.timezone,
+					),
+				);
 		return { ...grant, status, isCurrent: status === "active" };
+	}
+
+	private withTeacherLifecycle(
+		grant: StoredTeacherEntitlement,
+	): EntitlementGrantSnapshot {
+		const organization = this.organizations.get(grant.organizationId);
+		if (!organization) throw new Error("Organization not found.");
+		const status = this.entitlementRevocations.has(grant.id)
+			? "revoked"
+			: deriveEntitlementLifecycle(
+					grant,
+					calendarDateInTimezone(
+						this.now().toISOString(),
+						organization.timezone,
+					),
+				);
+		return { ...grant, status };
 	}
 
 	private advanceEntitlementCohort(

@@ -7,6 +7,11 @@ policy configuration, multi-select checkout, and frozen multi-division snapshots
 remain deferred to #172. Teacher checkout continues to require exactly one
 division.
 
+A Shopify-identified customer may independently hold both a Teacher Membership
+entitlement and an Accompanist Membership entitlement in the same Organization.
+Renewal, duplicate-purchase, cohort, and lifecycle rules apply within each
+entitlement class only; they must never make the two classes mutually exclusive.
+
 ## Workstreams
 
 1. **Canonical contracts and repositories**

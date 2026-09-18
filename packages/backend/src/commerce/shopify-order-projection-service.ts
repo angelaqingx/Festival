@@ -563,6 +563,7 @@ export class ShopifyOrderProjectionService {
 			await this.commerce.hasScheduledEntitlement(
 				organizationId,
 				intent.customerId,
+				TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
 				today,
 			)
 		) {
