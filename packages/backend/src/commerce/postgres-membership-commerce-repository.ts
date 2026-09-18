@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
 	CreateEntitlementGrantSnapshotInput,
+	EntitlementClass,
 	EntitlementGrantSnapshot,
 } from "@festival/common";
 import {
@@ -596,11 +597,12 @@ export class PostgresMembershipCommerceRepository
 	async hasScheduledEntitlement(
 		organizationId: string,
 		customerId: string,
+		entitlementClass: EntitlementClass,
 		today: string,
 	) {
 		const rows = (await sql.unsafe(
-			`SELECT 1 FROM ${this.schema}.membership_entitlements WHERE organization_id = $1 AND customer_id = $2 AND revoked_at IS NULL AND starts_on > $3::date LIMIT 1`,
-			[organizationId, customerId, today],
+			`SELECT 1 FROM ${this.schema}.membership_entitlements WHERE organization_id = $1 AND customer_id = $2 AND entitlement_class = $3 AND revoked_at IS NULL AND starts_on > $4::date LIMIT 1`,
+			[organizationId, customerId, entitlementClass, today],
 		)) as Array<Record<string, unknown>>;
 		return Boolean(rows[0]);
 	}

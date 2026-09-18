@@ -1,4 +1,7 @@
-import { calendarDateInTimezone } from "@festival/common";
+import {
+	calendarDateInTimezone,
+	TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
+} from "@festival/common";
 import type { MembershipCommerceRepository } from "../commerce/membership-commerce-repository.js";
 import { AppError } from "../errors/app-error.js";
 import type { OrganizationRepository } from "../repo/organization-repository.js";
@@ -70,6 +73,7 @@ export class MembershipCheckoutService {
 				await this.commerce.hasScheduledEntitlement(
 					input.organizationId,
 					input.customerId,
+					TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
 					today,
 				)
 			) {
