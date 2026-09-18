@@ -162,7 +162,7 @@ export interface MembershipCommerceRepository {
 		grant?: EntitlementGrantSnapshot;
 		existing: boolean;
 	}>;
-	hasActiveGrant(
+	hasScheduledEntitlement(
 		organizationId: string,
 		customerId: string,
 		today: string,
@@ -489,7 +489,7 @@ export class InMemoryMembershipCommerceRepository
 		);
 	}
 
-	async hasActiveGrant(
+	async hasScheduledEntitlement(
 		organizationId: string,
 		customerId: string,
 		today: string,
@@ -499,7 +499,10 @@ export class InMemoryMembershipCommerceRepository
 			customerId,
 		);
 		return grants.some(
-			(grant) => grant.status === "active" && grant.startsOn > today,
+			(grant) =>
+				grant.status !== "revoked" &&
+				grant.startsOn > today &&
+				grant.endsOn > grant.startsOn,
 		);
 	}
 

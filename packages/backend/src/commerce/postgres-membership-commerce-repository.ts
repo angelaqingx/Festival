@@ -502,7 +502,7 @@ export class PostgresMembershipCommerceRepository
 			if (grantInput) {
 				const entitlementId = randomUUID();
 				const entitlementRows = (await tx.unsafe(
-					`INSERT INTO ${this.schema}.membership_entitlements (id,organization_id,customer_id,entitlement_class,source,offering_id,starts_on,ends_on) SELECT $1,$2,$3,$4,'teacher_checkout',$5,$6::date,$7::date FROM ${this.schema}.products WHERE id=$5 AND organization_id=$2 RETURNING id`,
+					`INSERT INTO ${this.schema}.membership_entitlements (id,organization_id,customer_id,entitlement_class,source,offering_id,starts_on,ends_on) SELECT $1,$2,$3,$4,'teacher_checkout',$5,$6::date,$7::date FROM ${this.schema}.products WHERE id=$5 AND organization_id=$2 AND entitlement_class=$4 RETURNING id`,
 					[
 						entitlementId,
 						grantInput.organizationId,
@@ -593,7 +593,7 @@ export class PostgresMembershipCommerceRepository
 		});
 	}
 
-	async hasActiveGrant(
+	async hasScheduledEntitlement(
 		organizationId: string,
 		customerId: string,
 		today: string,

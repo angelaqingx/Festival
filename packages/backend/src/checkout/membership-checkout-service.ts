@@ -67,7 +67,7 @@ export class MembershipCheckoutService {
 			);
 			const today = calendarDateInTimezone(this.now().toISOString(), timezone);
 			if (
-				await this.commerce.hasActiveGrant(
+				await this.commerce.hasScheduledEntitlement(
 					input.organizationId,
 					input.customerId,
 					today,

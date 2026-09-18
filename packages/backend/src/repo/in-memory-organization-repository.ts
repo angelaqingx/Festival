@@ -76,6 +76,11 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		EntitlementRevocationRecord
 	>();
 	private readonly entitlementCohortVersions = new Map<string, number>();
+	private readonly membershipIdentityEmails = new Map<string, string>();
+	private readonly membershipIdentityEmailsByCustomer = new Map<
+		string,
+		string
+	>();
 	private readonly divisions = new Map<
 		string,
 		OrganizationDivision & { normalizedName: string }
@@ -942,6 +947,11 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 	async createAccompanistMembershipGrant(
 		input: CreateAccompanistMembershipGrantInput,
 	): Promise<AccompanistMembershipGrant> {
+		this.bindMembershipIdentityEmail(
+			input.organizationId,
+			input.normalizedEmail,
+			input.customerId,
+		);
 		if (input.supersedeGrantId) {
 			const prior = this.accompanistMembershipGrants.get(
 				input.supersedeGrantId,
@@ -1221,8 +1231,19 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		input: CreateEntitlementGrantSnapshotInput,
 	): Promise<EntitlementGrantSnapshot> {
 		assertValidEntitlementGrantSnapshotInput(input);
+		if (input.verifiedIdentityEmail) {
+			this.bindMembershipIdentityEmail(
+				input.organizationId,
+				input.verifiedIdentityEmail,
+				input.customerId,
+			);
+		}
 		const offering = this.products.get(input.offeringId);
-		if (!offering || offering.organizationId !== input.organizationId) {
+		if (
+			!offering ||
+			offering.organizationId !== input.organizationId ||
+			offering.entitlementClass !== input.entitlementClass
+		) {
 			throw new Error(
 				"Entitlement offering was not found for this Organization.",
 			);
@@ -1340,5 +1361,25 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 			key,
 			(this.entitlementCohortVersions.get(key) ?? 0) + 1,
 		);
+	}
+
+	private bindMembershipIdentityEmail(
+		organizationId: string,
+		normalizedEmail: string,
+		customerId: string,
+	): void {
+		const emailKey = `${organizationId}:${normalizedEmail}`;
+		const customerKey = `${organizationId}:${customerId}`;
+		const existingCustomer = this.membershipIdentityEmails.get(emailKey);
+		const existingEmail =
+			this.membershipIdentityEmailsByCustomer.get(customerKey);
+		if (
+			(existingCustomer && existingCustomer !== customerId) ||
+			(existingEmail && existingEmail !== normalizedEmail)
+		) {
+			throw new Error("Shopify identity email belongs to another customer.");
+		}
+		this.membershipIdentityEmails.set(emailKey, customerId);
+		this.membershipIdentityEmailsByCustomer.set(customerKey, normalizedEmail);
 	}
 }

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS } from "@festival/common";
+import {
+	ACCOMPANIST_MEMBERSHIP_ENTITLEMENT_CLASS,
+	TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
+} from "@festival/common";
 import { InMemoryOrganizationRepository } from "../src/repo/in-memory-organization-repository.js";
 import { buildCanonicalPostgresSchemaSql } from "../src/repo/postgres-schema.js";
 
@@ -185,6 +188,95 @@ describe("product repository", () => {
 				shopifyOrderGid: "gid://shopify/Order/other",
 			}),
 		).rejects.toThrow("correlation is already recorded");
+	});
+
+	it("rejects an entitlement whose offering has a different class", async () => {
+		const repository = new InMemoryOrganizationRepository();
+		const organization = await createOrganization(repository);
+		const division = await repository.createDivision({
+			organizationId: organization.id,
+			displayName: "Woodwinds",
+			normalizedName: "woodwinds",
+		});
+		const offering = await repository.createMembershipProductRecord({
+			organizationId: organization.id,
+			entitlementClass: ACCOMPANIST_MEMBERSHIP_ENTITLEMENT_CLASS,
+			durationDays: 365,
+			isActive: true,
+			shopifyProductGid: "gid://shopify/Product/accompanist",
+			shopifyVariantGid: "gid://shopify/ProductVariant/accompanist",
+			productNameSnapshot: "Accompanist Membership",
+		});
+
+		await expect(
+			repository.createEntitlementGrantSnapshot({
+				organizationId: organization.id,
+				customerId: "customer-1",
+				entitlementClass: TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
+				offeringId: offering.id,
+				durationDays: 365,
+				divisionId: division.id,
+				divisionNameSnapshot: division.displayName,
+				paidAmount: "75.00",
+				paidCurrencyCode: "USD",
+				checkoutIntentId: "checkout-intent-class",
+				shopifyOrderGid: "gid://shopify/Order/class",
+				shopifyOrderLineGid: "gid://shopify/LineItem/class",
+				startsOn: "2026-08-14",
+				endsOn: "2027-08-14",
+				status: "active",
+			}),
+		).rejects.toThrow("offering was not found");
+	});
+
+	it("binds a verified Shopify identity email to only one customer", async () => {
+		const repository = new InMemoryOrganizationRepository();
+		const organization = await createOrganization(repository);
+		const division = await repository.createDivision({
+			organizationId: organization.id,
+			displayName: "Percussion",
+			normalizedName: "percussion",
+		});
+		const offering = await repository.createMembershipProductRecord({
+			organizationId: organization.id,
+			entitlementClass: TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
+			durationDays: 365,
+			isActive: true,
+			shopifyProductGid: "gid://shopify/Product/identity",
+			shopifyVariantGid: "gid://shopify/ProductVariant/identity",
+			productNameSnapshot: "Teacher Membership",
+		});
+		const input = {
+			organizationId: organization.id,
+			entitlementClass: TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
+			offeringId: offering.id,
+			durationDays: 365,
+			divisionId: division.id,
+			divisionNameSnapshot: division.displayName,
+			paidAmount: "75.00",
+			paidCurrencyCode: "USD",
+			startsOn: "2026-08-14",
+			endsOn: "2027-08-14",
+			status: "active" as const,
+			verifiedIdentityEmail: "shopper@example.com",
+		};
+		await repository.createEntitlementGrantSnapshot({
+			...input,
+			customerId: "customer-1",
+			checkoutIntentId: "checkout-identity-1",
+			shopifyOrderGid: "gid://shopify/Order/identity-1",
+			shopifyOrderLineGid: "gid://shopify/LineItem/identity-1",
+		});
+
+		await expect(
+			repository.createEntitlementGrantSnapshot({
+				...input,
+				customerId: "customer-2",
+				checkoutIntentId: "checkout-identity-2",
+				shopifyOrderGid: "gid://shopify/Order/identity-2",
+				shopifyOrderLineGid: "gid://shopify/LineItem/identity-2",
+			}),
+		).rejects.toThrow("identity email belongs to another customer");
 	});
 
 	it("enforces unique Shopify Product GIDs", async () => {
