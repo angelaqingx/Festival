@@ -12,6 +12,7 @@ import {
 	buildOrgCustomerAccountMembershipsPath,
 	buildOrgRootPath,
 } from "../lib/routes.js";
+import { loadAfterCustomerSession } from "./accompanistMembershipGate.js";
 
 export function AccompanistMembershipPage(props: { slug: string }) {
 	const [csrfToken, setCsrfToken] = createSignal("");
@@ -33,16 +34,20 @@ export function AccompanistMembershipPage(props: { slug: string }) {
 
 	onMount(async () => {
 		try {
-			const session = await getCustomerSession(props.slug);
-			if (!session.session.authenticated) {
+			const result = await loadAfterCustomerSession(
+				() => getCustomerSession(props.slug),
+				() =>
+					Promise.all([
+						getCustomerProfile(props.slug),
+						getAccompanistMembershipForm(props.slug),
+					]),
+			);
+			if (!result.authenticated) {
 				setNeedsSignIn(true);
 				return;
 			}
-			const [profile, form] = await Promise.all([
-				getCustomerProfile(props.slug),
-				getAccompanistMembershipForm(props.slug),
-			]);
-			setCsrfToken(session.session.csrfToken);
+			const [profile, form] = result.protectedData;
+			setCsrfToken(result.session.session.csrfToken);
 			setName(profile.profile.name ?? "");
 			setEmail(profile.profile.email ?? "");
 			setPhone(profile.profile.phone ?? "");

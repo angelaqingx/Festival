@@ -1,21 +1,51 @@
 import { describe, expect, it } from "bun:test";
 import { customerAccompanistMembershipSignInPath } from "../src/lib/api.js";
+import { loadAfterCustomerSession } from "../src/pages/accompanistMembershipGate.js";
 
 const page = await Bun.file(
 	new URL("../src/pages/AccompanistMembershipPage.tsx", import.meta.url),
 ).text();
 
 describe("accompanist membership authentication gate", () => {
-	it("checks the customer session before protected profile and form requests", () => {
-		const session = page.indexOf("await getCustomerSession(props.slug)");
-		const profile = page.indexOf("getCustomerProfile(props.slug)");
-		const form = page.indexOf("getAccompanistMembershipForm(props.slug)");
+	it("does not start protected profile and form requests for an anonymous session", async () => {
+		let protectedLoads = 0;
+		const result = await loadAfterCustomerSession(
+			async () => ({ session: { authenticated: false } }),
+			async () => {
+				protectedLoads += 1;
+				return "protected data";
+			},
+		);
 
-		expect(session).toBeGreaterThan(-1);
-		expect(profile).toBeGreaterThan(session);
-		expect(form).toBeGreaterThan(session);
+		expect(result).toEqual({
+			authenticated: false,
+			session: { session: { authenticated: false } },
+		});
+		expect(protectedLoads).toBe(0);
 		expect(page).toContain("setNeedsSignIn(true)");
-		expect(page).not.toContain("Promise.all([\n\t\t\t\tgetCustomerSession");
+	});
+
+	it("starts protected profile and form requests only after an authenticated session", async () => {
+		const callOrder: string[] = [];
+		const result = await loadAfterCustomerSession(
+			async () => {
+				callOrder.push("session");
+				return { session: { authenticated: true } };
+			},
+			async () => {
+				callOrder.push("protected");
+				return "protected data";
+			},
+		);
+
+		expect(result).toEqual({
+			authenticated: true,
+			session: { session: { authenticated: true } },
+			protectedData: "protected data",
+		});
+		expect(callOrder).toEqual(["session", "protected"]);
+		expect(page).toContain("getCustomerProfile(props.slug)");
+		expect(page).toContain("getAccompanistMembershipForm(props.slug)");
 	});
 
 	it("renders the accessible anonymous sign-in dialog without enrollment content", () => {
