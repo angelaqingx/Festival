@@ -118,7 +118,7 @@ export function AdminSettingsPage(props: { app: FestivalAppController }) {
 			}
 		>
 			<section class="panel flow-panel">
-				<header class="admin-page-header">
+				<header class="admin-page-header admin-page-heading">
 					<div>
 						<h2>Settings</h2>
 						<p>Organization Wide Settings</p>

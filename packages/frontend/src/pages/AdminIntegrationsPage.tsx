@@ -177,7 +177,7 @@ export function AdminIntegrationsPage(props: AdminIntegrationsPageProps) {
 						void props.app.handleSaveShopifySettings();
 					}}
 				>
-					<div class="shopify-card-header">
+					<div class="shopify-card-header admin-page-heading">
 						<div>
 							<h2>Shopify Integration</h2>
 							<p>Store credentials and verify Admin API access.</p>

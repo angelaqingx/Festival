@@ -85,7 +85,7 @@ export function AdminMembershipProductsPage(
 						class="membership-admin-list"
 						aria-labelledby="memberships-title"
 					>
-						<div class="shopify-card-header">
+						<div class="shopify-card-header admin-page-heading">
 							<div>
 								<h2 id="memberships-title">Memberships</h2>
 								<p>Review Shopify-backed membership products.</p>
@@ -152,7 +152,7 @@ export function AdminMembershipProductsPage(
 							void props.app.handleCreateMembershipProduct();
 						}}
 					>
-						<div class="shopify-card-header">
+						<div class="shopify-card-header admin-page-heading">
 							<div>
 								<h2>Create Membership</h2>
 								<p>
@@ -265,7 +265,7 @@ export function AdminMembershipProductsPage(
 				</div>
 			</section>
 			<section class="panel flow-panel membership-admin-form">
-				<div class="shopify-card-header">
+				<div class="shopify-card-header admin-page-heading">
 					<div>
 						<h2>Accompanist division policy</h2>
 						<p>Choose how many divisions an accompanist may select.</p>
