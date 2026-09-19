@@ -1,10 +1,11 @@
 import { createResource, Show } from "solid-js";
 import type { FestivalAppController } from "../app/useFestivalAppController.js";
 import { AccessDeniedPanel } from "../components/AccessDeniedPanel.js";
+import { Button } from "../components/Button.js";
 import { getAdminFestival } from "../lib/api.js";
-import { buildFestivalAdminClassesPath } from "../lib/routes.js";
+import { buildFestivalAdminPath } from "../lib/routes.js";
 
-export function FestivalAdminDashboardPage(props: {
+export function FestivalAdminClassesPage(props: {
 	app: FestivalAppController;
 	slug: string;
 	festivalSlug: string;
@@ -27,12 +28,12 @@ export function FestivalAdminDashboardPage(props: {
 		<Show
 			when={props.app.isAdminMember()}
 			fallback={
-				<AccessDeniedPanel message="Only Admin members can manage festivals." />
+				<AccessDeniedPanel message="Only Admin members can manage festival classes." />
 			}
 		>
 			<Show when={festival.loading}>
 				<section class="panel">
-					<p class="muted">Loading festival.</p>
+					<p class="muted">Loading festival classes.</p>
 				</section>
 			</Show>
 			<Show when={festival.error}>
@@ -41,23 +42,26 @@ export function FestivalAdminDashboardPage(props: {
 				</section>
 			</Show>
 			<Show when={festival()}>
-				<section class="panel">
-					<h2>{festival()?.festival.name}</h2>
-					<p>Festival dashboard</p>
-					<div class="admin-card-grid">
-						<button
-							type="button"
-							class="admin-workflow-card"
-							onClick={() =>
-								props.app.navigate(
-									buildFestivalAdminClassesPath(props.slug, props.festivalSlug),
-								)
-							}
-						>
-							<strong>Classes</strong>
-							<span>Manage this Festival’s class catalog.</span>
-						</button>
-					</div>
+				<section class="panel flow-panel">
+					<header class="admin-page-header">
+						<div>
+							<h2>{festival()?.festival.name} classes</h2>
+							<p>Class catalog management is scoped to this Festival.</p>
+						</div>
+					</header>
+					<p class="muted">
+						Class catalog configuration will be available here.
+					</p>
+					<Button
+						type="button"
+						onClick={() =>
+							props.app.navigate(
+								buildFestivalAdminPath(props.slug, props.festivalSlug),
+							)
+						}
+					>
+						Back to Festival dashboard
+					</Button>
 				</section>
 			</Show>
 		</Show>
