@@ -110,8 +110,6 @@ export function isOrganizationPageRoute(route: AppRoute): boolean {
 	return (
 		route.kind === "org-root" ||
 		route.kind === "festival-public" ||
-		route.kind === "festival-admin" ||
-		route.kind === "festival-admin-classes" ||
 		route.kind === "org-membership" ||
 		route.kind === "org-accompanist-membership" ||
 		route.kind === "org-customer-account-legacy" ||

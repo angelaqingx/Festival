@@ -120,7 +120,7 @@ describe("route helpers", () => {
 		});
 	});
 
-	it("identifies public organization pages", () => {
+	it("identifies public organization pages without treating Festival Admin routes as public", () => {
 		expect(isOrganizationPageRoute(parseRoute("/org/festival-admins"))).toBe(
 			true,
 		);
@@ -139,7 +139,12 @@ describe("route helpers", () => {
 			isOrganizationPageRoute(
 				parseRoute("/org/festival-admins/festival/jun-27/admin/classes"),
 			),
-		).toBe(true);
+		).toBe(false);
+		expect(
+			isOrganizationPageRoute(
+				parseRoute("/org/festival-admins/festival/jun-27/admin"),
+			),
+		).toBe(false);
 		expect(
 			isOrganizationPageRoute(parseRoute("/org/festival-admins/admin")),
 		).toBe(false);
