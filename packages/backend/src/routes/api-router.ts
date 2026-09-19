@@ -409,6 +409,38 @@ export function buildApiRouter(
 		}
 	});
 
+	router.get(
+		"/organizations/:slug/admin/festivals/:festivalShortName",
+		requireAuth(authVerifier),
+		requireTenant(repository),
+		requireTenantRole(["Admin"]),
+		async (c) => {
+			try {
+				return c.json(
+					await organizationService.getAdminFestivalForTenant(
+						getRequiredTenant(c),
+						c.req.param("festivalShortName"),
+					),
+				);
+			} catch (error) {
+				return toJsonError(c, error);
+			}
+		},
+	);
+
+	router.get("/organizations/:slug/festivals/:festivalShortName", async (c) => {
+		try {
+			return c.json(
+				await organizationService.getPublicFestival(
+					c.req.param("slug"),
+					c.req.param("festivalShortName"),
+				),
+			);
+		} catch (error) {
+			return toJsonError(c, error);
+		}
+	});
+
 	router.get("/organizations/:slug/divisions", async (c) => {
 		try {
 			return c.json(
