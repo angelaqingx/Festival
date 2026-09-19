@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { customerLandingSignInPath } from "../src/lib/api.js";
+import { isOrganizationPageRoute, parseRoute } from "../src/lib/routes.js";
 
 const page = await Bun.file(
 	new URL("../src/pages/OrganizationRootPage.tsx", import.meta.url),
@@ -57,6 +58,17 @@ describe("public organization landing page", () => {
 		expect(appHeader).toContain('class="org-landing-header"');
 		expect(page).not.toContain('class="org-landing-header"');
 		expect(page).not.toContain("handleLogout");
+	});
+
+	it("keeps the children route in its Organization context for customer authentication", () => {
+		const route = parseRoute("/org/pafe/account/children");
+
+		expect(isOrganizationPageRoute(route)).toBe(true);
+		if (!isOrganizationPageRoute(route))
+			throw new Error("Expected Organization route.");
+		expect(customerLandingSignInPath(route.slug)).toBe(
+			"/api/organizations/pafe/customer-auth/start?returnTo=%2Forg%2Fpafe",
+		);
 	});
 
 	it("renders Home and the account icon before the customer auth control", () => {
