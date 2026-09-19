@@ -98,6 +98,8 @@ export function createFestivalAppState() {
 		createSignal<SignInModalKind | null>(null);
 	const [signInStep, setSignInStep] = createSignal<SignInStep>("method");
 	const [signInEmail, setSignInEmail] = createSignal("");
+	const [needsEmailLinkConfirmation, setNeedsEmailLinkConfirmation] =
+		createSignal(false);
 	const [inviteName, setInviteName] = createSignal("");
 	const [organizationName, setOrganizationName] = createSignal("");
 	const [organizationShortName, setOrganizationShortName] = createSignal("");
@@ -503,6 +505,8 @@ export function createFestivalAppState() {
 		signInEmail,
 		signInModalKind,
 		signInStep,
+		needsEmailLinkConfirmation,
+		setNeedsEmailLinkConfirmation,
 		shopifyDraft,
 		shopifySettings,
 		statusMessage,

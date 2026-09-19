@@ -17,6 +17,7 @@ import {
 } from "../lib/api.js";
 import {
 	clearPendingIntent,
+	completeEmailLinkSignInWithEmail,
 	logoutCurrentUser,
 	sendPasswordlessEmailLink,
 	signInWithGoogle,
@@ -94,6 +95,25 @@ export function createFestivalActions(
 			);
 			state.setSignInModalKind(null);
 			state.setSignInStep("method");
+		} catch (error) {
+			state.setErrorMessage((error as Error).message);
+		} finally {
+			state.setIsBusy(false);
+		}
+	}
+
+	async function handleConfirmEmailLinkSignIn() {
+		state.clearMessages();
+		state.setIsBusy(true);
+		try {
+			if (!state.signInEmail().trim()) {
+				throw new Error("Email address is required.");
+			}
+
+			await completeEmailLinkSignInWithEmail(state.signInEmail().trim());
+			state.setNeedsEmailLinkConfirmation(false);
+			state.setSignInEmail("");
+			state.setStatusMessage("Email link verified. Continuing sign-in.");
 		} catch (error) {
 			state.setErrorMessage((error as Error).message);
 		} finally {
@@ -715,6 +735,7 @@ export function createFestivalActions(
 		handleCreateOrganization,
 		handleCreateDivision,
 		handleDeleteAdminUser,
+		handleConfirmEmailLinkSignIn,
 		handleDismissWelcome,
 		handleGoogleSignIn,
 		handleLogout,
