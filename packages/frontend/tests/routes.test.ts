@@ -112,6 +112,11 @@ describe("route helpers", () => {
 			isOrganizationPageRoute(parseRoute("/org/festival-admins/account")),
 		).toBe(true);
 		expect(
+			isOrganizationPageRoute(
+				parseRoute("/org/festival-admins/account/children"),
+			),
+		).toBe(true);
+		expect(
 			isOrganizationPageRoute(parseRoute("/org/festival-admins/admin")),
 		).toBe(false);
 		expect(isOrganizationPageRoute(parseRoute("/"))).toBe(false);
