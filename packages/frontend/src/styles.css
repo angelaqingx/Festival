@@ -772,6 +772,21 @@ button.compact-header-button {
 	gap: 0.4rem;
 }
 
+.customer-child-status {
+	margin-top: 0;
+	padding-top: 0;
+}
+
+.customer-children-form {
+	display: grid;
+	gap: 0.85rem;
+}
+
+.customer-children-name-optional {
+	font-size: 0.8em;
+	font-style: italic;
+}
+
 .banner {
 	padding: 0.9rem 1rem;
 	margin-bottom: 1rem;
