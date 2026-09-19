@@ -19,4 +19,10 @@ describe("public festival landing page", () => {
 		expect(app).toContain('app.route().kind === "festival-public"');
 		expect(app).toContain("<FestivalLandingPage");
 	});
+
+	it("loads verified Festival context instead of trusting the URL segment", () => {
+		expect(page).toContain("getPublicFestival");
+		expect(page).toContain("Festival not found.");
+		expect(app).toContain("<FestivalAdminDashboardPage");
+	});
 });

@@ -15,6 +15,7 @@ import type {
 	CustomerProfileResponse,
 	CustomerSessionResponse,
 	DismissWelcomeResponse,
+	FestivalSummary,
 	InviteSummary,
 	MembershipProductsListResponse,
 	MembershipPurchaseSelectionResponse,
@@ -318,6 +319,24 @@ export function getPublicOrganizationLanding(slug: string) {
 export function getPrimaryFestivalPath(slug: string) {
 	return requestJson<{ status: 301 | 404; path: string }>(
 		`/api/organizations/${encodeURIComponent(slug)}/primary`,
+	);
+}
+
+export function getPublicFestival(slug: string, festivalSlug: string) {
+	return requestJson<{ festival: FestivalSummary }>(
+		`/api/organizations/${encodeURIComponent(slug)}/festivals/${encodeURIComponent(festivalSlug)}`,
+	);
+}
+
+export function getAdminFestival(
+	idToken: string,
+	slug: string,
+	festivalSlug: string,
+) {
+	return requestJson<{ festival: FestivalSummary }>(
+		`/api/organizations/${encodeURIComponent(slug)}/admin/festivals/${encodeURIComponent(festivalSlug)}`,
+		undefined,
+		idToken,
 	);
 }
 

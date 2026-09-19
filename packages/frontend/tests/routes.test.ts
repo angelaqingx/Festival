@@ -99,6 +99,16 @@ describe("route helpers", () => {
 			kind: "org-admin-settings",
 			slug: "festival-admins",
 		});
+		expect(parseRoute("/org/festival-admins/festival/jun-27")).toEqual({
+			kind: "festival-public",
+			slug: "festival-admins",
+			festivalSlug: "jun-27",
+		});
+		expect(parseRoute("/org/festival-admins/festival/jun-27/admin")).toEqual({
+			kind: "festival-admin",
+			slug: "festival-admins",
+			festivalSlug: "jun-27",
+		});
 	});
 
 	it("identifies public organization pages", () => {
