@@ -117,20 +117,16 @@ export function AdminSettingsPage(props: { app: FestivalAppController }) {
 				<AccessDeniedPanel message="Only Admin members can manage organization settings." />
 			}
 		>
-			<section class="panel flow-panel">
-				<header class="admin-page-header">
-					<div>
-						<h2>Settings</h2>
-						<p>Organization Wide Settings</p>
-					</div>
-				</header>
-				<Show when={isLoading()}>
+			<Show when={isLoading()}>
+				<section class="panel flow-panel">
 					<p role="status">Loading organization settings…</p>
-				</Show>
-				<Show when={error()}>
+				</section>
+			</Show>
+			<Show when={error()}>
+				<section class="panel flow-panel">
 					{(message) => <p role="alert">{message()}</p>}
-				</Show>
-			</section>
+				</section>
+			</Show>
 
 			<Show when={!isLoading() && !error()}>
 				<section class="panel flow-panel">

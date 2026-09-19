@@ -552,6 +552,7 @@ describe("organization onboarding integration", () => {
 		expect(source).toContain("Admin > Integrations");
 		expect(source).toContain("Admin > Memberships");
 		expect(source).toContain("Admin > Festivals");
+		expect(source).toContain("Admin > Settings");
 		expect(source).toContain("Log out {props.app.adminUserLabel()}");
 		expect(source).toContain("function shortUserLabel");
 		expect(source).toContain("function backToAdmin()");

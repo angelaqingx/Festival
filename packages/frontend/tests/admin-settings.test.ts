@@ -65,6 +65,7 @@ describe("Admin settings frontend contract", () => {
 		expect(page).toContain("A registrant’s age is calculated as of this date");
 		expect(page).toContain("Save registration age cutoff");
 		expect(page).toContain("Organization timezone");
+		expect(page).not.toContain("<h2>Settings</h2>");
 		expect(divisions).not.toContain("Organization timezone");
 	});
 });
