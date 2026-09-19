@@ -4,6 +4,7 @@ import { acceptInvite } from "../lib/api.js";
 import {
 	clearPendingIntent,
 	completePasswordlessEmailLinkSignIn,
+	MissingPendingEmailError,
 	readPendingIntent,
 	subscribeToAuthChanges,
 } from "../lib/firebase-auth.js";
@@ -87,7 +88,11 @@ export function useFestivalLifecycle(
 					state.setStatusMessage("Email link verified. Continuing sign-in.");
 				}
 			} catch (error) {
-				state.setErrorMessage((error as Error).message);
+				if (error instanceof MissingPendingEmailError) {
+					state.setNeedsEmailLinkConfirmation(true);
+				} else {
+					state.setErrorMessage((error as Error).message);
+				}
 			}
 
 			void loaders.refreshSession().catch((error) => {

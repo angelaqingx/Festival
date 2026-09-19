@@ -18,6 +18,15 @@ type PendingIntent =
 	| { kind: "create-org" }
 	| { kind: "invite"; inviteToken: string; name: string };
 
+export class MissingPendingEmailError extends Error {
+	constructor() {
+		super(
+			"This sign-in link was opened in a different browser or device than the one that requested it.",
+		);
+		this.name = "MissingPendingEmailError";
+	}
+}
+
 const PENDING_EMAIL_KEY = "festival.pendingEmail";
 const PENDING_INTENT_KEY = "festival.pendingIntent";
 
@@ -139,12 +148,20 @@ export async function completePasswordlessEmailLinkSignIn(): Promise<PendingInte
 
 	const email = localStorage.getItem(PENDING_EMAIL_KEY);
 	if (!email) {
-		throw new Error(
-			"Unable to complete email-link sign-in because the saved email address is missing.",
-		);
+		throw new MissingPendingEmailError();
 	}
 
 	const intent = readPendingIntent();
+	await signInWithEmailLink(auth, email, window.location.href);
+	return intent;
+}
+
+export async function completeEmailLinkSignInWithEmail(
+	email: string,
+): Promise<PendingIntent | null> {
+	const auth = assertAuth();
+	const intent = readPendingIntent();
+	localStorage.setItem(PENDING_EMAIL_KEY, email);
 	await signInWithEmailLink(auth, email, window.location.href);
 	return intent;
 }
