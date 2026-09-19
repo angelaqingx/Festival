@@ -32,7 +32,7 @@ import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage.js";
 
 export default function App() {
 	const app = useFestivalAppController();
-	const isAdminPage = () => app.route().kind.startsWith("org-admin-");
+	const isAdminPage = () => app.isAdminRoute();
 	const organizationSlug = () => {
 		const route = app.route();
 		return isOrganizationPageRoute(route)

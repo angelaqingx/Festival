@@ -7,6 +7,9 @@ const classesPage = await Bun.file(
 	new URL("../src/pages/FestivalAdminClassesPage.tsx", import.meta.url),
 ).text();
 const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+const appState = await Bun.file(
+	new URL("../src/app/createFestivalAppState.ts", import.meta.url),
+).text();
 
 describe("Festival Admin Classes entry point", () => {
 	it("links the verified Festival dashboard to its Classes page", () => {
@@ -21,5 +24,12 @@ describe("Festival Admin Classes entry point", () => {
 		);
 		expect(classesPage).toContain("Festival not found.");
 		expect(app).toContain('app.route().kind === "festival-admin-classes"');
+	});
+
+	it("uses the Admin masthead treatment for Festival Admin routes", () => {
+		expect(appState).toContain('"festival-admin",');
+		expect(appState).toContain('"festival-admin-classes",');
+		expect(appState).toContain('return "Admin > Festival";');
+		expect(appState).toContain('return "Admin > Festival > Classes";');
 	});
 });
