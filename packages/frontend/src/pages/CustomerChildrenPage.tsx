@@ -23,6 +23,7 @@ export function CustomerChildrenPage(props: { slug: string }) {
 	const [firstName, setFirstName] = createSignal("");
 	const [familyName, setFamilyName] = createSignal("");
 	const [nickName, setNickName] = createSignal("");
+	const [nameFieldsStacked, setNameFieldsStacked] = createSignal(false);
 	const [birthday, setBirthday] = createSignal("");
 	const [error, setError] = createSignal("");
 	let csrfToken = "";
@@ -93,6 +94,18 @@ export function CustomerChildrenPage(props: { slug: string }) {
 							</>
 						)}
 					</For>
+					<button
+						type="button"
+						class="customer-children-name-layout-toggle"
+						classList={{ "is-stacked": nameFieldsStacked() }}
+						aria-label={
+							nameFieldsStacked()
+								? "Show name fields side by side"
+								: "Show name fields one per row"
+						}
+						aria-pressed={nameFieldsStacked()}
+						onClick={() => setNameFieldsStacked((current) => !current)}
+					/>
 					<form
 						class="customer-children-form"
 						onSubmit={(event) => {
@@ -115,32 +128,37 @@ export function CustomerChildrenPage(props: { slug: string }) {
 								.catch((reason) => setError((reason as Error).message));
 						}}
 					>
-						<label class="field">
-							<span>First Name</span>
-							<input
-								required
-								value={firstName()}
-								onInput={(event) => setFirstName(event.currentTarget.value)}
-							/>
-						</label>
-						<label class="field">
-							<span>Family Name</span>
-							<input
-								required
-								value={familyName()}
-								onInput={(event) => setFamilyName(event.currentTarget.value)}
-							/>
-						</label>
-						<label class="field">
-							<span>
-								Nick Name{" "}
-								<em class="customer-children-name-optional">(optional)</em>
-							</span>
-							<input
-								value={nickName()}
-								onInput={(event) => setNickName(event.currentTarget.value)}
-							/>
-						</label>
+						<div
+							class="customer-children-name-fields"
+							classList={{ "is-stacked": nameFieldsStacked() }}
+						>
+							<label class="field">
+								<span>First Name</span>
+								<input
+									required
+									value={firstName()}
+									onInput={(event) => setFirstName(event.currentTarget.value)}
+								/>
+							</label>
+							<label class="field">
+								<span>Family Name</span>
+								<input
+									required
+									value={familyName()}
+									onInput={(event) => setFamilyName(event.currentTarget.value)}
+								/>
+							</label>
+							<label class="field">
+								<span>
+									Nick Name{" "}
+									<em class="customer-children-name-optional">(optional)</em>
+								</span>
+								<input
+									value={nickName()}
+									onInput={(event) => setNickName(event.currentTarget.value)}
+								/>
+							</label>
+						</div>
 						<label class="field">
 							<span>Birthday</span>
 							<input

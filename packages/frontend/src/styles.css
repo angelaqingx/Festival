@@ -782,6 +782,40 @@ button.compact-header-button {
 	gap: 0.85rem;
 }
 
+.customer-children-name-layout-toggle {
+	justify-self: end;
+	width: 1.5em;
+	height: 1.5em;
+	padding: 0;
+	background: none;
+	color: var(--bullet-ink);
+	box-shadow: none;
+}
+
+.customer-children-name-layout-toggle::before {
+	content: "";
+	display: block;
+	width: 100%;
+	height: 100%;
+	background: currentcolor;
+	clip-path: polygon(0 50%, 100% 0, 100% 100%);
+}
+
+.customer-children-name-layout-toggle.is-stacked::before {
+	clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.customer-children-name-fields {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 3px;
+}
+
+.customer-children-name-fields.is-stacked {
+	grid-template-columns: 1fr;
+	gap: 0.85rem;
+}
+
 .customer-children-name-optional {
 	font-size: 0.8em;
 	font-style: italic;
