@@ -904,7 +904,6 @@ button.compact-header-button {
 
 .admin-workflow-card span,
 .admin-page-header p,
-.admin-page-heading p,
 .access-denied-panel p {
 	margin: 0;
 	color: var(--bullet-soft-ink);
@@ -1008,16 +1007,6 @@ form.shopify-integration-card {
 
 .shopify-card-header h2,
 .shopify-card-header p {
-	margin: 0;
-}
-
-.admin-page-heading div {
-	display: grid;
-	gap: 0.35rem;
-}
-
-.admin-page-heading h2,
-.admin-page-heading p {
 	margin: 0;
 }
 
@@ -1164,10 +1153,6 @@ form.shopify-integration-card {
 
 .admin-page-header h2 {
 	margin: 0 0 0.35rem;
-}
-
-.admin-page-heading h2 {
-	margin: 0;
 }
 
 .admin-list,

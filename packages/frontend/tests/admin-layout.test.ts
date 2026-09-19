@@ -30,19 +30,4 @@ describe("Admin page layout contract", () => {
 		expect(styles).toContain(".division-list-panel .field input");
 		expect(styles).toContain("width: min(40ch, 100%);");
 	});
-
-	it("uses the shared heading treatment across admin settings pages", async () => {
-		const integrations = await Bun.file(
-			"src/pages/AdminIntegrationsPage.tsx",
-		).text();
-		const memberships = await Bun.file(
-			"src/pages/AdminMembershipProductsPage.tsx",
-		).text();
-		const divisions = await Bun.file("src/pages/AdminDivisionsPage.tsx").text();
-		const settings = await Bun.file("src/pages/AdminSettingsPage.tsx").text();
-
-		for (const page of [integrations, memberships, divisions, settings]) {
-			expect(page).toContain("admin-page-heading");
-		}
-	});
 });

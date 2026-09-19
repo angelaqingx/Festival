@@ -16,7 +16,7 @@ export function AdminDivisionsPage(props: AdminDivisionsPageProps) {
 				<AccessDeniedPanel message="Only Admin members can manage divisions." />
 			}
 		>
-			<section class="panel flow-panel admin-page-header admin-page-heading division-admin-header">
+			<section class="panel flow-panel admin-page-header division-admin-header">
 				<div>
 					<h2>Divisions</h2>
 					<p>Configure division choices.</p>
