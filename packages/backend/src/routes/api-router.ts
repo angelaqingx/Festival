@@ -1465,6 +1465,39 @@ export function buildApiRouter(
 	);
 
 	router.post(
+		"/organizations/:slug/admin/membership-products/:offeringId/retire",
+		requireAuth(authVerifier),
+		requireTenant(repository),
+		requireTenantRole(["Admin"]),
+		async (c) => {
+			try {
+				if (!shopifyMembershipProductService) {
+					throw new AppError("Shopify integration is not configured.", 503);
+				}
+				const payload = await c.req.json();
+				assertAllowedFields(
+					payload,
+					["confirmed"],
+					"Membership offering retirement request",
+				);
+				if (payload.confirmed !== true) {
+					throw new AppError(
+						"Membership offering retirement must be confirmed.",
+						400,
+					);
+				}
+				await shopifyMembershipProductService.retireMembershipOffering(
+					getRequiredTenant(c),
+					c.req.param("offeringId"),
+				);
+				return c.json({ retired: true });
+			} catch (error) {
+				return toJsonError(c, error);
+			}
+		},
+	);
+
+	router.post(
 		"/organizations/:slug/admin/accompanist-offering",
 		requireAuth(authVerifier),
 		requireTenant(repository),

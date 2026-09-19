@@ -514,6 +514,26 @@ export class ShopifyMembershipProductService {
 		}
 	}
 
+	async retireMembershipOffering(
+		tenant: TenantContext,
+		offeringId: string,
+	): Promise<void> {
+		const offerings = await this.repository.listMembershipProductRecords(
+			tenant.organization.id,
+		);
+		const offering = offerings.find((candidate) => candidate.id === offeringId);
+		if (!offering)
+			throw new AppError("Membership offering was not found.", 404);
+		if (!offering.isActive) return;
+
+		const retired = await this.repository.updateMembershipProductRecord({
+			organizationId: tenant.organization.id,
+			productId: offering.id,
+			isActive: false,
+		});
+		if (!retired) throw new AppError("Membership offering was not found.", 404);
+	}
+
 	private async loadOperationContext(
 		tenant: TenantContext,
 		capability: ShopifyAdminCapability,

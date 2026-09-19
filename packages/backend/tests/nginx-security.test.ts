@@ -25,6 +25,7 @@ describe("repository nginx security policy", () => {
 				"admin/(?:festivals(?:/[^/]+(?:/primary)?)?|shopify|shopify-customer-account)",
 				"admin/shopify/diagnostics",
 				"admin/membership-products",
+				"membership-products(?:/[^/]+/retire)?",
 				"admin/customers",
 				"customer-auth/callback",
 				"customer-auth/start|customer/session|customer/orders|customer/membership-status",
