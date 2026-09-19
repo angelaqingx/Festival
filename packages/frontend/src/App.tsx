@@ -19,6 +19,7 @@ import { CustomerAccountContactPage } from "./pages/CustomerAccountContactPage.j
 import { CustomerAccountMembershipsPage } from "./pages/CustomerAccountMembershipsPage.js";
 import { CustomerAccountOrdersPage } from "./pages/CustomerAccountOrdersPage.js";
 import { CustomerChildrenPage } from "./pages/CustomerChildrenPage.js";
+import { FestivalAdminClassesPage } from "./pages/FestivalAdminClassesPage.js";
 import { FestivalAdminDashboardPage } from "./pages/FestivalAdminDashboardPage.js";
 import { FestivalLandingPage } from "./pages/FestivalLandingPage.js";
 import { HomePage } from "./pages/HomePage.js";
@@ -84,6 +85,15 @@ export default function App() {
 						</Match>
 						<Match when={app.route().kind === "festival-admin"}>
 							<FestivalAdminDashboardPage
+								app={app}
+								slug={(app.route() as { slug: string }).slug}
+								festivalSlug={
+									(app.route() as { festivalSlug: string }).festivalSlug
+								}
+							/>
+						</Match>
+						<Match when={app.route().kind === "festival-admin-classes"}>
+							<FestivalAdminClassesPage
 								app={app}
 								slug={(app.route() as { slug: string }).slug}
 								festivalSlug={

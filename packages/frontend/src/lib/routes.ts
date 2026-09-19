@@ -6,6 +6,7 @@ export type AppRoute =
 	| { kind: "org-root"; slug: string }
 	| { kind: "festival-public"; slug: string; festivalSlug: string }
 	| { kind: "festival-admin"; slug: string; festivalSlug: string }
+	| { kind: "festival-admin-classes"; slug: string; festivalSlug: string }
 	| { kind: "org-membership"; slug: string }
 	| { kind: "org-accompanist-membership"; slug: string }
 	| { kind: "org-customer-account-legacy"; slug: string }
@@ -36,6 +37,20 @@ export function buildOrgMembershipPath(slug: string): string {
 
 export function buildOrgAccompanistMembershipPath(slug: string): string {
 	return `/org/${slug}/accompanist-membership`;
+}
+
+export function buildFestivalAdminClassesPath(
+	slug: string,
+	festivalSlug: string,
+): string {
+	return `${buildFestivalAdminPath(slug, festivalSlug)}/classes`;
+}
+
+export function buildFestivalAdminPath(
+	slug: string,
+	festivalSlug: string,
+): string {
+	return `/org/${slug}/festival/${festivalSlug}/admin`;
 }
 
 export function buildOrgCustomerAccountPath(slug: string): string {
@@ -96,6 +111,7 @@ export function isOrganizationPageRoute(route: AppRoute): boolean {
 		route.kind === "org-root" ||
 		route.kind === "festival-public" ||
 		route.kind === "festival-admin" ||
+		route.kind === "festival-admin-classes" ||
 		route.kind === "org-membership" ||
 		route.kind === "org-accompanist-membership" ||
 		route.kind === "org-customer-account-legacy" ||
@@ -136,6 +152,15 @@ export function parseRoute(pathname: string): AppRoute {
 			kind: "festival-admin",
 			slug: festivalAdminMatch[1] ?? "",
 			festivalSlug: festivalAdminMatch[2] ?? "",
+		};
+	const festivalAdminClassesMatch = pathname.match(
+		/^\/org\/([^/]+)\/festival\/([^/]+)\/admin\/classes$/,
+	);
+	if (festivalAdminClassesMatch)
+		return {
+			kind: "festival-admin-classes",
+			slug: festivalAdminClassesMatch[1] ?? "",
+			festivalSlug: festivalAdminClassesMatch[2] ?? "",
 		};
 	const festivalPublicMatch = pathname.match(
 		/^\/org\/([^/]+)\/festival\/([^/]+)$/,

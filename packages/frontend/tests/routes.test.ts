@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
+	buildFestivalAdminClassesPath,
+	buildFestivalAdminPath,
 	buildInvitePath,
 	buildOrgAdminDivisionsPath,
 	buildOrgAdminFestivalsPath,
@@ -109,6 +111,13 @@ describe("route helpers", () => {
 			slug: "festival-admins",
 			festivalSlug: "jun-27",
 		});
+		expect(
+			parseRoute("/org/festival-admins/festival/jun-27/admin/classes"),
+		).toEqual({
+			kind: "festival-admin-classes",
+			slug: "festival-admins",
+			festivalSlug: "jun-27",
+		});
 	});
 
 	it("identifies public organization pages", () => {
@@ -145,6 +154,12 @@ describe("route helpers", () => {
 
 	it("builds org and invite paths", () => {
 		expect(buildOrgPath("festival-admins")).toBe("/org/festival-admins/admin");
+		expect(buildFestivalAdminClassesPath("festival-admins", "jun-27")).toBe(
+			"/org/festival-admins/festival/jun-27/admin/classes",
+		);
+		expect(buildFestivalAdminPath("festival-admins", "jun-27")).toBe(
+			"/org/festival-admins/festival/jun-27/admin",
+		);
 		expect(buildOrgRootPath("festival-admins")).toBe("/org/festival-admins");
 		expect(buildOrgMembershipPath("festival-admins")).toBe(
 			"/org/festival-admins/membership",
