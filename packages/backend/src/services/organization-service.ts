@@ -756,6 +756,36 @@ export class OrganizationService {
 			: { status: 404, path: "" };
 	}
 
+	async getPublicFestival(
+		organizationSlug: string,
+		festivalShortName: string,
+	): Promise<CreateFestivalResponse> {
+		const organization =
+			await this.repository.findOrganizationBySlug(organizationSlug);
+		if (!organization) throw new AppError("Organization not found.", 404);
+
+		const festival = await this.repository.findFestivalByShortName(
+			organization.id,
+			festivalShortName,
+		);
+		if (!festival) throw new AppError("Festival not found.", 404);
+
+		return { festival: toFestivalSummary(festival) };
+	}
+
+	async getAdminFestivalForTenant(
+		tenant: TenantContext,
+		festivalShortName: string,
+	): Promise<CreateFestivalResponse> {
+		const festival = await this.repository.findFestivalByShortName(
+			tenant.organization.id,
+			festivalShortName,
+		);
+		if (!festival) throw new AppError("Festival not found.", 404);
+
+		return { festival: toFestivalSummary(festival) };
+	}
+
 	async setPrimaryFestivalForTenant(
 		tenant: TenantContext,
 		shortName: string,

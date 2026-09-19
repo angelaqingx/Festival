@@ -1247,6 +1247,74 @@ describe("organization routes", () => {
 		});
 	});
 
+	it("resolves Festival routes only within their requested organization", async () => {
+		const { app } = await createTestApp();
+		await createOrganizationViaApi(app);
+		const createFestival = async (
+			organizationSlug: string,
+			shortName: string,
+		) =>
+			app.fetch(
+				new Request(
+					`http://test/api/organizations/${organizationSlug}/admin/festivals`,
+					withAuth("admin", {
+						method: "POST",
+						body: JSON.stringify({
+							name: `${shortName.replace("-", " ")} Festival`,
+							shortName,
+							startDate: "2027-06-10",
+							endDate: "2027-06-12",
+						}),
+					}),
+				),
+			);
+
+		await createFestival("pafe", "jun-27");
+		await app.fetch(
+			new Request(
+				"http://test/api/organizations",
+				withAuth("admin", {
+					method: "POST",
+					body: JSON.stringify({ name: "Other Festival", shortName: "other" }),
+				}),
+			),
+		);
+		await createFestival("other", "jul-27");
+
+		const publicResponse = await app.fetch(
+			new Request("http://test/api/organizations/pafe/festivals/jun-27"),
+		);
+		expect(publicResponse.status).toBe(200);
+		await expect(publicResponse.json()).resolves.toMatchObject({
+			festival: { name: "jun 27 Festival", shortName: "jun-27" },
+		});
+
+		const adminResponse = await app.fetch(
+			new Request(
+				"http://test/api/organizations/pafe/admin/festivals/jun-27",
+				withAuth("admin"),
+			),
+		);
+		expect(adminResponse.status).toBe(200);
+
+		for (const path of [
+			"/api/organizations/pafe/festivals/jul-27",
+			"/api/organizations/pafe/admin/festivals/jul-27",
+			"/api/organizations/pafe/festivals/missing",
+		]) {
+			const response = await app.fetch(
+				new Request(
+					`http://test${path}`,
+					path.includes("/admin/") ? withAuth("admin") : undefined,
+				),
+			);
+			expect(response.status).toBe(404);
+			await expect(response.json()).resolves.toEqual({
+				error: "Festival not found.",
+			});
+		}
+	});
+
 	it("saves and verifies Shopify settings without returning the secret", async () => {
 		const { app, shopifyTester } = await createTestAppWithShopify();
 

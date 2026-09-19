@@ -19,6 +19,7 @@ import { CustomerAccountContactPage } from "./pages/CustomerAccountContactPage.j
 import { CustomerAccountMembershipsPage } from "./pages/CustomerAccountMembershipsPage.js";
 import { CustomerAccountOrdersPage } from "./pages/CustomerAccountOrdersPage.js";
 import { CustomerChildrenPage } from "./pages/CustomerChildrenPage.js";
+import { FestivalAdminDashboardPage } from "./pages/FestivalAdminDashboardPage.js";
 import { FestivalLandingPage } from "./pages/FestivalLandingPage.js";
 import { HomePage } from "./pages/HomePage.js";
 import { InviteLandingPage } from "./pages/InviteLandingPage.js";
@@ -76,23 +77,19 @@ export default function App() {
 						<Match when={app.route().kind === "festival-public"}>
 							<FestivalLandingPage
 								slug={(app.route() as { slug: string }).slug}
+								festivalSlug={
+									(app.route() as { festivalSlug: string }).festivalSlug
+								}
 							/>
 						</Match>
 						<Match when={app.route().kind === "festival-admin"}>
-							<section class="panel">
-								<h2>Festival dashboard</h2>
-								<p>
-									<a
-										href={`/org/${(app.route() as { slug: string }).slug}/admin/festivals`}
-									>
-										Festival management
-									</a>
-								</p>
-								<p>
-									Classes management is available after the catalog is
-									configured.
-								</p>
-							</section>
+							<FestivalAdminDashboardPage
+								app={app}
+								slug={(app.route() as { slug: string }).slug}
+								festivalSlug={
+									(app.route() as { festivalSlug: string }).festivalSlug
+								}
+							/>
 						</Match>
 						<Match when={app.route().kind === "org-membership"}>
 							<MembershipPage app={app} />
