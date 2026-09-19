@@ -263,33 +263,33 @@ export function AdminMembershipProductsPage(
 						</Button>
 					</form>
 				</div>
-				<section class="shopify-integration-card membership-admin-form">
-					<div class="shopify-card-header">
-						<div>
-							<h2>Accompanist division policy</h2>
-							<p>Choose how many divisions an accompanist may select.</p>
-						</div>
+			</section>
+			<section class="panel flow-panel membership-admin-form">
+				<div class="shopify-card-header">
+					<div>
+						<h2>Accompanist division policy</h2>
+						<p>Choose how many divisions an accompanist may select.</p>
 					</div>
-					<Show when={policyError()}>
-						{(message) => <p class="shopify-error-text">{message()}</p>}
-					</Show>
-					<fieldset class="field">
-						<legend>Division selection</legend>
-						<For each={choices}>
-							{([value, label]) => (
-								<label>
-									<input
-										type="radio"
-										name="accompanist-division-policy"
-										checked={accompanistPolicy() === value}
-										onChange={() => void savePolicy(value)}
-									/>
-									{label}
-								</label>
-							)}
-						</For>
-					</fieldset>
-				</section>
+				</div>
+				<Show when={policyError()}>
+					{(message) => <p class="shopify-error-text">{message()}</p>}
+				</Show>
+				<fieldset class="field">
+					<legend>Division selection</legend>
+					<For each={choices}>
+						{([value, label]) => (
+							<label>
+								<input
+									type="radio"
+									name="accompanist-division-policy"
+									checked={accompanistPolicy() === value}
+									onChange={() => void savePolicy(value)}
+								/>
+								{label}
+							</label>
+						)}
+					</For>
+				</fieldset>
 			</section>
 		</Show>
 	);

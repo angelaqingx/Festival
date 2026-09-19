@@ -29,6 +29,7 @@ import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage.js";
 
 export default function App() {
 	const app = useFestivalAppController();
+	const isAdminPage = () => app.route().kind.startsWith("org-admin-");
 	const organizationSlug = () => {
 		const route = app.route();
 		return isOrganizationPageRoute(route)
@@ -49,7 +50,10 @@ export default function App() {
 				{organizationSlug() && (
 					<OrganizationSideNavigation slug={organizationSlug() ?? ""} />
 				)}
-				<div class="application-page-content">
+				<div
+					class="application-page-content"
+					classList={{ "admin-page-content": isAdminPage() }}
+				>
 					<Switch>
 						<Match
 							when={app.route().kind === "home" && !app.shouldShowOrgChooser()}
