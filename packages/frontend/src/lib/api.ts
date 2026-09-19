@@ -430,6 +430,18 @@ export function getAdminMembershipProducts(idToken: string, slug: string) {
 	);
 }
 
+export function retireAdminMembershipProduct(
+	idToken: string,
+	slug: string,
+	offeringId: string,
+) {
+	return requestJson<{ retired: true }>(
+		`/api/organizations/${encodeURIComponent(slug)}/admin/membership-products/${encodeURIComponent(offeringId)}/retire`,
+		{ method: "POST", body: JSON.stringify({ confirmed: true }) },
+		idToken,
+	);
+}
+
 export function getAdminAccompanistPolicy(idToken: string, slug: string) {
 	return requestJson<{
 		policy: {

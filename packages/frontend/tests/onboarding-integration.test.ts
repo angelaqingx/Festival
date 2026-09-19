@@ -628,6 +628,24 @@ describe("organization onboarding integration", () => {
 		expect(source).toContain('price: "",');
 	});
 
+	it("keeps membership offering retirement explicit and Admin-scoped", async () => {
+		const apiSource = await Bun.file("src/lib/api.ts").text();
+		const pageSource = await Bun.file(
+			"src/pages/AdminMembershipProductsPage.tsx",
+		).text();
+
+		expect(apiSource).toContain("retireAdminMembershipProduct");
+		expect(apiSource).toContain(
+			"membership-products/${encodeURIComponent(offeringId)}/retire",
+		);
+		expect(apiSource).toContain("JSON.stringify({ confirmed: true })");
+		expect(pageSource).toContain("window.confirm(");
+		expect(pageSource).toContain("prevents future purchases");
+		expect(pageSource).toContain("Retired");
+		expect(pageSource).toContain('"Retire"');
+		expect(pageSource).toContain("props.app.isAdminMember()");
+	});
+
 	it("surfaces membership product load failures without retaining stale data", async () => {
 		let products: unknown[] = [{ id: "stale-product" }];
 		let loading = false;

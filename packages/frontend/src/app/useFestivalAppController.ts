@@ -12,6 +12,7 @@ export function useFestivalAppController() {
 
 	return {
 		...state,
+		...loaders,
 		...actions,
 	};
 }
