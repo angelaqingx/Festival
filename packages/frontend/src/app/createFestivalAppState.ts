@@ -76,8 +76,6 @@ export function createFestivalAppState() {
 		createSignal("");
 	const [isDivisionMutationPending, setIsDivisionMutationPending] =
 		createSignal(false);
-	const [organizationTimezone, setOrganizationTimezone] = createSignal("");
-	const [timezoneDraft, setTimezoneDraft] = createSignal("");
 	const [membershipProducts, setMembershipProducts] = createSignal<
 		MembershipProductSummary[]
 	>([]);
@@ -324,8 +322,6 @@ export function createFestivalAppState() {
 		setIsLoadingDivisionConfiguration(false);
 		setDivisionConfigurationLoadError("");
 		setIsDivisionMutationPending(false);
-		setOrganizationTimezone("");
-		setTimezoneDraft("");
 		setMembershipProducts([]);
 		setIsLoadingMembershipProducts(false);
 		setMembershipProductsLoadError("");
@@ -439,7 +435,6 @@ export function createFestivalAppState() {
 		openSignInModal,
 		organization,
 		organizationCreated,
-		organizationTimezone,
 		organizationName,
 		organizationShortName,
 		organizationValidationErrors,
@@ -485,7 +480,6 @@ export function createFestivalAppState() {
 		setOrganizationNameTouched,
 		setOrganizationShortName,
 		setOrganizationShortNameTouched,
-		setOrganizationTimezone,
 		setSession,
 		setShopifyDraft,
 		setShopifySettings,
@@ -493,7 +487,6 @@ export function createFestivalAppState() {
 		setSignInModalKind,
 		setSignInStep,
 		setStatusMessage,
-		setTimezoneDraft,
 		shouldShowFestivalNameValidation,
 		shouldShowMembershipProductValidation,
 		shouldShowOrganizationValidation,
@@ -506,7 +499,6 @@ export function createFestivalAppState() {
 		shopifyDraft,
 		shopifySettings,
 		statusMessage,
-		timezoneDraft,
 		currentInviteToken,
 	};
 }

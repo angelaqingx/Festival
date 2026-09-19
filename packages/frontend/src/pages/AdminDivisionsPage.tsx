@@ -1,8 +1,5 @@
 import { For, Show } from "solid-js";
-import {
-	divisionNameValidationError,
-	listIanaTimezones,
-} from "../app/adminDivisions.js";
+import { divisionNameValidationError } from "../app/adminDivisions.js";
 import type { FestivalAppController } from "../app/useFestivalAppController.js";
 import { AccessDeniedPanel } from "../components/AccessDeniedPanel.js";
 import { Button } from "../components/Button.js";
@@ -16,13 +13,13 @@ export function AdminDivisionsPage(props: AdminDivisionsPageProps) {
 		<Show
 			when={props.app.isAdminMember()}
 			fallback={
-				<AccessDeniedPanel message="Only Admin members can manage divisions and timezone." />
+				<AccessDeniedPanel message="Only Admin members can manage divisions." />
 			}
 		>
 			<section class="panel flow-panel admin-page-header division-admin-header">
 				<div>
 					<h2>Divisions</h2>
-					<p>Configure division choices and entitlement-date timezone.</p>
+					<p>Configure division choices.</p>
 				</div>
 			</section>
 
@@ -188,36 +185,6 @@ export function AdminDivisionsPage(props: AdminDivisionsPageProps) {
 							)}
 						</For>
 					</ol>
-				</section>
-
-				<section class="panel flow-panel">
-					<h3>Organization timezone</h3>
-					<p class="muted">
-						Current timezone: {props.app.organizationTimezone()}
-					</p>
-					<label class="field">
-						<span>IANA timezone</span>
-						<select
-							value={props.app.timezoneDraft()}
-							onChange={(event) =>
-								props.app.setTimezoneDraft(event.currentTarget.value)
-							}
-						>
-							<For each={listIanaTimezones(props.app.organizationTimezone())}>
-								{(timezone) => <option value={timezone}>{timezone}</option>}
-							</For>
-						</select>
-					</label>
-					<Button
-						type="button"
-						disabled={
-							props.app.isDivisionMutationPending() ||
-							props.app.timezoneDraft() === props.app.organizationTimezone()
-						}
-						onClick={props.app.handleSaveOrganizationTimezone}
-					>
-						Save timezone
-					</Button>
 				</section>
 			</Show>
 		</Show>
