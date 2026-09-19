@@ -16,15 +16,7 @@ interface AppHeaderProps {
 export function AppHeader(props: AppHeaderProps) {
 	const slug = () => {
 		const route = props.app.route();
-		return route.kind === "org-root" ||
-			route.kind === "org-membership" ||
-			route.kind === "org-accompanist-membership" ||
-			route.kind === "org-customer-account-legacy" ||
-			route.kind === "org-customer-account-memberships" ||
-			route.kind === "org-customer-account-contact" ||
-			route.kind === "org-customer-account-orders"
-			? route.slug
-			: null;
+		return isOrganizationPageRoute(route) ? route.slug : null;
 	};
 	const [customerSession, setCustomerSession] = createSignal<{
 		authenticated: boolean;
@@ -53,7 +45,9 @@ export function AppHeader(props: AppHeaderProps) {
 	}
 
 	function login() {
-		window.location.assign(customerLandingSignInPath(slug() ?? ""));
+		const organizationSlug = slug();
+		if (!organizationSlug) return;
+		window.location.assign(customerLandingSignInPath(organizationSlug));
 	}
 
 	return (

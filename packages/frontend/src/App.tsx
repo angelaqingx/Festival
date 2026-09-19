@@ -12,6 +12,7 @@ import { AdminFestivalsPage } from "./pages/AdminFestivalsPage.js";
 import { AdminHomePage } from "./pages/AdminHomePage.js";
 import { AdminIntegrationsPage } from "./pages/AdminIntegrationsPage.js";
 import { AdminMembershipProductsPage } from "./pages/AdminMembershipProductsPage.js";
+import { AdminSettingsPage } from "./pages/AdminSettingsPage.js";
 import { AdminUsersPage } from "./pages/AdminUsersPage.js";
 import { CreateOrganizationPage } from "./pages/CreateOrganizationPage.js";
 import { CustomerAccountContactPage } from "./pages/CustomerAccountContactPage.js";
@@ -29,6 +30,7 @@ import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage.js";
 
 export default function App() {
 	const app = useFestivalAppController();
+	const isAdminPage = () => app.route().kind.startsWith("org-admin-");
 	const organizationSlug = () => {
 		const route = app.route();
 		return isOrganizationPageRoute(route)
@@ -49,7 +51,10 @@ export default function App() {
 				{organizationSlug() && (
 					<OrganizationSideNavigation slug={organizationSlug() ?? ""} />
 				)}
-				<div class="application-page-content">
+				<div
+					class="application-page-content"
+					classList={{ "admin-page-content": isAdminPage() }}
+				>
 					<Switch>
 						<Match
 							when={app.route().kind === "home" && !app.shouldShowOrgChooser()}
@@ -141,6 +146,9 @@ export default function App() {
 						</Match>
 						<Match when={app.route().kind === "org-admin-divisions"}>
 							<AdminDivisionsPage app={app} />
+						</Match>
+						<Match when={app.route().kind === "org-admin-settings"}>
+							<AdminSettingsPage app={app} />
 						</Match>
 						<Match when={app.route().kind === "org-admin-accompanists"}>
 							<AdminAccompanistsPage app={app} />

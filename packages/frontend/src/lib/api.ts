@@ -27,6 +27,7 @@ import type {
 	OrganizationTimezoneResponse,
 	PublicMembershipProductsListResponse,
 	PublicOrganizationLandingResponse,
+	RegistrationAgeConfiguration,
 	ReorderOrganizationDivisionsInput,
 	SaveCustomerAccountSettingsInput,
 	SaveCustomerAccountSettingsResponse,
@@ -631,6 +632,32 @@ export function updateAdminTimezone(
 	return requestJson<OrganizationTimezoneResponse>(
 		`/api/organizations/${slug}/admin/timezone`,
 		{ method: "POST", body: JSON.stringify(input) },
+		idToken,
+	);
+}
+
+export function getAdminRegistrationConfiguration(
+	idToken: string,
+	slug: string,
+) {
+	return requestJson<{ ageConfiguration: RegistrationAgeConfiguration | null }>(
+		`/api/organizations/${slug}/admin/registration-configuration`,
+		undefined,
+		idToken,
+	);
+}
+
+export function updateAdminRegistrationAgeDate(
+	idToken: string,
+	slug: string,
+	registrationAgeDate: string,
+) {
+	return requestJson<{ ageConfiguration: RegistrationAgeConfiguration }>(
+		`/api/organizations/${slug}/admin/registration-age-date`,
+		{
+			method: "POST",
+			body: JSON.stringify({ registrationAgeDate }),
+		},
 		idToken,
 	);
 }

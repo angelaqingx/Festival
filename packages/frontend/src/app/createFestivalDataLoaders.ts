@@ -3,7 +3,6 @@ import type { User } from "firebase/auth";
 import {
 	getAdminDivisions,
 	getAdminMembershipProducts,
-	getAdminTimezone,
 	getAdminUsers,
 	getBootstrap,
 	getFestivals,
@@ -132,14 +131,9 @@ export function createFestivalDataLoaders(state: FestivalAppState) {
 		state.setDivisionConfigurationLoadError("");
 		state.setDivisions([]);
 		state.setDivisionRenameDrafts({});
-		state.setOrganizationTimezone("");
-		state.setTimezoneDraft("");
 
 		try {
-			const [divisionResponse, timezoneResponse] = await Promise.all([
-				getAdminDivisions(token, slug),
-				getAdminTimezone(token, slug),
-			]);
+			const divisionResponse = await getAdminDivisions(token, slug);
 			if (!isCurrentDivisionConfigurationLoad(loadVersion, slug)) return;
 			state.setDivisions(divisionResponse.divisions);
 			state.setDivisionRenameDrafts(
@@ -150,8 +144,6 @@ export function createFestivalDataLoaders(state: FestivalAppState) {
 					]),
 				),
 			);
-			state.setOrganizationTimezone(timezoneResponse.timezone);
-			state.setTimezoneDraft(timezoneResponse.timezone);
 		} catch {
 			if (!isCurrentDivisionConfigurationLoad(loadVersion, slug)) return;
 			state.setDivisionConfigurationLoadError(

@@ -5,6 +5,7 @@ import {
 	buildOrgAdminFestivalsPath,
 	buildOrgAdminIntegrationsPath,
 	buildOrgAdminMembershipsPath,
+	buildOrgAdminSettingsPath,
 	buildOrgAdminUsersPath,
 	buildOrgCustomerAccountContactPath,
 	buildOrgCustomerAccountMembershipsPath,
@@ -94,6 +95,10 @@ describe("route helpers", () => {
 			kind: "org-admin-divisions",
 			slug: "festival-admins",
 		});
+		expect(parseRoute("/org/festival-admins/admin/settings")).toEqual({
+			kind: "org-admin-settings",
+			slug: "festival-admins",
+		});
 	});
 
 	it("identifies public organization pages", () => {
@@ -105,6 +110,11 @@ describe("route helpers", () => {
 		).toBe(true);
 		expect(
 			isOrganizationPageRoute(parseRoute("/org/festival-admins/account")),
+		).toBe(true);
+		expect(
+			isOrganizationPageRoute(
+				parseRoute("/org/festival-admins/account/children"),
+			),
 		).toBe(true);
 		expect(
 			isOrganizationPageRoute(parseRoute("/org/festival-admins/admin")),
@@ -155,6 +165,9 @@ describe("route helpers", () => {
 		);
 		expect(buildOrgAdminDivisionsPath("festival-admins")).toBe(
 			"/org/festival-admins/admin/divisions",
+		);
+		expect(buildOrgAdminSettingsPath("festival-admins")).toBe(
+			"/org/festival-admins/admin/settings",
 		);
 		expect(buildOrgPath("second-festival")).toBe("/org/second-festival/admin");
 		expect(buildInvitePath("abc123")).toBe("/invite/abc123");

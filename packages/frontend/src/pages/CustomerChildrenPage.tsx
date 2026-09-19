@@ -8,9 +8,22 @@ import {
 } from "../lib/api.js";
 import { CustomerAccountPageLayout } from "./CustomerAccountPageLayout.js";
 
+export function childDisplayName(
+	firstName: string,
+	familyName: string,
+	nickName: string,
+): string {
+	const name = `${firstName.trim()} ${familyName.trim()}`;
+	const nickname = nickName.trim();
+	return nickname ? `${name} "${nickname}"` : name;
+}
+
 export function CustomerChildrenPage(props: { slug: string }) {
 	const [children, setChildren] = createSignal<CustomerChildDto[]>([]);
-	const [displayName, setDisplayName] = createSignal("");
+	const [firstName, setFirstName] = createSignal("");
+	const [familyName, setFamilyName] = createSignal("");
+	const [nickName, setNickName] = createSignal("");
+	const [nameFieldsStacked, setNameFieldsStacked] = createSignal(false);
 	const [birthday, setBirthday] = createSignal("");
 	const [error, setError] = createSignal("");
 	let csrfToken = "";
@@ -33,7 +46,7 @@ export function CustomerChildrenPage(props: { slug: string }) {
 					<For each={children()}>
 						{(child) => (
 							<>
-								<p>
+								<p class="customer-child-status">
 									{child.displayName} —{" "}
 									{child.hasCurrentValidAgeSnapshot
 										? "Age verification current"
@@ -81,31 +94,73 @@ export function CustomerChildrenPage(props: { slug: string }) {
 							</>
 						)}
 					</For>
+					<button
+						type="button"
+						class="customer-children-name-layout-toggle"
+						classList={{ "is-stacked": nameFieldsStacked() }}
+						aria-label={
+							nameFieldsStacked()
+								? "Show name fields side by side"
+								: "Show name fields one per row"
+						}
+						aria-pressed={nameFieldsStacked()}
+						onClick={() => setNameFieldsStacked((current) => !current)}
+					/>
 					<form
+						class="customer-children-form"
 						onSubmit={(event) => {
 							event.preventDefault();
 							void createCustomerChild(props.slug, csrfToken, {
-								displayName: displayName(),
+								displayName: childDisplayName(
+									firstName(),
+									familyName(),
+									nickName(),
+								),
 								birthday: birthday(),
 							})
 								.then(() => {
-									setDisplayName("");
+									setFirstName("");
+									setFamilyName("");
+									setNickName("");
 									setBirthday("");
 									return load();
 								})
 								.catch((reason) => setError((reason as Error).message));
 						}}
 					>
-						<label>
-							Display name
-							<input
-								required
-								value={displayName()}
-								onInput={(event) => setDisplayName(event.currentTarget.value)}
-							/>
-						</label>
-						<label>
-							Birthday
+						<div
+							class="customer-children-name-fields"
+							classList={{ "is-stacked": nameFieldsStacked() }}
+						>
+							<label class="field">
+								<span>First Name</span>
+								<input
+									required
+									value={firstName()}
+									onInput={(event) => setFirstName(event.currentTarget.value)}
+								/>
+							</label>
+							<label class="field">
+								<span>Family Name</span>
+								<input
+									required
+									value={familyName()}
+									onInput={(event) => setFamilyName(event.currentTarget.value)}
+								/>
+							</label>
+							<label class="field">
+								<span>
+									Nick Name{" "}
+									<em class="customer-children-name-optional">(optional)</em>
+								</span>
+								<input
+									value={nickName()}
+									onInput={(event) => setNickName(event.currentTarget.value)}
+								/>
+							</label>
+						</div>
+						<label class="field">
+							<span>Birthday</span>
 							<input
 								required
 								type="date"

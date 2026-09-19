@@ -6,6 +6,7 @@ import {
 	buildOrgAdminFestivalsPath,
 	buildOrgAdminIntegrationsPath,
 	buildOrgAdminMembershipsPath,
+	buildOrgAdminSettingsPath,
 	buildOrgAdminUsersPath,
 } from "../lib/routes.js";
 
@@ -53,7 +54,7 @@ export function AdminHomePage(props: AdminHomePageProps) {
 					}}
 				>
 					<strong>Divisions</strong>
-					<span>Manage divisions and the entitlement timezone.</span>
+					<span>Manage division choices.</span>
 				</button>
 				<button
 					type="button"
@@ -126,6 +127,21 @@ export function AdminHomePage(props: AdminHomePageProps) {
 				>
 					<strong>Memberships</strong>
 					<span>Create and review Shopify-backed memberships.</span>
+				</button>
+				<button
+					type="button"
+					class="admin-workflow-card"
+					disabled={!props.app.isAdminMember()}
+					onClick={() => {
+						const membership = props.app.sessionMembership();
+						if (!membership || !props.app.isAdminMember()) return;
+						props.app.navigate(
+							buildOrgAdminSettingsPath(membership.organizationSlug),
+						);
+					}}
+				>
+					<strong>Settings</strong>
+					<span>Organization Wide Settings</span>
 				</button>
 			</div>
 		</section>

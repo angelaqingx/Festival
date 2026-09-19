@@ -37,6 +37,7 @@ const ADMIN_ROUTE_KINDS = [
 	"org-admin-memberships",
 	"org-admin-festivals",
 	"org-admin-divisions",
+	"org-admin-settings",
 	"org-admin-accompanists",
 ] as const;
 
@@ -76,8 +77,6 @@ export function createFestivalAppState() {
 		createSignal("");
 	const [isDivisionMutationPending, setIsDivisionMutationPending] =
 		createSignal(false);
-	const [organizationTimezone, setOrganizationTimezone] = createSignal("");
-	const [timezoneDraft, setTimezoneDraft] = createSignal("");
 	const [membershipProducts, setMembershipProducts] = createSignal<
 		MembershipProductSummary[]
 	>([]);
@@ -242,6 +241,7 @@ export function createFestivalAppState() {
 			route().kind === "org-admin-memberships" ||
 			route().kind === "org-admin-festivals" ||
 			route().kind === "org-admin-divisions" ||
+			route().kind === "org-admin-settings" ||
 			route().kind === "org-admin-accompanists",
 	);
 	const adminBreadcrumb = createMemo(() => {
@@ -256,6 +256,8 @@ export function createFestivalAppState() {
 				return "Admin > Festivals";
 			case "org-admin-divisions":
 				return "Admin > Divisions";
+			case "org-admin-settings":
+				return "Admin > Settings";
 			default:
 				return "Admin";
 		}
@@ -324,8 +326,6 @@ export function createFestivalAppState() {
 		setIsLoadingDivisionConfiguration(false);
 		setDivisionConfigurationLoadError("");
 		setIsDivisionMutationPending(false);
-		setOrganizationTimezone("");
-		setTimezoneDraft("");
 		setMembershipProducts([]);
 		setIsLoadingMembershipProducts(false);
 		setMembershipProductsLoadError("");
@@ -439,7 +439,6 @@ export function createFestivalAppState() {
 		openSignInModal,
 		organization,
 		organizationCreated,
-		organizationTimezone,
 		organizationName,
 		organizationShortName,
 		organizationValidationErrors,
@@ -485,7 +484,6 @@ export function createFestivalAppState() {
 		setOrganizationNameTouched,
 		setOrganizationShortName,
 		setOrganizationShortNameTouched,
-		setOrganizationTimezone,
 		setSession,
 		setShopifyDraft,
 		setShopifySettings,
@@ -493,7 +491,6 @@ export function createFestivalAppState() {
 		setSignInModalKind,
 		setSignInStep,
 		setStatusMessage,
-		setTimezoneDraft,
 		shouldShowFestivalNameValidation,
 		shouldShowMembershipProductValidation,
 		shouldShowOrganizationValidation,
@@ -506,7 +503,6 @@ export function createFestivalAppState() {
 		shopifyDraft,
 		shopifySettings,
 		statusMessage,
-		timezoneDraft,
 		currentInviteToken,
 	};
 }
