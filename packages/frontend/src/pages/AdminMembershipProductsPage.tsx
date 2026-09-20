@@ -4,6 +4,7 @@ import { AccessDeniedPanel } from "../components/AccessDeniedPanel.js";
 import { Button } from "../components/Button.js";
 import {
 	getAdminAccompanistPolicy,
+	retireAdminMembershipProduct,
 	saveAdminAccompanistPolicy,
 } from "../lib/api.js";
 import { buildOrgAdminIntegrationsPath } from "../lib/routes.js";
@@ -24,10 +25,9 @@ export function AdminMembershipProductsPage(
 ) {
 	const shopifyIntegrationVerified = () =>
 		props.app.shopifySettings()?.verificationStatus === "ok";
-	const teacherProducts = () =>
-		props.app
-			.membershipProducts()
-			.filter((product) => product.entitlementClass === "teacher_membership");
+	const membershipProducts = () => props.app.membershipProducts();
+	const [retirementError, setRetirementError] = createSignal("");
+	const [retiringOfferingId, setRetiringOfferingId] = createSignal<string>();
 	const [accompanistPolicy, setAccompanistPolicy] = createSignal<
 		"exactly_one" | "one_to_two" | "one_to_all"
 	>("exactly_one");
@@ -71,6 +71,31 @@ export function AdminMembershipProductsPage(
 			setPolicyError("Accompanist division policy could not be saved.");
 		}
 	};
+	const retireOffering = async (offeringId: string, name: string) => {
+		const route = props.app.route();
+		const user = props.app.firebaseUser();
+		if (route.kind !== "org-admin-memberships" || !user) return;
+		if (
+			!window.confirm(
+				`Retire ${name}? This prevents future purchases and does not change existing memberships.`,
+			)
+		)
+			return;
+		setRetirementError("");
+		setRetiringOfferingId(offeringId);
+		try {
+			await retireAdminMembershipProduct(
+				await user.getIdToken(),
+				route.slug,
+				offeringId,
+			);
+			await props.app.reloadMembershipProducts();
+		} catch {
+			setRetirementError("Membership offering could not be retired.");
+		} finally {
+			setRetiringOfferingId();
+		}
+	};
 
 	return (
 		<Show
@@ -91,7 +116,7 @@ export function AdminMembershipProductsPage(
 								<p>Review Shopify-backed membership products.</p>
 							</div>
 							<span class="shopify-status shopify-status-ok">
-								{teacherProducts().length}
+								{membershipProducts().length}
 							</span>
 						</div>
 
@@ -108,6 +133,11 @@ export function AdminMembershipProductsPage(
 								</p>
 							)}
 						</Show>
+						<Show when={retirementError()}>
+							<p class="shopify-error-text" role="alert">
+								{retirementError()}
+							</p>
+						</Show>
 
 						<Show
 							when={
@@ -116,11 +146,11 @@ export function AdminMembershipProductsPage(
 							}
 						>
 							<Show
-								when={teacherProducts().length > 0}
+								when={membershipProducts().length > 0}
 								fallback={<p class="muted">No membership products yet.</p>}
 							>
 								<div class="admin-membership-list">
-									<For each={teacherProducts()}>
+									<For each={membershipProducts()}>
 										{(membershipProduct) => (
 											<article class="admin-membership-item">
 												<div>
@@ -136,6 +166,28 @@ export function AdminMembershipProductsPage(
 														{membershipProduct.price.amount}{" "}
 														{membershipProduct.price.currencyCode}
 													</strong>
+													<Show when={!membershipProduct.isActive}>
+														<span>Retired</span>
+													</Show>
+													<Show when={membershipProduct.isActive}>
+														<Button
+															type="button"
+															variant="secondary"
+															disabled={
+																retiringOfferingId() === membershipProduct.id
+															}
+															onClick={() =>
+																void retireOffering(
+																	membershipProduct.id,
+																	membershipProduct.name,
+																)
+															}
+														>
+															{retiringOfferingId() === membershipProduct.id
+																? "Retiring…"
+																: "Retire"}
+														</Button>
+													</Show>
 												</div>
 											</article>
 										)}
@@ -263,33 +315,33 @@ export function AdminMembershipProductsPage(
 						</Button>
 					</form>
 				</div>
-				<section class="shopify-integration-card membership-admin-form">
-					<div class="shopify-card-header">
-						<div>
-							<h2>Accompanist division policy</h2>
-							<p>Choose how many divisions an accompanist may select.</p>
-						</div>
+			</section>
+			<section class="panel flow-panel membership-admin-form">
+				<div class="shopify-card-header">
+					<div>
+						<h2>Accompanist division policy</h2>
+						<p>Choose how many divisions an accompanist may select.</p>
 					</div>
-					<Show when={policyError()}>
-						{(message) => <p class="shopify-error-text">{message()}</p>}
-					</Show>
-					<fieldset class="field">
-						<legend>Division selection</legend>
-						<For each={choices}>
-							{([value, label]) => (
-								<label>
-									<input
-										type="radio"
-										name="accompanist-division-policy"
-										checked={accompanistPolicy() === value}
-										onChange={() => void savePolicy(value)}
-									/>
-									{label}
-								</label>
-							)}
-						</For>
-					</fieldset>
-				</section>
+				</div>
+				<Show when={policyError()}>
+					{(message) => <p class="shopify-error-text">{message()}</p>}
+				</Show>
+				<fieldset class="field">
+					<legend>Division selection</legend>
+					<For each={choices}>
+						{([value, label]) => (
+							<label>
+								<input
+									type="radio"
+									name="accompanist-division-policy"
+									checked={accompanistPolicy() === value}
+									onChange={() => void savePolicy(value)}
+								/>
+								{label}
+							</label>
+						)}
+					</For>
+				</fieldset>
 			</section>
 		</Show>
 	);

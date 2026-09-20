@@ -1247,6 +1247,74 @@ describe("organization routes", () => {
 		});
 	});
 
+	it("resolves Festival routes only within their requested organization", async () => {
+		const { app } = await createTestApp();
+		await createOrganizationViaApi(app);
+		const createFestival = async (
+			organizationSlug: string,
+			shortName: string,
+		) =>
+			app.fetch(
+				new Request(
+					`http://test/api/organizations/${organizationSlug}/admin/festivals`,
+					withAuth("admin", {
+						method: "POST",
+						body: JSON.stringify({
+							name: `${shortName.replace("-", " ")} Festival`,
+							shortName,
+							startDate: "2027-06-10",
+							endDate: "2027-06-12",
+						}),
+					}),
+				),
+			);
+
+		await createFestival("pafe", "jun-27");
+		await app.fetch(
+			new Request(
+				"http://test/api/organizations",
+				withAuth("admin", {
+					method: "POST",
+					body: JSON.stringify({ name: "Other Festival", shortName: "other" }),
+				}),
+			),
+		);
+		await createFestival("other", "jul-27");
+
+		const publicResponse = await app.fetch(
+			new Request("http://test/api/organizations/pafe/festivals/jun-27"),
+		);
+		expect(publicResponse.status).toBe(200);
+		await expect(publicResponse.json()).resolves.toMatchObject({
+			festival: { name: "jun 27 Festival", shortName: "jun-27" },
+		});
+
+		const adminResponse = await app.fetch(
+			new Request(
+				"http://test/api/organizations/pafe/admin/festivals/jun-27",
+				withAuth("admin"),
+			),
+		);
+		expect(adminResponse.status).toBe(200);
+
+		for (const path of [
+			"/api/organizations/pafe/festivals/jul-27",
+			"/api/organizations/pafe/admin/festivals/jul-27",
+			"/api/organizations/pafe/festivals/missing",
+		]) {
+			const response = await app.fetch(
+				new Request(
+					`http://test${path}`,
+					path.includes("/admin/") ? withAuth("admin") : undefined,
+				),
+			);
+			expect(response.status).toBe(404);
+			await expect(response.json()).resolves.toEqual({
+				error: "Festival not found.",
+			});
+		}
+	});
+
 	it("saves and verifies Shopify settings without returning the secret", async () => {
 		const { app, shopifyTester } = await createTestAppWithShopify();
 
@@ -1605,6 +1673,146 @@ describe("organization routes", () => {
 		expect(shopifyProductClient.readProductGids).toEqual([
 			["gid://shopify/Product/generated"],
 		]);
+	});
+
+	it("retires Teacher and Accompanist offerings without Shopify mutation and is safe to retry", async () => {
+		const { app, repository, shopifyProductClient } =
+			await createTestAppWithMembershipProducts();
+		await createOrganizationViaApi(app);
+		const organization = await repository.findOrganizationBySlug("pafe");
+		if (!organization) throw new Error("Expected test organization to exist.");
+		const teacher = await repository.createMembershipProductRecord({
+			organizationId: organization.id,
+			entitlementClass: "teacher_membership",
+			durationDays: 365,
+			isActive: true,
+			shopifyProductGid: "gid://shopify/Product/teacher",
+			shopifyVariantGid: "gid://shopify/ProductVariant/teacher",
+			productNameSnapshot: "Teacher Membership",
+		});
+		const accompanist = await repository.createMembershipProductRecord({
+			organizationId: organization.id,
+			entitlementClass: "accompanist_membership",
+			durationDays: 365,
+			isActive: true,
+			shopifyProductGid: "gid://shopify/Product/accompanist",
+			shopifyVariantGid: "gid://shopify/ProductVariant/accompanist",
+			productNameSnapshot: "Accompanist Membership",
+		});
+
+		for (const offering of [teacher, accompanist, teacher]) {
+			const response = await app.fetch(
+				new Request(
+					`http://test/api/organizations/pafe/admin/membership-products/${offering.id}/retire`,
+					withAuth("admin", {
+						method: "POST",
+						body: JSON.stringify({ confirmed: true }),
+					}),
+				),
+			);
+			expect(response.status).toBe(200);
+			expect(await response.json()).toEqual({ retired: true });
+		}
+
+		expect(
+			await repository.findMembershipProductRecordByClass(
+				organization.id,
+				"teacher_membership",
+			),
+		).toBeNull();
+		expect(
+			await repository.findMembershipProductRecordByClass(
+				organization.id,
+				"accompanist_membership",
+			),
+		).toBeNull();
+		expect(
+			await repository.listMembershipProductRecords(organization.id),
+		).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: teacher.id, isActive: false }),
+				expect.objectContaining({ id: accompanist.id, isActive: false }),
+			]),
+		);
+		expect(shopifyProductClient.deletedProductGids).toHaveLength(0);
+	});
+
+	it("requires an Admin confirmation to retire a membership offering", async () => {
+		const { app, repository } = await createTestAppWithMembershipProducts();
+		await createOrganizationViaApi(app);
+		const organization = await repository.findOrganizationBySlug("pafe");
+		if (!organization) throw new Error("Expected test organization to exist.");
+		const offering = await repository.createMembershipProductRecord({
+			organizationId: organization.id,
+			entitlementClass: "teacher_membership",
+			durationDays: 365,
+			isActive: true,
+			shopifyProductGid: "gid://shopify/Product/teacher",
+			shopifyVariantGid: "gid://shopify/ProductVariant/teacher",
+			productNameSnapshot: "Teacher Membership",
+		});
+
+		const response = await app.fetch(
+			new Request(
+				`http://test/api/organizations/pafe/admin/membership-products/${offering.id}/retire`,
+				withAuth("admin", { method: "POST", body: JSON.stringify({}) }),
+			),
+		);
+
+		expect(response.status).toBe(400);
+		expect(
+			await repository.findMembershipProductRecordByClass(
+				organization.id,
+				"teacher_membership",
+			),
+		).not.toBeNull();
+	});
+
+	it("denies non-Admins before retiring a membership offering", async () => {
+		const { app, repository, shopifyProductClient } =
+			await createTestAppWithMembershipProducts();
+		await createOrganizationViaApi(app);
+		const organization = await repository.findOrganizationBySlug("pafe");
+		if (!organization) throw new Error("Expected test organization to exist.");
+		const reviewer = await repository.upsertUser({
+			uid: "uid-reviewer",
+			email: "reviewer@example.com",
+			displayName: "Reviewer User",
+		});
+		await repository.createMembership({
+			organizationId: organization.id,
+			userId: reviewer.id,
+			role: "Music Reviewer",
+			origin: "direct",
+		});
+		const offering = await repository.createMembershipProductRecord({
+			organizationId: organization.id,
+			entitlementClass: "teacher_membership",
+			durationDays: 365,
+			isActive: true,
+			shopifyProductGid: "gid://shopify/Product/teacher",
+			shopifyVariantGid: "gid://shopify/ProductVariant/teacher",
+			productNameSnapshot: "Teacher Membership",
+		});
+
+		const response = await app.fetch(
+			new Request(
+				`http://test/api/organizations/pafe/admin/membership-products/${offering.id}/retire`,
+				withAuth("reviewer", {
+					method: "POST",
+					body: JSON.stringify({ confirmed: true }),
+				}),
+			),
+		);
+
+		expect(response.status).toBe(403);
+		expect(shopifyProductClient.readProductGids).toHaveLength(0);
+		expect(
+			await repository.findMembershipProductRecordByClass(
+				organization.id,
+				"teacher_membership",
+			),
+		).not.toBeNull();
 	});
 
 	it("rejects invalid membership product payloads before Shopify creation", async () => {

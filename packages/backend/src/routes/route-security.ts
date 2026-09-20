@@ -198,7 +198,17 @@ export const CURRENT_ROUTE_SECURITY = [
 	},
 	{
 		method: "GET",
+		path: "/api/organizations/:slug/admin/festivals/:festivalShortName",
+		authenticationClass: "admin",
+	},
+	{
+		method: "GET",
 		path: "/api/organizations/:slug/primary",
+		authenticationClass: "public",
+	},
+	{
+		method: "GET",
+		path: "/api/organizations/:slug/festivals/:festivalShortName",
 		authenticationClass: "public",
 	},
 	{
@@ -264,6 +274,11 @@ export const CURRENT_ROUTE_SECURITY = [
 	{
 		method: "POST",
 		path: "/api/organizations/:slug/admin/membership-products",
+		authenticationClass: "admin",
+	},
+	{
+		method: "POST",
+		path: "/api/organizations/:slug/admin/membership-products/:offeringId/retire",
 		authenticationClass: "admin",
 	},
 	{

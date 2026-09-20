@@ -6,6 +6,7 @@ export type AppRoute =
 	| { kind: "org-root"; slug: string }
 	| { kind: "festival-public"; slug: string; festivalSlug: string }
 	| { kind: "festival-admin"; slug: string; festivalSlug: string }
+	| { kind: "festival-admin-classes"; slug: string; festivalSlug: string }
 	| { kind: "org-membership"; slug: string }
 	| { kind: "org-accompanist-membership"; slug: string }
 	| { kind: "org-customer-account-legacy"; slug: string }
@@ -19,6 +20,7 @@ export type AppRoute =
 	| { kind: "org-admin-memberships"; slug: string }
 	| { kind: "org-admin-festivals"; slug: string }
 	| { kind: "org-admin-divisions"; slug: string }
+	| { kind: "org-admin-settings"; slug: string }
 	| { kind: "org-admin-accompanists"; slug: string }
 	| { kind: "org-admin-volunteers"; slug: string };
 
@@ -36,6 +38,20 @@ export function buildOrgMembershipPath(slug: string): string {
 
 export function buildOrgAccompanistMembershipPath(slug: string): string {
 	return `/org/${slug}/accompanist-membership`;
+}
+
+export function buildFestivalAdminClassesPath(
+	slug: string,
+	festivalSlug: string,
+): string {
+	return `${buildFestivalAdminPath(slug, festivalSlug)}/classes`;
+}
+
+export function buildFestivalAdminPath(
+	slug: string,
+	festivalSlug: string,
+): string {
+	return `/org/${slug}/festival/${festivalSlug}/admin`;
 }
 
 export function buildOrgCustomerAccountPath(slug: string): string {
@@ -76,6 +92,9 @@ export function buildOrgAdminFestivalsPath(slug: string): string {
 export function buildOrgAdminDivisionsPath(slug: string): string {
 	return `/org/${slug}/admin/divisions`;
 }
+export function buildOrgAdminSettingsPath(slug: string): string {
+	return `/org/${slug}/admin/settings`;
+}
 export function buildOrgAdminAccompanistsPath(slug: string): string {
 	return `/org/${slug}/admin/accompanists`;
 }
@@ -96,7 +115,6 @@ export function isOrganizationPageRoute(route: AppRoute): boolean {
 	return (
 		route.kind === "org-root" ||
 		route.kind === "festival-public" ||
-		route.kind === "festival-admin" ||
 		route.kind === "org-membership" ||
 		route.kind === "org-accompanist-membership" ||
 		route.kind === "org-customer-account-legacy" ||
@@ -137,6 +155,15 @@ export function parseRoute(pathname: string): AppRoute {
 			kind: "festival-admin",
 			slug: festivalAdminMatch[1] ?? "",
 			festivalSlug: festivalAdminMatch[2] ?? "",
+		};
+	const festivalAdminClassesMatch = pathname.match(
+		/^\/org\/([^/]+)\/festival\/([^/]+)\/admin\/classes$/,
+	);
+	if (festivalAdminClassesMatch)
+		return {
+			kind: "festival-admin-classes",
+			slug: festivalAdminClassesMatch[1] ?? "",
+			festivalSlug: festivalAdminClassesMatch[2] ?? "",
 		};
 	const festivalPublicMatch = pathname.match(
 		/^\/org\/([^/]+)\/festival\/([^/]+)$/,
@@ -251,6 +278,15 @@ export function parseRoute(pathname: string): AppRoute {
 		return {
 			kind: "org-admin-divisions",
 			slug: orgAdminDivisionsMatch[1] ?? "",
+		};
+	}
+	const orgAdminSettingsMatch = pathname.match(
+		/^\/org\/([^/]+)\/admin\/settings$/,
+	);
+	if (orgAdminSettingsMatch) {
+		return {
+			kind: "org-admin-settings",
+			slug: orgAdminSettingsMatch[1] ?? "",
 		};
 	}
 	const orgAdminAccompanistsMatch = pathname.match(

@@ -143,6 +143,33 @@ a {
 	min-width: 0;
 }
 
+.admin-page-content {
+	display: grid;
+	gap: 0.85rem;
+	justify-items: start;
+}
+
+.admin-page-content > .panel.flow-panel {
+	width: min(760px, 100%);
+	margin-bottom: 0;
+	transition:
+		transform 160ms ease,
+		box-shadow 160ms ease;
+}
+
+@media (hover: hover) {
+	.admin-page-content > .panel.flow-panel:hover {
+		transform: scale(1.005);
+		box-shadow: 0 28px 64px rgba(31, 36, 49, 0.2);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.admin-page-content > .panel.flow-panel {
+		transition: none;
+	}
+}
+
 .organization-side-navigation {
 	position: sticky;
 	top: 1rem;
@@ -735,7 +762,7 @@ button.compact-header-button {
 
 .flow-panel {
 	display: grid;
-	gap: 1rem;
+	gap: 0.85rem;
 	max-width: 760px;
 	scroll-margin-top: 1.5rem;
 }
@@ -743,6 +770,55 @@ button.compact-header-button {
 .field {
 	display: grid;
 	gap: 0.4rem;
+}
+
+.customer-child-status {
+	margin-top: 0;
+	padding-top: 0;
+}
+
+.customer-children-form {
+	display: grid;
+	gap: 0.85rem;
+}
+
+.customer-children-name-layout-toggle {
+	justify-self: end;
+	width: 1.5em;
+	height: 1.5em;
+	padding: 0;
+	background: none;
+	color: var(--bullet-ink);
+	box-shadow: none;
+}
+
+.customer-children-name-layout-toggle::before {
+	content: "";
+	display: block;
+	width: 100%;
+	height: 100%;
+	background: currentcolor;
+	clip-path: polygon(0 50%, 100% 0, 100% 100%);
+}
+
+.customer-children-name-layout-toggle.is-stacked::before {
+	clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.customer-children-name-fields {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 3px;
+}
+
+.customer-children-name-fields.is-stacked {
+	grid-template-columns: 1fr;
+	gap: 0.85rem;
+}
+
+.customer-children-name-optional {
+	font-size: 0.8em;
+	font-style: italic;
 }
 
 .banner {
@@ -1266,6 +1342,10 @@ form.shopify-integration-card {
 .division-history-note p,
 .division-load-error p {
 	margin: 0;
+}
+
+.division-list-panel .field input {
+	width: min(40ch, 100%);
 }
 
 .division-list {

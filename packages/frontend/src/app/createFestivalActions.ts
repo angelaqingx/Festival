@@ -13,7 +13,6 @@ import {
 	reorderAdminDivisions,
 	saveShopifySettings,
 	updateAdminDivision,
-	updateAdminTimezone,
 } from "../lib/api.js";
 import {
 	clearPendingIntent,
@@ -619,36 +618,6 @@ export function createFestivalActions(
 		}
 	}
 
-	async function handleSaveOrganizationTimezone() {
-		const user = state.firebaseUser();
-		const currentRoute = state.route();
-		if (
-			!user ||
-			currentRoute.kind !== "org-admin-divisions" ||
-			!state.isAdminMember() ||
-			state.isDivisionMutationPending()
-		) {
-			return;
-		}
-
-		state.setIsDivisionMutationPending(true);
-		state.clearMessages();
-		try {
-			const token = await user.getIdToken();
-			const response = await updateAdminTimezone(token, currentRoute.slug, {
-				timezone: state.timezoneDraft(),
-			});
-			state.setOrganizationTimezone(response.timezone);
-			state.setTimezoneDraft(response.timezone);
-			state.setStatusMessage("Organization timezone saved.");
-		} catch (error) {
-			state.setTimezoneDraft(state.organizationTimezone());
-			state.setErrorMessage((error as Error).message);
-		} finally {
-			state.setIsDivisionMutationPending(false);
-		}
-	}
-
 	async function handleAcceptInvite() {
 		const user = state.firebaseUser();
 		const token = state.currentInviteToken();
@@ -743,7 +712,6 @@ export function createFestivalActions(
 		handlePasswordlessSignIn,
 		handleReloadDivisionConfiguration,
 		handleRenameDivision,
-		handleSaveOrganizationTimezone,
 		handleSaveShopifySettings,
 		handleSetDivisionActive,
 	};

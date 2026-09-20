@@ -411,6 +411,38 @@ export function buildApiRouter(
 		}
 	});
 
+	router.get(
+		"/organizations/:slug/admin/festivals/:festivalShortName",
+		requireAuth(authVerifier),
+		requireTenant(repository),
+		requireTenantRole(["Admin"]),
+		async (c) => {
+			try {
+				return c.json(
+					await organizationService.getAdminFestivalForTenant(
+						getRequiredTenant(c),
+						c.req.param("festivalShortName"),
+					),
+				);
+			} catch (error) {
+				return toJsonError(c, error);
+			}
+		},
+	);
+
+	router.get("/organizations/:slug/festivals/:festivalShortName", async (c) => {
+		try {
+			return c.json(
+				await organizationService.getPublicFestival(
+					c.req.param("slug"),
+					c.req.param("festivalShortName"),
+				),
+			);
+		} catch (error) {
+			return toJsonError(c, error);
+		}
+	});
+
 	router.get("/organizations/:slug/divisions", async (c) => {
 		try {
 			return c.json(
@@ -1428,6 +1460,39 @@ export function buildApiRouter(
 					);
 				c.status(201);
 				return c.json({ membershipProduct });
+			} catch (error) {
+				return toJsonError(c, error);
+			}
+		},
+	);
+
+	router.post(
+		"/organizations/:slug/admin/membership-products/:offeringId/retire",
+		requireAuth(authVerifier),
+		requireTenant(repository),
+		requireTenantRole(["Admin"]),
+		async (c) => {
+			try {
+				if (!shopifyMembershipProductService) {
+					throw new AppError("Shopify integration is not configured.", 503);
+				}
+				const payload = await c.req.json();
+				assertAllowedFields(
+					payload,
+					["confirmed"],
+					"Membership offering retirement request",
+				);
+				if (payload.confirmed !== true) {
+					throw new AppError(
+						"Membership offering retirement must be confirmed.",
+						400,
+					);
+				}
+				await shopifyMembershipProductService.retireMembershipOffering(
+					getRequiredTenant(c),
+					c.req.param("offeringId"),
+				);
+				return c.json({ retired: true });
 			} catch (error) {
 				return toJsonError(c, error);
 			}

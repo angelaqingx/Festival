@@ -15,6 +15,7 @@ import type {
 	CustomerProfileResponse,
 	CustomerSessionResponse,
 	DismissWelcomeResponse,
+	FestivalSummary,
 	InviteSummary,
 	MembershipProductsListResponse,
 	MembershipPurchaseSelectionResponse,
@@ -27,6 +28,7 @@ import type {
 	OrganizationTimezoneResponse,
 	PublicMembershipProductsListResponse,
 	PublicOrganizationLandingResponse,
+	RegistrationAgeConfiguration,
 	ReorderOrganizationDivisionsInput,
 	SaveCustomerAccountSettingsInput,
 	SaveCustomerAccountSettingsResponse,
@@ -330,6 +332,24 @@ export function getPrimaryFestivalPath(slug: string) {
 	);
 }
 
+export function getPublicFestival(slug: string, festivalSlug: string) {
+	return requestJson<{ festival: FestivalSummary }>(
+		`/api/organizations/${encodeURIComponent(slug)}/festivals/${encodeURIComponent(festivalSlug)}`,
+	);
+}
+
+export function getAdminFestival(
+	idToken: string,
+	slug: string,
+	festivalSlug: string,
+) {
+	return requestJson<{ festival: FestivalSummary }>(
+		`/api/organizations/${encodeURIComponent(slug)}/admin/festivals/${encodeURIComponent(festivalSlug)}`,
+		undefined,
+		idToken,
+	);
+}
+
 export function customerLandingSignInPath(slug: string) {
 	const returnTo = `/org/${encodeURIComponent(slug)}`;
 	return `/api/organizations/${encodeURIComponent(slug)}/customer-auth/start?returnTo=${encodeURIComponent(returnTo)}`;
@@ -435,6 +455,18 @@ export function getAdminMembershipProducts(idToken: string, slug: string) {
 	return requestJson<MembershipProductsListResponse>(
 		`/api/organizations/${slug}/admin/membership-products`,
 		undefined,
+		idToken,
+	);
+}
+
+export function retireAdminMembershipProduct(
+	idToken: string,
+	slug: string,
+	offeringId: string,
+) {
+	return requestJson<{ retired: true }>(
+		`/api/organizations/${encodeURIComponent(slug)}/admin/membership-products/${encodeURIComponent(offeringId)}/retire`,
+		{ method: "POST", body: JSON.stringify({ confirmed: true }) },
 		idToken,
 	);
 }
@@ -641,6 +673,32 @@ export function updateAdminTimezone(
 	return requestJson<OrganizationTimezoneResponse>(
 		`/api/organizations/${slug}/admin/timezone`,
 		{ method: "POST", body: JSON.stringify(input) },
+		idToken,
+	);
+}
+
+export function getAdminRegistrationConfiguration(
+	idToken: string,
+	slug: string,
+) {
+	return requestJson<{ ageConfiguration: RegistrationAgeConfiguration | null }>(
+		`/api/organizations/${slug}/admin/registration-configuration`,
+		undefined,
+		idToken,
+	);
+}
+
+export function updateAdminRegistrationAgeDate(
+	idToken: string,
+	slug: string,
+	registrationAgeDate: string,
+) {
+	return requestJson<{ ageConfiguration: RegistrationAgeConfiguration }>(
+		`/api/organizations/${slug}/admin/registration-age-date`,
+		{
+			method: "POST",
+			body: JSON.stringify({ registrationAgeDate }),
+		},
 		idToken,
 	);
 }

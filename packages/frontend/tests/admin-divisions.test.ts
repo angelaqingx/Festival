@@ -9,10 +9,8 @@ import { createFestivalDataLoaders } from "../src/app/createFestivalDataLoaders.
 import {
 	createAdminDivision,
 	getAdminDivisions,
-	getAdminTimezone,
 	reorderAdminDivisions,
 	updateAdminDivision,
-	updateAdminTimezone,
 } from "../src/lib/api.js";
 
 let fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
@@ -61,7 +59,6 @@ describe("Admin divisions frontend contract", () => {
 	it("uses only tenant Admin endpoints and allowlisted mutation bodies", async () => {
 		mockFetch();
 		await getAdminDivisions("token", "pafe");
-		await getAdminTimezone("token", "pafe");
 		await createAdminDivision("token", "pafe", { displayName: "Strings" });
 		await updateAdminDivision("token", "pafe", "division-1", {
 			displayName: "High Strings",
@@ -72,37 +69,30 @@ describe("Admin divisions frontend contract", () => {
 		await reorderAdminDivisions("token", "pafe", {
 			divisionIds: ["division-2", "division-1"],
 		});
-		await updateAdminTimezone("token", "pafe", {
-			timezone: "America/Los_Angeles",
-		});
 
 		expect(fetchCalls.map((call) => call.url)).toEqual([
 			"/api/organizations/pafe/admin/divisions",
-			"/api/organizations/pafe/admin/timezone",
 			"/api/organizations/pafe/admin/divisions",
 			"/api/organizations/pafe/admin/divisions/division-1",
 			"/api/organizations/pafe/admin/divisions/division-1",
 			"/api/organizations/pafe/admin/divisions/reorder",
-			"/api/organizations/pafe/admin/timezone",
 		]);
 		for (const call of fetchCalls) {
 			expect(call.init?.headers).toEqual(
 				expect.objectContaining({ Authorization: "Bearer token" }),
 			);
 		}
-		expect(fetchCalls.slice(2).map((call) => call.init?.method)).toEqual([
-			"POST",
+		expect(fetchCalls.slice(1).map((call) => call.init?.method)).toEqual([
 			"POST",
 			"POST",
 			"POST",
 			"POST",
 		]);
-		expect(fetchCalls.slice(2).map((call) => call.init?.body)).toEqual([
+		expect(fetchCalls.slice(1).map((call) => call.init?.body)).toEqual([
 			JSON.stringify({ displayName: "Strings" }),
 			JSON.stringify({ displayName: "High Strings" }),
 			JSON.stringify({ isActive: false }),
 			JSON.stringify({ divisionIds: ["division-2", "division-1"] }),
-			JSON.stringify({ timezone: "America/Los_Angeles" }),
 		]);
 	});
 
@@ -204,7 +194,7 @@ describe("Admin divisions frontend contract", () => {
 			fetchCalls.map(
 				(call) => (call.init?.headers as Record<string, string>).Authorization,
 			),
-		).toEqual(["Bearer newer-token", "Bearer newer-token"]);
+		).toEqual(["Bearer newer-token"]);
 	});
 
 	it("renders the locked workflow states and guards all mutations", async () => {
@@ -216,10 +206,8 @@ describe("Admin divisions frontend contract", () => {
 		).text();
 		const home = await Bun.file("src/pages/AdminHomePage.tsx").text();
 
-		expect(home).toContain("Manage divisions and the entitlement timezone.");
-		expect(page).toContain(
-			"Only Admin members can manage divisions and timezone.",
-		);
+		expect(home).toContain("Manage division choices.");
+		expect(page).toContain("Only Admin members can manage divisions.");
 		expect(page).toContain("Loading division configuration");
 		expect(page).toContain("Saving division configuration");
 		expect(page).toContain("No divisions configured yet.");
@@ -231,12 +219,8 @@ describe("Admin divisions frontend contract", () => {
 		expect(page).toContain("Move down");
 		expect(page).toContain("Activate");
 		expect(page).toContain("Deactivate");
-		expect(page).toContain("Save timezone");
 		expect(actions).toContain("state.isDivisionMutationPending()");
 		expect(actions).toContain("!state.isAdminMember()");
-		expect(actions).toContain(
-			"state.setTimezoneDraft(state.organizationTimezone())",
-		);
 		expect(loaders).toContain("divisionConfigurationLoadVersion");
 		expect(loaders).toContain("isCurrentDivisionConfigurationLoad");
 		expect(lifecycle).toContain("if (!state.isAdminMember())");
