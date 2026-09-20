@@ -29,6 +29,10 @@ integrationTest(
 					"membership_entitlement_divisions",
 					"membership_entitlement_cohorts",
 					"membership_identity_emails",
+					"volunteers",
+					"volunteer_roles",
+					"volunteer_shifts",
+					"volunteer_assignments",
 				]),
 			);
 			const festivalColumns = (await sql.unsafe(

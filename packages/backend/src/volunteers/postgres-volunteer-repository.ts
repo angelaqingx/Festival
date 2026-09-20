@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "bun";
+import { initializePostgresSchema } from "../repo/postgres-schema.js";
 import type {
 	BookShiftsOutcome,
 	CreateRoleInput,
@@ -26,49 +27,7 @@ export class PostgresVolunteerRepository implements VolunteerRepository {
 	}
 
 	async ensureReady() {
-		await sql.unsafe(`
-			CREATE TABLE IF NOT EXISTS ${this.schema}.volunteers (
-				id TEXT PRIMARY KEY,
-				organization_id TEXT NOT NULL REFERENCES ${this.schema}.organizations (id) ON DELETE CASCADE,
-				firebase_uid TEXT NOT NULL,
-				account_email TEXT NOT NULL,
-				name TEXT NOT NULL,
-				phone TEXT NOT NULL,
-				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
-			CREATE UNIQUE INDEX IF NOT EXISTS volunteers_org_uid_key
-				ON ${this.schema}.volunteers (organization_id, firebase_uid);
-
-			CREATE TABLE IF NOT EXISTS ${this.schema}.volunteer_roles (
-				id TEXT PRIMARY KEY,
-				organization_id TEXT NOT NULL REFERENCES ${this.schema}.organizations (id) ON DELETE CASCADE,
-				slug TEXT NOT NULL,
-				description TEXT NOT NULL,
-				details_url TEXT NULL,
-				is_room_proctor BOOLEAN NOT NULL DEFAULT FALSE,
-				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
-
-			CREATE TABLE IF NOT EXISTS ${this.schema}.volunteer_shifts (
-				id TEXT PRIMARY KEY,
-				organization_id TEXT NOT NULL REFERENCES ${this.schema}.organizations (id) ON DELETE CASCADE,
-				role_id TEXT NOT NULL REFERENCES ${this.schema}.volunteer_roles (id) ON DELETE CASCADE,
-				date DATE NOT NULL,
-				period TEXT NOT NULL CHECK (period IN ('AM', 'PM')),
-				time_text TEXT NULL,
-				division TEXT NULL,
-				adjudicator TEXT NULL,
-				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
-
-			CREATE TABLE IF NOT EXISTS ${this.schema}.volunteer_assignments (
-				id TEXT PRIMARY KEY,
-				organization_id TEXT NOT NULL REFERENCES ${this.schema}.organizations (id) ON DELETE CASCADE,
-				shift_id TEXT NOT NULL REFERENCES ${this.schema}.volunteer_shifts (id) ON DELETE CASCADE,
-				volunteer_id TEXT NOT NULL REFERENCES ${this.schema}.volunteers (id) ON DELETE CASCADE,
-				status TEXT NOT NULL CHECK (status IN ('active', 'cancelled')),
-				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-				cancelled_at TIMESTAMPTZ NULL);
-			CREATE UNIQUE INDEX IF NOT EXISTS volunteer_assignments_active_shift_key
-				ON ${this.schema}.volunteer_assignments (shift_id) WHERE status = 'active';
-		`);
+		await initializePostgresSchema(this.schema);
 	}
 
 	async upsertVolunteer(input: UpsertVolunteerInput) {

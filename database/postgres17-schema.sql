@@ -724,6 +724,70 @@ CREATE TABLE orgs.users (
 
 
 --
+-- Name: volunteer_assignments; Type: TABLE; Schema: orgs; Owner: -
+--
+
+CREATE TABLE orgs.volunteer_assignments (
+    id text NOT NULL,
+    organization_id text NOT NULL,
+    shift_id text NOT NULL,
+    volunteer_id text NOT NULL,
+    status text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    cancelled_at timestamp with time zone,
+    CONSTRAINT volunteer_assignments_status_check CHECK ((status = ANY (ARRAY['active'::text, 'cancelled'::text])))
+);
+
+
+--
+-- Name: volunteer_roles; Type: TABLE; Schema: orgs; Owner: -
+--
+
+CREATE TABLE orgs.volunteer_roles (
+    id text NOT NULL,
+    organization_id text NOT NULL,
+    slug text NOT NULL,
+    description text NOT NULL,
+    details_url text,
+    is_room_proctor boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: volunteer_shifts; Type: TABLE; Schema: orgs; Owner: -
+--
+
+CREATE TABLE orgs.volunteer_shifts (
+    id text NOT NULL,
+    organization_id text NOT NULL,
+    role_id text NOT NULL,
+    date date NOT NULL,
+    period text NOT NULL,
+    time_text text,
+    division text,
+    adjudicator text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT volunteer_shifts_period_check CHECK ((period = ANY (ARRAY['AM'::text, 'PM'::text])))
+);
+
+
+--
+-- Name: volunteers; Type: TABLE; Schema: orgs; Owner: -
+--
+
+CREATE TABLE orgs.volunteers (
+    id text NOT NULL,
+    organization_id text NOT NULL,
+    firebase_uid text NOT NULL,
+    account_email text NOT NULL,
+    name text NOT NULL,
+    phone text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: accompanist_membership_entitlement_details accompanist_membership_entitlement_details_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
 --
 
@@ -1180,6 +1244,38 @@ ALTER TABLE ONLY orgs.users
 
 
 --
+-- Name: volunteer_assignments volunteer_assignments_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.volunteer_assignments
+    ADD CONSTRAINT volunteer_assignments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: volunteer_roles volunteer_roles_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.volunteer_roles
+    ADD CONSTRAINT volunteer_roles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: volunteer_shifts volunteer_shifts_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.volunteer_shifts
+    ADD CONSTRAINT volunteer_shifts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: volunteers volunteers_pkey; Type: CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.volunteers
+    ADD CONSTRAINT volunteers_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: checkout_intents_scope_key; Type: INDEX; Schema: orgs; Owner: -
 --
 
@@ -1380,6 +1476,20 @@ CREATE INDEX membership_validation_customer_idx ON orgs.membership_validation_de
 --
 
 CREATE INDEX shopify_webhook_reclaim_idx ON orgs.shopify_webhook_deliveries USING btree (organization_id, status, received_at);
+
+
+--
+-- Name: volunteer_assignments_active_shift_key; Type: INDEX; Schema: orgs; Owner: -
+--
+
+CREATE UNIQUE INDEX volunteer_assignments_active_shift_key ON orgs.volunteer_assignments USING btree (shift_id) WHERE (status = 'active'::text);
+
+
+--
+-- Name: volunteers_org_uid_key; Type: INDEX; Schema: orgs; Owner: -
+--
+
+CREATE UNIQUE INDEX volunteers_org_uid_key ON orgs.volunteers USING btree (organization_id, firebase_uid);
 
 
 --
@@ -1715,6 +1825,62 @@ ALTER TABLE ONLY orgs.teacher_membership_entitlement_details
 
 ALTER TABLE ONLY orgs.user_login_event
     ADD CONSTRAINT user_login_event_user_id_fkey FOREIGN KEY (user_id) REFERENCES orgs.app_user(id) ON DELETE CASCADE;
+
+
+--
+-- Name: volunteer_assignments volunteer_assignments_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.volunteer_assignments
+    ADD CONSTRAINT volunteer_assignments_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: volunteer_assignments volunteer_assignments_shift_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.volunteer_assignments
+    ADD CONSTRAINT volunteer_assignments_shift_id_fkey FOREIGN KEY (shift_id) REFERENCES orgs.volunteer_shifts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: volunteer_assignments volunteer_assignments_volunteer_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.volunteer_assignments
+    ADD CONSTRAINT volunteer_assignments_volunteer_id_fkey FOREIGN KEY (volunteer_id) REFERENCES orgs.volunteers(id) ON DELETE CASCADE;
+
+
+--
+-- Name: volunteer_roles volunteer_roles_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.volunteer_roles
+    ADD CONSTRAINT volunteer_roles_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: volunteer_shifts volunteer_shifts_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.volunteer_shifts
+    ADD CONSTRAINT volunteer_shifts_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: volunteer_shifts volunteer_shifts_role_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.volunteer_shifts
+    ADD CONSTRAINT volunteer_shifts_role_id_fkey FOREIGN KEY (role_id) REFERENCES orgs.volunteer_roles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: volunteers volunteers_organization_id_fkey; Type: FK CONSTRAINT; Schema: orgs; Owner: -
+--
+
+ALTER TABLE ONLY orgs.volunteers
+    ADD CONSTRAINT volunteers_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES orgs.organizations(id) ON DELETE CASCADE;
 
 
 --
