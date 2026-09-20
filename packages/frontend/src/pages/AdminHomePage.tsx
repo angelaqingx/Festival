@@ -7,6 +7,7 @@ import {
 	buildOrgAdminIntegrationsPath,
 	buildOrgAdminMembershipsPath,
 	buildOrgAdminUsersPath,
+	buildOrgAdminVolunteersPath,
 } from "../lib/routes.js";
 
 interface AdminHomePageProps {
@@ -126,6 +127,24 @@ export function AdminHomePage(props: AdminHomePageProps) {
 				>
 					<strong>Memberships</strong>
 					<span>Create and review Shopify-backed memberships.</span>
+				</button>
+				<button
+					type="button"
+					class="admin-workflow-card"
+					disabled={!props.app.isAdminMember()}
+					onClick={() => {
+						const membership = props.app.sessionMembership();
+						if (!membership || !props.app.isAdminMember()) {
+							return;
+						}
+
+						props.app.navigate(
+							buildOrgAdminVolunteersPath(membership.organizationSlug),
+						);
+					}}
+				>
+					<strong>Volunteers</strong>
+					<span>Review volunteer roles and shift coverage.</span>
 				</button>
 			</div>
 		</section>
