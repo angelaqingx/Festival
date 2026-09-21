@@ -8,6 +8,7 @@ import {
 	buildOrgAdminMembershipsPath,
 	buildOrgAdminSettingsPath,
 	buildOrgAdminUsersPath,
+	buildOrgAdminVolunteersPath,
 } from "../lib/routes.js";
 
 interface AdminHomePageProps {
@@ -142,6 +143,24 @@ export function AdminHomePage(props: AdminHomePageProps) {
 				>
 					<strong>Settings</strong>
 					<span>Organization Wide Settings</span>
+				</button>
+				<button
+					type="button"
+					class="admin-workflow-card"
+					disabled={!props.app.isAdminMember()}
+					onClick={() => {
+						const membership = props.app.sessionMembership();
+						if (!membership || !props.app.isAdminMember()) {
+							return;
+						}
+
+						props.app.navigate(
+							buildOrgAdminVolunteersPath(membership.organizationSlug),
+						);
+					}}
+				>
+					<strong>Volunteers</strong>
+					<span>Review volunteer roles and shift coverage.</span>
 				</button>
 			</div>
 		</section>

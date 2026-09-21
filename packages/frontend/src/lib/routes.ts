@@ -7,6 +7,7 @@ export type AppRoute =
 	| { kind: "festival-public"; slug: string; festivalSlug: string }
 	| { kind: "festival-admin"; slug: string; festivalSlug: string }
 	| { kind: "festival-admin-classes"; slug: string; festivalSlug: string }
+	| { kind: "festival-volunteers"; slug: string; festivalSlug: string }
 	| { kind: "org-membership"; slug: string }
 	| { kind: "org-accompanist-membership"; slug: string }
 	| { kind: "org-customer-account-legacy"; slug: string }
@@ -21,7 +22,8 @@ export type AppRoute =
 	| { kind: "org-admin-festivals"; slug: string }
 	| { kind: "org-admin-divisions"; slug: string }
 	| { kind: "org-admin-settings"; slug: string }
-	| { kind: "org-admin-accompanists"; slug: string };
+	| { kind: "org-admin-accompanists"; slug: string }
+	| { kind: "org-admin-volunteers"; slug: string };
 
 export function buildOrgPath(slug: string): string {
 	return `/org/${slug}/admin`;
@@ -44,6 +46,13 @@ export function buildFestivalAdminClassesPath(
 	festivalSlug: string,
 ): string {
 	return `${buildFestivalAdminPath(slug, festivalSlug)}/classes`;
+}
+
+export function buildFestivalVolunteersPath(
+	slug: string,
+	festivalSlug: string,
+): string {
+	return `/org/${slug}/festival/${festivalSlug}/volunteers`;
 }
 
 export function buildFestivalAdminPath(
@@ -96,6 +105,10 @@ export function buildOrgAdminSettingsPath(slug: string): string {
 }
 export function buildOrgAdminAccompanistsPath(slug: string): string {
 	return `/org/${slug}/admin/accompanists`;
+}
+
+export function buildOrgAdminVolunteersPath(slug: string): string {
+	return `/org/${slug}/admin/volunteers`;
 }
 
 export function buildInvitePath(token: string): string {
@@ -159,6 +172,15 @@ export function parseRoute(pathname: string): AppRoute {
 			kind: "festival-admin-classes",
 			slug: festivalAdminClassesMatch[1] ?? "",
 			festivalSlug: festivalAdminClassesMatch[2] ?? "",
+		};
+	const festivalVolunteersMatch = pathname.match(
+		/^\/org\/([^/]+)\/festival\/([^/]+)\/volunteers$/,
+	);
+	if (festivalVolunteersMatch)
+		return {
+			kind: "festival-volunteers",
+			slug: festivalVolunteersMatch[1] ?? "",
+			festivalSlug: festivalVolunteersMatch[2] ?? "",
 		};
 	const festivalPublicMatch = pathname.match(
 		/^\/org\/([^/]+)\/festival\/([^/]+)$/,
@@ -292,6 +314,16 @@ export function parseRoute(pathname: string): AppRoute {
 			kind: "org-admin-accompanists",
 			slug: orgAdminAccompanistsMatch[1] ?? "",
 		};
+
+	const orgAdminVolunteersMatch = pathname.match(
+		/^\/org\/([^/]+)\/admin\/volunteers$/,
+	);
+	if (orgAdminVolunteersMatch) {
+		return {
+			kind: "org-admin-volunteers",
+			slug: orgAdminVolunteersMatch[1] ?? "",
+		};
+	}
 
 	return { kind: "home" };
 }

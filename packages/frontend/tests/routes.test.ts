@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
 	buildFestivalAdminClassesPath,
 	buildFestivalAdminPath,
+	buildFestivalVolunteersPath,
 	buildInvitePath,
 	buildOrgAdminDivisionsPath,
 	buildOrgAdminFestivalsPath,
@@ -207,5 +208,24 @@ describe("route helpers", () => {
 		expect(buildOrgPath("second-festival")).toBe("/org/second-festival/admin");
 		expect(buildInvitePath("abc123")).toBe("/invite/abc123");
 		expect(buildPrivacyPolicyPath()).toBe("/privacy-policy");
+	});
+
+	it("routes the public festival volunteer page without treating it as the festival page", () => {
+		expect(parseRoute("/org/pafe/festival/spring/volunteers")).toEqual({
+			kind: "festival-volunteers",
+			slug: "pafe",
+			festivalSlug: "spring",
+		});
+		expect(parseRoute("/org/pafe/festival/spring")).toEqual({
+			kind: "festival-public",
+			slug: "pafe",
+			festivalSlug: "spring",
+		});
+		expect(buildFestivalVolunteersPath("pafe", "spring")).toBe(
+			"/org/pafe/festival/spring/volunteers",
+		);
+		expect(
+			parseRoute(buildFestivalVolunteersPath("pafe", "spring")),
+		).toMatchObject({ kind: "festival-volunteers" });
 	});
 });

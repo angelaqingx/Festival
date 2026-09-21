@@ -22,6 +22,7 @@ import { CustomerChildrenPage } from "./pages/CustomerChildrenPage.js";
 import { FestivalAdminClassesPage } from "./pages/FestivalAdminClassesPage.js";
 import { FestivalAdminDashboardPage } from "./pages/FestivalAdminDashboardPage.js";
 import { FestivalLandingPage } from "./pages/FestivalLandingPage.js";
+import { FestivalVolunteersPage } from "./pages/FestivalVolunteersPage.js";
 import { HomePage } from "./pages/HomePage.js";
 import { InviteLandingPage } from "./pages/InviteLandingPage.js";
 import { LegacyCustomerAccountRedirect } from "./pages/LegacyCustomerAccountRedirect.js";
@@ -29,6 +30,7 @@ import { MembershipPage } from "./pages/MembershipPage.js";
 import { OrganizationChooser } from "./pages/OrganizationChooser.js";
 import { OrganizationRootPage } from "./pages/OrganizationRootPage.js";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage.js";
+import { VolunteerRolesPage } from "./pages/VolunteerRolesPage.js";
 
 export default function App() {
 	const app = useFestivalAppController();
@@ -77,6 +79,15 @@ export default function App() {
 						</Match>
 						<Match when={app.route().kind === "festival-public"}>
 							<FestivalLandingPage
+								slug={(app.route() as { slug: string }).slug}
+								festivalSlug={
+									(app.route() as { festivalSlug: string }).festivalSlug
+								}
+							/>
+						</Match>
+						<Match when={app.route().kind === "festival-volunteers"}>
+							<FestivalVolunteersPage
+								app={app}
 								slug={(app.route() as { slug: string }).slug}
 								festivalSlug={
 									(app.route() as { festivalSlug: string }).festivalSlug
@@ -159,6 +170,11 @@ export default function App() {
 						</Match>
 						<Match when={app.route().kind === "org-admin-accompanists"}>
 							<AdminAccompanistsPage app={app} />
+						</Match>
+						<Match when={app.route().kind === "org-admin-volunteers"}>
+							<VolunteerRolesPage
+								slug={(app.route() as { slug: string }).slug}
+							/>
 						</Match>
 					</Switch>
 				</div>

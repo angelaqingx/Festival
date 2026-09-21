@@ -32,5 +32,5 @@ export interface MembershipProductDraft {
 	price: string;
 }
 
-export type SignInModalKind = "create-org" | "invite";
+export type SignInModalKind = "create-org" | "invite" | "volunteer";
 export type SignInStep = "method" | "email";

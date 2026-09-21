@@ -32,6 +32,7 @@ import type { PublicMembershipProductService } from "../shopify/public-membershi
 import type { ShopifyIntegrationDiagnosticService } from "../shopify/shopify-integration-diagnostic-service.js";
 import type { ShopifyIntegrationService } from "../shopify/shopify-integration-service.js";
 import type { ShopifyMembershipProductService } from "../shopify/shopify-membership-product-service.js";
+import type { VolunteerRepository } from "../volunteers/volunteer-repository.js";
 
 const ALLOWED_SHOPIFY_SETTINGS_FIELDS = new Set([
 	"storeUrl",
@@ -144,6 +145,7 @@ export function buildApiRouter(
 	membershipCheckoutService?: MembershipCheckoutService,
 	membershipStatusService?: MembershipStatusService,
 	accompanistMembershipService?: AccompanistMembershipService,
+	volunteerRepository?: VolunteerRepository,
 ): Hono<{ Variables: Partial<ApiVariables> }> {
 	const router = new Hono<{ Variables: Partial<ApiVariables> }>();
 	const repository = organizationService.repository;
@@ -1585,6 +1587,24 @@ export function buildApiRouter(
 			headers: response.headers,
 		});
 	});
+
+	router.get(
+		"/organizations/:slug/volunteers/roles",
+		requireAuth(authVerifier),
+		requireTenant(repository),
+		async (c) => {
+			try {
+				if (!volunteerRepository)
+					throw new AppError("Volunteer roles are unavailable.", 503);
+				const tenant = getRequiredTenant(c);
+				return c.json(
+					await volunteerRepository.listRoles(tenant.organization.id),
+				);
+			} catch (error) {
+				return toJsonError(c, error);
+			}
+		},
+	);
 
 	return router;
 }

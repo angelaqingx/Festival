@@ -4,10 +4,11 @@ import { acceptInvite } from "../lib/api.js";
 import {
 	clearPendingIntent,
 	completePasswordlessEmailLinkSignIn,
+	MissingPendingEmailError,
 	readPendingIntent,
 	subscribeToAuthChanges,
 } from "../lib/firebase-auth.js";
-import { buildOrgPath } from "../lib/routes.js";
+import { buildFestivalVolunteersPath, buildOrgPath } from "../lib/routes.js";
 import type { FestivalAppState } from "./createFestivalAppState.js";
 import {
 	type FestivalDataLoaders,
@@ -39,6 +40,14 @@ export function useFestivalLifecycle(
 			}));
 			state.setMemberships((current) => [...current, response.membership]);
 			state.navigate(buildOrgPath(response.membership.organizationSlug));
+			clearPendingIntent();
+			return;
+		}
+
+		if (intent?.kind === "volunteer") {
+			state.navigate(
+				buildFestivalVolunteersPath(intent.slug, intent.festivalSlug),
+			);
 			clearPendingIntent();
 			return;
 		}
@@ -87,7 +96,11 @@ export function useFestivalLifecycle(
 					state.setStatusMessage("Email link verified. Continuing sign-in.");
 				}
 			} catch (error) {
-				state.setErrorMessage((error as Error).message);
+				if (error instanceof MissingPendingEmailError) {
+					state.setNeedsEmailLinkConfirmation(true);
+				} else {
+					state.setErrorMessage((error as Error).message);
+				}
 			}
 
 			void loaders.refreshSession().catch((error) => {

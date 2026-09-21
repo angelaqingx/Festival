@@ -41,6 +41,7 @@ const ADMIN_ROUTE_KINDS = [
 	"org-admin-accompanists",
 	"festival-admin",
 	"festival-admin-classes",
+	"org-admin-volunteers",
 ] as const;
 
 export const INVITE_FEEDBACK_DURATION_MS = 2200;
@@ -99,6 +100,8 @@ export function createFestivalAppState() {
 		createSignal<SignInModalKind | null>(null);
 	const [signInStep, setSignInStep] = createSignal<SignInStep>("method");
 	const [signInEmail, setSignInEmail] = createSignal("");
+	const [needsEmailLinkConfirmation, setNeedsEmailLinkConfirmation] =
+		createSignal(false);
 	const [inviteName, setInviteName] = createSignal("");
 	const [organizationName, setOrganizationName] = createSignal("");
 	const [organizationShortName, setOrganizationShortName] = createSignal("");
@@ -246,7 +249,8 @@ export function createFestivalAppState() {
 			route().kind === "org-admin-settings" ||
 			route().kind === "org-admin-accompanists" ||
 			route().kind === "festival-admin" ||
-			route().kind === "festival-admin-classes",
+			route().kind === "festival-admin-classes" ||
+			route().kind === "org-admin-volunteers",
 	);
 	const adminBreadcrumb = createMemo(() => {
 		switch (route().kind) {
@@ -266,6 +270,8 @@ export function createFestivalAppState() {
 				return "Admin > Festival";
 			case "festival-admin-classes":
 				return "Admin > Festival > Classes";
+			case "org-admin-volunteers":
+				return "Admin > Volunteers";
 			default:
 				return "Admin";
 		}
@@ -508,6 +514,8 @@ export function createFestivalAppState() {
 		signInEmail,
 		signInModalKind,
 		signInStep,
+		needsEmailLinkConfirmation,
+		setNeedsEmailLinkConfirmation,
 		shopifyDraft,
 		shopifySettings,
 		statusMessage,

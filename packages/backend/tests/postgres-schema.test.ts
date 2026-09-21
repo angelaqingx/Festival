@@ -22,6 +22,10 @@ test("canonical PostgreSQL schema defines the final empty-database shape only", 
 		"accompanist_membership_entitlement_details",
 		"shopify_webhook_deliveries",
 		"app_user",
+		"volunteers",
+		"volunteer_roles",
+		"volunteer_shifts",
+		"volunteer_assignments",
 	]) {
 		expect(schema).toContain(`fresh_orgs.${table}`);
 	}
@@ -33,6 +37,14 @@ test("canonical PostgreSQL schema defines the final empty-database shape only", 
 	expect(schema).toContain("enforce_shopify_shop_ownership");
 	expect(schema).not.toMatch(
 		/ALTER TABLE|DROP (?:COLUMN|CONSTRAINT|INDEX)|\n\s*(?:INSERT INTO|UPDATE [A-Za-z_])/,
+	);
+});
+
+test("canonical PostgreSQL schema enforces one active volunteer assignment per shift", () => {
+	const schema = buildCanonicalPostgresSchemaSql("fresh_orgs");
+
+	expect(schema).toContain(
+		"volunteer_assignments_active_shift_key ON fresh_orgs.volunteer_assignments (shift_id) WHERE status = 'active'",
 	);
 });
 

@@ -320,6 +320,31 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 			firebase_uid VARCHAR(128) NOT NULL, provider VARCHAR(64) NOT NULL, ip_address INET, user_agent TEXT,
 			login_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.volunteers (
+			id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
+			firebase_uid TEXT NOT NULL, account_email TEXT NOT NULL, name TEXT NOT NULL, phone TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.volunteer_roles (
+			id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
+			slug TEXT NOT NULL, description TEXT NOT NULL, details_url TEXT NULL,
+			is_room_proctor BOOLEAN NOT NULL DEFAULT FALSE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.volunteer_shifts (
+			id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
+			role_id TEXT NOT NULL REFERENCES ${safeSchema}.volunteer_roles (id) ON DELETE CASCADE,
+			date DATE NOT NULL, period TEXT NOT NULL CHECK (period IN ('AM', 'PM')),
+			time_text TEXT NULL, division TEXT NULL, adjudicator TEXT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.volunteer_assignments (
+			id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
+			shift_id TEXT NOT NULL REFERENCES ${safeSchema}.volunteer_shifts (id) ON DELETE CASCADE,
+			volunteer_id TEXT NOT NULL REFERENCES ${safeSchema}.volunteers (id) ON DELETE CASCADE,
+			status TEXT NOT NULL CHECK (status IN ('active', 'cancelled')),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), cancelled_at TIMESTAMPTZ NULL
+		);
 
 		CREATE OR REPLACE FUNCTION ${safeSchema}.enforce_shopify_shop_ownership()
 		RETURNS TRIGGER AS $$
@@ -370,6 +395,8 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 		CREATE INDEX IF NOT EXISTS idx_user_login_user_id ON ${safeSchema}.user_login_event(user_id);
 		CREATE INDEX IF NOT EXISTS idx_user_login_firebase_uid ON ${safeSchema}.user_login_event(firebase_uid);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_app_user_email_lower ON ${safeSchema}.app_user(lower(email));
+		CREATE UNIQUE INDEX IF NOT EXISTS volunteers_org_uid_key ON ${safeSchema}.volunteers (organization_id, firebase_uid);
+		CREATE UNIQUE INDEX IF NOT EXISTS volunteer_assignments_active_shift_key ON ${safeSchema}.volunteer_assignments (shift_id) WHERE status = 'active';
 	`;
 }
 

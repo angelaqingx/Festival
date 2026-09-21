@@ -131,10 +131,9 @@ export function AdminSettingsPage(props: { app: FestivalAppController }) {
 			<Show when={!isLoading() && !error()}>
 				<section class="panel flow-panel">
 					<h3>Organization timezone</h3>
-					<p class="muted">Current timezone: {timezone()}</p>
 					<label class="field">
-						<span>IANA timezone</span>
 						<select
+							aria-label="Organization timezone"
 							value={timezoneDraft()}
 							onChange={(event) => setTimezoneDraft(event.currentTarget.value)}
 						>
