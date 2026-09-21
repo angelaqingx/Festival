@@ -8,7 +8,7 @@ import {
 	readPendingIntent,
 	subscribeToAuthChanges,
 } from "../lib/firebase-auth.js";
-import { buildOrgPath } from "../lib/routes.js";
+import { buildFestivalVolunteersPath, buildOrgPath } from "../lib/routes.js";
 import type { FestivalAppState } from "./createFestivalAppState.js";
 import {
 	type FestivalDataLoaders,
@@ -40,6 +40,14 @@ export function useFestivalLifecycle(
 			}));
 			state.setMemberships((current) => [...current, response.membership]);
 			state.navigate(buildOrgPath(response.membership.organizationSlug));
+			clearPendingIntent();
+			return;
+		}
+
+		if (intent?.kind === "volunteer") {
+			state.navigate(
+				buildFestivalVolunteersPath(intent.slug, intent.festivalSlug),
+			);
 			clearPendingIntent();
 			return;
 		}

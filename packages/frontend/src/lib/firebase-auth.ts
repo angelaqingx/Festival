@@ -12,11 +12,12 @@ import {
 	signOut,
 	type Unsubscribe,
 } from "firebase/auth";
-import { buildInvitePath } from "./routes.js";
+import { buildFestivalVolunteersPath, buildInvitePath } from "./routes.js";
 
 type PendingIntent =
 	| { kind: "create-org" }
-	| { kind: "invite"; inviteToken: string; name: string };
+	| { kind: "invite"; inviteToken: string; name: string }
+	| { kind: "volunteer"; slug: string; festivalSlug: string };
 
 export class MissingPendingEmailError extends Error {
 	constructor() {
@@ -109,9 +110,12 @@ export function clearPendingIntent() {
 	localStorage.removeItem(PENDING_EMAIL_KEY);
 }
 
-function buildEmailLinkUrl(intent: PendingIntent): string {
+export function buildEmailLinkUrl(intent: PendingIntent): string {
 	if (intent.kind === "invite") {
 		return `${window.location.origin}${buildInvitePath(intent.inviteToken)}`;
+	}
+	if (intent.kind === "volunteer") {
+		return `${window.location.origin}${buildFestivalVolunteersPath(intent.slug, intent.festivalSlug)}`;
 	}
 
 	return `${window.location.origin}/create-organization`;

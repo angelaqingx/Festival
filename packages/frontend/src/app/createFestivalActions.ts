@@ -37,18 +37,33 @@ export function createFestivalActions(
 	state: FestivalAppState,
 	loaders: FestivalDataLoaders,
 ) {
+	function signInIntentFor(kind: SignInModalKind) {
+		if (kind === "invite" && state.currentInviteToken()) {
+			return {
+				kind: "invite" as const,
+				inviteToken: state.currentInviteToken() ?? "",
+				name: state.inviteName().trim(),
+			};
+		}
+		if (kind === "volunteer") {
+			const route = state.route();
+			if (route.kind !== "festival-volunteers") {
+				throw new Error("Volunteer sign-in must start from a festival page.");
+			}
+			return {
+				kind: "volunteer" as const,
+				slug: route.slug,
+				festivalSlug: route.festivalSlug,
+			};
+		}
+		return { kind: "create-org" as const };
+	}
+
 	async function handleGoogleSignIn(kind: SignInModalKind) {
 		state.clearMessages();
 		state.setIsBusy(true);
 		try {
-			const intent =
-				kind === "invite" && state.currentInviteToken()
-					? {
-							kind: "invite" as const,
-							inviteToken: state.currentInviteToken() ?? "",
-							name: state.inviteName().trim(),
-						}
-					: { kind: "create-org" as const };
+			const intent = signInIntentFor(kind);
 
 			if (kind === "invite" && !state.inviteName().trim()) {
 				throw new Error("Name is required when accepting an invite.");
@@ -72,14 +87,7 @@ export function createFestivalActions(
 				throw new Error("Email address is required.");
 			}
 
-			const intent =
-				kind === "invite" && state.currentInviteToken()
-					? {
-							kind: "invite" as const,
-							inviteToken: state.currentInviteToken() ?? "",
-							name: state.inviteName().trim(),
-						}
-					: { kind: "create-org" as const };
+			const intent = signInIntentFor(kind);
 
 			if (kind === "invite" && !state.inviteName().trim()) {
 				throw new Error("Name is required when accepting an invite.");

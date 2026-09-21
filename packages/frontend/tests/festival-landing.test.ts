@@ -15,6 +15,11 @@ describe("public festival landing page", () => {
 		expect(page).toContain("All Memberships");
 	});
 
+	it("sends volunteers to that festival's volunteer page, not a generic sign-up", () => {
+		expect(page).toContain("buildFestivalVolunteersPath");
+		expect(page).not.toContain('href="/sign-up"');
+	});
+
 	it("routes every public festival to the festival landing page", () => {
 		expect(app).toContain('app.route().kind === "festival-public"');
 		expect(app).toContain("<FestivalLandingPage");
