@@ -1,12 +1,20 @@
 import { randomUUID } from "node:crypto";
 import type {
+	ClassEntitlement,
+	ClassEntitlementStatus,
+	CreateClassEntitlementInput,
 	CreateEntitlementGrantSnapshotInput,
 	EntitlementClass,
 	EntitlementGrantSnapshot,
 } from "@festival/common";
-import { assertValidEntitlementGrantSnapshotInput } from "@festival/common";
+import {
+	assertValidClassEntitlementInput,
+	assertValidEntitlementGrantSnapshotInput,
+	isClassEntitlementStatus,
+} from "@festival/common";
 import type { CheckoutRepository } from "../checkout/checkout-repository.js";
 import type { OrganizationRepository } from "../repo/organization-repository.js";
+import type { ClassEntitlementFilter } from "./class-entitlement-repository.js";
 
 export const MEMBERSHIP_DECISION_STATUSES = [
 	"pending_validation",
@@ -158,9 +166,11 @@ export interface MembershipCommerceRepository {
 		};
 		projection?: ShopifyOrderProjectionInput;
 		grant?: CreateEntitlementGrantSnapshotInput;
+		classEntitlement?: CreateClassEntitlementInput;
 	}): Promise<{
 		decision: MembershipValidationDecision;
 		grant?: EntitlementGrantSnapshot;
+		classEntitlement?: ClassEntitlement;
 		existing: boolean;
 	}>;
 	hasScheduledEntitlement(
@@ -176,6 +186,29 @@ export interface MembershipCommerceRepository {
 	recordReconciliationRun(
 		input: Omit<MembershipReconciliationRun, "id">,
 	): Promise<MembershipReconciliationRun>;
+	createClassEntitlement(
+		input: CreateClassEntitlementInput,
+	): Promise<ClassEntitlement>;
+	getClassEntitlement(
+		organizationId: string,
+		id: string,
+	): Promise<ClassEntitlement | null>;
+	listClassEntitlements(
+		filter: ClassEntitlementFilter,
+	): Promise<ClassEntitlement[]>;
+	findClassEntitlementByOrderLine(
+		organizationId: string,
+		shopifyOrderLineGid: string,
+	): Promise<ClassEntitlement | null>;
+	findClassEntitlementByIntentId(
+		organizationId: string,
+		checkoutIntentId: string,
+	): Promise<ClassEntitlement | null>;
+	updateClassEntitlementStatus(
+		organizationId: string,
+		id: string,
+		status: ClassEntitlementStatus,
+	): Promise<ClassEntitlement | null>;
 }
 
 export class InMemoryMembershipCommerceRepository
@@ -187,11 +220,15 @@ export class InMemoryMembershipCommerceRepository
 	private readonly decisions = new Map<string, MembershipValidationDecision>();
 	private readonly decisionsByLine = new Map<string, string>();
 	private readonly decisionsByCheckoutIntent = new Map<string, string>();
+	private readonly classEntitlements = new Map<string, ClassEntitlement>();
+	private readonly classEntitlementsByLine = new Map<string, string>();
+	private readonly classEntitlementsByIntent = new Map<string, string>();
 	private readonly finalizations = new Map<
 		string,
 		Promise<{
 			decision: MembershipValidationDecision;
 			grant?: EntitlementGrantSnapshot;
+			classEntitlement?: ClassEntitlement;
 			existing: boolean;
 		}>
 	>();
@@ -368,6 +405,7 @@ export class InMemoryMembershipCommerceRepository
 		};
 		projection?: ShopifyOrderProjectionInput;
 		grant?: CreateEntitlementGrantSnapshotInput;
+		classEntitlement?: CreateClassEntitlementInput;
 	}) {
 		const finalizationKey = `${input.decision.organizationId}\u0000${input.decision.checkoutIntentId ? `intent:${input.decision.checkoutIntentId}` : `order:${input.decision.shopifyOrderGid}`}`;
 		const pending = this.finalizations.get(finalizationKey);
@@ -396,13 +434,24 @@ export class InMemoryMembershipCommerceRepository
 		};
 		projection?: ShopifyOrderProjectionInput;
 		grant?: CreateEntitlementGrantSnapshotInput;
+		classEntitlement?: CreateClassEntitlementInput;
 	}) {
 		const orderKey = `${input.decision.organizationId}\u0000${input.decision.shopifyOrderGid}`;
 		const existing = this.decisions.get(orderKey);
 		if (existing && existing.status !== "pending_validation") {
 			await this.resolveTerminalIntent(existing);
 			await this.markDeliveryProcessed(input.deliveryId);
-			return { decision: { ...existing }, existing: true };
+			const existingClass = input.decision.shopifyOrderLineGid
+				? await this.findClassEntitlementByOrderLine(
+						input.decision.organizationId,
+						input.decision.shopifyOrderLineGid,
+					)
+				: null;
+			return {
+				decision: { ...existing },
+				classEntitlement: existingClass ?? undefined,
+				existing: true,
+			};
 		}
 		if (input.decision.checkoutIntentId) {
 			const checkoutKey = `${input.decision.organizationId}\u0000${input.decision.checkoutIntentId}`;
@@ -414,7 +463,17 @@ export class InMemoryMembershipCommerceRepository
 					throw new Error("Checkout decision index is invalid.");
 				await this.resolveTerminalIntent(existingCheckout);
 				await this.markDeliveryProcessed(input.deliveryId);
-				return { decision: { ...existingCheckout }, existing: true };
+				const existingClass = input.decision.shopifyOrderLineGid
+					? await this.findClassEntitlementByOrderLine(
+							input.decision.organizationId,
+							input.decision.shopifyOrderLineGid,
+						)
+					: null;
+				return {
+					decision: { ...existingCheckout },
+					classEntitlement: existingClass ?? undefined,
+					existing: true,
+				};
 			}
 		}
 		if (
@@ -432,7 +491,17 @@ export class InMemoryMembershipCommerceRepository
 					throw new Error("Order-line decision index is invalid.");
 				await this.resolveTerminalIntent(existingLine);
 				await this.markDeliveryProcessed(input.deliveryId);
-				return { decision: { ...existingLine }, existing: true };
+				const existingClass = input.decision.shopifyOrderLineGid
+					? await this.findClassEntitlementByOrderLine(
+							input.decision.organizationId,
+							input.decision.shopifyOrderLineGid,
+						)
+					: null;
+				return {
+					decision: { ...existingLine },
+					classEntitlement: existingClass ?? undefined,
+					existing: true,
+				};
 			}
 		}
 		if (
@@ -446,14 +515,34 @@ export class InMemoryMembershipCommerceRepository
 		}
 		if (input.projection) await this.upsertOrderProjection(input.projection);
 		let grant: EntitlementGrantSnapshot | undefined;
+		let classEntitlement: ClassEntitlement | undefined;
 		if (input.decision.status === "approved") {
-			if (!input.grant) throw new Error("Approved decision requires a grant.");
-			assertValidEntitlementGrantSnapshotInput(input.grant);
-			grant = await this.organizations.createEntitlementGrantSnapshot(
-				input.grant,
+			if (input.grant && input.classEntitlement) {
+				throw new Error(
+					"Approved decision cannot specify both a membership grant and class entitlement.",
+				);
+			}
+			if (!input.grant && !input.classEntitlement) {
+				throw new Error(
+					"Approved decision requires a grant or class entitlement.",
+				);
+			}
+			if (input.grant) {
+				assertValidEntitlementGrantSnapshotInput(input.grant);
+				grant = await this.organizations.createEntitlementGrantSnapshot(
+					input.grant,
+				);
+			}
+			if (input.classEntitlement) {
+				assertValidClassEntitlementInput(input.classEntitlement);
+				classEntitlement = await this.createClassEntitlement(
+					input.classEntitlement,
+				);
+			}
+		} else if (input.grant || input.classEntitlement) {
+			throw new Error(
+				"Non-approved decision cannot create a grant or class entitlement.",
 			);
-		} else if (input.grant) {
-			throw new Error("Non-approved decision cannot create a grant.");
 		}
 		const decision: MembershipValidationDecision = {
 			...input.decision,
@@ -475,7 +564,12 @@ export class InMemoryMembershipCommerceRepository
 		}
 		await this.resolveTerminalIntent(decision);
 		await this.markDeliveryProcessed(input.deliveryId);
-		return { decision: { ...decision }, grant, existing: false };
+		return {
+			decision: { ...decision },
+			grant,
+			classEntitlement,
+			existing: false,
+		};
 	}
 
 	private async resolveTerminalIntent(decision: MembershipValidationDecision) {
@@ -541,5 +635,114 @@ export class InMemoryMembershipCommerceRepository
 		const run = { id: randomUUID(), ...input };
 		this.reconciliationRuns.push(run);
 		return { ...run };
+	}
+
+	async createClassEntitlement(
+		input: CreateClassEntitlementInput,
+	): Promise<ClassEntitlement> {
+		assertValidClassEntitlementInput(input);
+		const lineKey = `${input.organizationId}\u0000${input.shopifyOrderLineGid}`;
+		const existingLineId = this.classEntitlementsByLine.get(lineKey);
+		if (existingLineId) {
+			const existing = this.classEntitlements.get(existingLineId);
+			if (existing) return { ...existing };
+		}
+		const id = input.id ?? randomUUID();
+		const nowIso = this.now().toISOString();
+		const record: ClassEntitlement = {
+			id,
+			organizationId: input.organizationId,
+			festivalId: input.festivalId,
+			festivalClassId: input.festivalClassId,
+			parentCustomerId: input.parentCustomerId,
+			childId: input.childId,
+			checkoutIntentId: input.checkoutIntentId,
+			shopifyOrderGid: input.shopifyOrderGid,
+			shopifyOrderLineGid: input.shopifyOrderLineGid,
+			paidAmountCents: input.paidAmountCents,
+			paidCurrencyCode: input.paidCurrencyCode,
+			status: input.status ?? "confirmed",
+			createdAt: input.createdAt ?? nowIso,
+			updatedAt: input.updatedAt ?? nowIso,
+		};
+		this.classEntitlements.set(id, record);
+		this.classEntitlementsByLine.set(lineKey, id);
+		this.classEntitlementsByIntent.set(
+			`${input.organizationId}\u0000${input.checkoutIntentId}`,
+			id,
+		);
+		return { ...record };
+	}
+
+	async getClassEntitlement(
+		organizationId: string,
+		id: string,
+	): Promise<ClassEntitlement | null> {
+		const record = this.classEntitlements.get(id);
+		if (!record || record.organizationId !== organizationId) return null;
+		return { ...record };
+	}
+
+	async listClassEntitlements(
+		filter: ClassEntitlementFilter,
+	): Promise<ClassEntitlement[]> {
+		return [...this.classEntitlements.values()]
+			.filter((record) => {
+				if (record.organizationId !== filter.organizationId) return false;
+				if (filter.festivalId && record.festivalId !== filter.festivalId)
+					return false;
+				if (
+					filter.festivalClassId &&
+					record.festivalClassId !== filter.festivalClassId
+				)
+					return false;
+				if (
+					filter.parentCustomerId &&
+					record.parentCustomerId !== filter.parentCustomerId
+				)
+					return false;
+				if (filter.childId && record.childId !== filter.childId) return false;
+				if (filter.status && record.status !== filter.status) return false;
+				return true;
+			})
+			.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+			.map((record) => ({ ...record }));
+	}
+
+	async findClassEntitlementByOrderLine(
+		organizationId: string,
+		shopifyOrderLineGid: string,
+	): Promise<ClassEntitlement | null> {
+		const id = this.classEntitlementsByLine.get(
+			`${organizationId}\u0000${shopifyOrderLineGid}`,
+		);
+		if (!id) return null;
+		return this.getClassEntitlement(organizationId, id);
+	}
+
+	async findClassEntitlementByIntentId(
+		organizationId: string,
+		checkoutIntentId: string,
+	): Promise<ClassEntitlement | null> {
+		const id = this.classEntitlementsByIntent.get(
+			`${organizationId}\u0000${checkoutIntentId}`,
+		);
+		if (!id) return null;
+		return this.getClassEntitlement(organizationId, id);
+	}
+
+	async updateClassEntitlementStatus(
+		organizationId: string,
+		id: string,
+		status: ClassEntitlementStatus,
+	): Promise<ClassEntitlement | null> {
+		if (!isClassEntitlementStatus(status)) {
+			throw new Error("Class entitlement status is invalid.");
+		}
+		const record = this.classEntitlements.get(id);
+		if (!record || record.organizationId !== organizationId) return null;
+		record.status = status;
+		record.updatedAt = this.now().toISOString();
+		return { ...record };
 	}
 }

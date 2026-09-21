@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 test("commits a normalized PostgreSQL 17 schema-only snapshot", async () => {
 	const snapshot = await Bun.file(
-		"../../database/postgres17-schema.sql",
+		new URL("../../../database/postgres17-schema.sql", import.meta.url),
 	).text();
 	expect(snapshot).toContain("CREATE SCHEMA orgs;");
 	expect(snapshot).toContain("CREATE TABLE orgs.festival_children");

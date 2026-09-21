@@ -192,7 +192,7 @@ export interface CustomerAccountRepository {
 		input: Omit<
 			FestivalChildAgeSnapshot,
 			"id" | "createdAtIso" | "supersededAtIso"
-		>,
+		> & { createdAtIso?: string },
 	): Promise<FestivalChildAgeSnapshot>;
 	listChildAgeSnapshots(
 		organizationId: string,

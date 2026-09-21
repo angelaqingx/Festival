@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 async function source() {
-	return Bun.file(
-		new URL("../src/repo/postgres-organization-repository.ts", import.meta.url),
-	).text();
+	return (
+		await Bun.file(
+			new URL("../src/repo/postgres-organization-repository.ts", import.meta.url),
+		).text()
+	).replace(/\r\n/g, "\n");
 }
 
 describe("PostgresOrganizationRepository", () => {

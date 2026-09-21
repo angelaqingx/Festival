@@ -1175,7 +1175,7 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		const record: FestivalClassConfiguration = {
 			id: randomUUID(),
 			...input,
-			isActive: true,
+			isActive: input.isActive ?? true,
 			createdAtIso: now,
 			updatedAtIso: now,
 		};

@@ -7,6 +7,7 @@ import {
 	deriveEntitlementDates,
 	deriveEntitlementLifecycle,
 	INITIAL_TEACHER_MEMBERSHIP_DURATION_DAYS,
+	isClassEntitlementStatus,
 	isEntitlementClass,
 	MAX_ENTITLEMENT_DURATION_DAYS,
 } from "../src/entitlements.js";
@@ -125,4 +126,14 @@ describe("Teacher Membership entitlement contracts", () => {
 			}),
 		).toThrow("startsOn plus durationDays");
 	});
+
+	it("validates class entitlement statuses", () => {
+		expect(isClassEntitlementStatus("confirmed")).toBe(true);
+		expect(isClassEntitlementStatus("waitlisted")).toBe(true);
+		expect(isClassEntitlementStatus("cancelled")).toBe(true);
+		expect(isClassEntitlementStatus("revoked")).toBe(true);
+		expect(isClassEntitlementStatus("active")).toBe(false);
+		expect(isClassEntitlementStatus("unknown")).toBe(false);
+	});
 });
+

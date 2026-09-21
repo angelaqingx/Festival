@@ -29,6 +29,8 @@ export interface CheckoutCartRecord {
 	createdAtIso: string;
 }
 
+export type CheckoutIntentType = "membership" | "class_entry";
+
 export interface CheckoutIntentRecord {
 	id: string;
 	correlationId: string;
@@ -36,12 +38,15 @@ export interface CheckoutIntentRecord {
 	customerId: string;
 	sessionId: string;
 	idempotencyKey: string;
-	offeringId: string;
-	entitlementClass: "teacher_membership";
-	durationDays: number;
+	intentType: CheckoutIntentType;
+	offeringId: string | null;
+	entitlementClass: "teacher_membership" | null;
+	durationDays: number | null;
+	festivalClassId: string | null;
+	childId: string | null;
 	shopifyProductGid: string;
 	shopifyVariantGid: string;
-	policyVersion: "v1";
+	policyVersion: "v1" | null;
 	divisionId: string | null;
 	divisionNameSnapshot: string | null;
 	staffAccessConsent: boolean;
@@ -106,10 +111,24 @@ export type CreateCheckoutIntentInput = Omit<
 	| "cartReference"
 	| "createdAtIso"
 	| "status"
+	| "intentType"
+	| "offeringId"
+	| "entitlementClass"
+	| "durationDays"
+	| "festivalClassId"
+	| "childId"
+	| "policyVersion"
 	| "divisionId"
 	| "divisionNameSnapshot"
 	| "staffAccessConsent"
 > & {
+	intentType?: CheckoutIntentType;
+	offeringId?: string | null;
+	entitlementClass?: "teacher_membership" | null;
+	durationDays?: number | null;
+	festivalClassId?: string | null;
+	childId?: string | null;
+	policyVersion?: "v1" | null;
 	divisionId?: string | null;
 	divisionNameSnapshot?: string | null;
 	staffAccessConsent?: boolean;
@@ -158,6 +177,13 @@ export class InMemoryCheckoutRepository implements CheckoutRepository {
 		}
 		const value: CheckoutIntentRecord = {
 			...record,
+			intentType: record.intentType ?? "membership",
+			offeringId: record.offeringId ?? null,
+			entitlementClass: record.entitlementClass ?? null,
+			durationDays: record.durationDays ?? null,
+			festivalClassId: record.festivalClassId ?? null,
+			childId: record.childId ?? null,
+			policyVersion: record.policyVersion ?? null,
 			divisionId: record.divisionId ?? null,
 			divisionNameSnapshot: record.divisionNameSnapshot ?? null,
 			staffAccessConsent: record.staffAccessConsent ?? false,

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
 	CUSTOMER_STAFF_ACCESS_PRIVACY_NOTICE_VERSION,
 	deriveEntitlementDates,
+	type FestivalClassConfiguration,
 	TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
 } from "@festival/common";
 import type {
@@ -259,6 +260,82 @@ export class ShopifyOrderProjectionService {
 				return delivery.attemptCount > 1 ? "processed" : "skipped";
 			}
 
+			const isClassPurchase =
+				intent.intentType === "class_entry" || Boolean(intent.festivalClassId);
+
+			if (isClassPurchase) {
+				const { reason, classConfig, festivalId } =
+					await this.validateClassPurchase(
+						delivery.organizationId,
+						intent,
+						order,
+					);
+				if (reason || !classConfig || !festivalId) {
+					await this.finalize(
+						delivery,
+						{
+							customerId: intent.customerId,
+							checkoutIntentId: intent.id,
+							status:
+								reason === "intent_expired" ||
+								reason === "correlation_invalid" ||
+								reason === "upstream_invalid" ||
+								reason === "payment_incomplete"
+									? "needs_review"
+									: "rejected",
+							reasonCode: reason ?? "upstream_invalid",
+						},
+						projection,
+					);
+					return "processed";
+				}
+				const line = order.lineItems[0];
+				if (!line || !order.fullyPaidAtIso || !intent.childId) {
+					await this.finalize(
+						delivery,
+						{
+							customerId: intent.customerId,
+							checkoutIntentId: intent.id,
+							status: "needs_review",
+							reasonCode: "upstream_invalid",
+						},
+						projection,
+					);
+					return "processed";
+				}
+				const paidMinor = moneyInMinorUnits(line.paidAmount);
+				const paidAmountCents = Number(paidMinor ?? 0n);
+				await this.finalize(
+					delivery,
+					{
+						customerId: intent.customerId,
+						checkoutIntentId: intent.id,
+						shopifyOrderLineGid: line.id,
+						status: "approved",
+						classEntitlement: {
+							organizationId: delivery.organizationId,
+							festivalId,
+							festivalClassId: classConfig.id,
+							parentCustomerId: intent.customerId,
+							childId: intent.childId,
+							checkoutIntentId: intent.id,
+							shopifyOrderGid: order.id,
+							shopifyOrderLineGid: line.id,
+							paidAmountCents,
+							paidCurrencyCode: line.paidCurrencyCode,
+							status: "confirmed",
+						},
+					},
+					projection,
+				);
+				await this.projectConsentedCustomerProfile(
+					delivery.organizationId,
+					intent,
+					order,
+				);
+				return "processed";
+			}
+
 			const reason = await this.validate(
 				delivery.organizationId,
 				intent,
@@ -290,6 +367,9 @@ export class ShopifyOrderProjectionService {
 				!order.fullyPaidAtIso ||
 				!intent.divisionId ||
 				!intent.divisionNameSnapshot ||
+				!intent.offeringId ||
+				intent.durationDays === null ||
+				intent.durationDays === undefined ||
 				!identityEmail
 			) {
 				await this.finalize(
@@ -572,6 +652,86 @@ export class ShopifyOrderProjectionService {
 		return undefined;
 	}
 
+	private async validateClassPurchase(
+		organizationId: string,
+		intent: CheckoutIntentRecord,
+		order: ShopifyPaidOrder,
+	): Promise<{
+		reason?: MembershipReasonCode;
+		classConfig?: FestivalClassConfiguration;
+		festivalId?: string;
+	}> {
+		if (!order.fullyPaid) return { reason: "order_not_paid" };
+		if (!order.fullyPaidAtIso) return { reason: "payment_incomplete" };
+		if (
+			timestampMilliseconds(intent.expiresAtIso, "Checkout intent expiry") <=
+			timestampMilliseconds(order.fullyPaidAtIso, "Shopify payment")
+		)
+			return { reason: "intent_expired" };
+		if (!this.customers) return { reason: "upstream_invalid" };
+		const customer = await this.customers.getCustomer(
+			organizationId,
+			intent.customerId,
+		);
+		if (!customer || customer.shopifyCustomerGid !== order.customerGid) {
+			return { reason: "customer_mismatch" };
+		}
+		if (!intent.festivalClassId || !intent.childId) {
+			return { reason: "upstream_invalid" };
+		}
+		const festivals = await this.organizations.listFestivals(organizationId);
+		let matchedConfig: FestivalClassConfiguration | undefined;
+		let matchedFestivalId: string | undefined;
+		for (const festival of festivals) {
+			const configs =
+				await this.organizations.listFestivalClassConfigurations(
+					organizationId,
+					festival.id,
+					false,
+				);
+			const found = configs.find((c) => c.id === intent.festivalClassId);
+			if (found) {
+				matchedConfig = found;
+				matchedFestivalId = festival.id;
+				break;
+			}
+		}
+		if (!matchedConfig?.isActive || !matchedFestivalId) {
+			return { reason: "offering_mismatch" };
+		}
+		if (
+			matchedConfig.shopifyProductGid !== intent.shopifyProductGid ||
+			matchedConfig.shopifyVariantGid !== intent.shopifyVariantGid
+		) {
+			return { reason: "offering_mismatch" };
+		}
+		if (
+			order.lineItems.length !== 1 ||
+			order.lineItems[0]?.productGid !== intent.shopifyProductGid ||
+			order.lineItems[0]?.variantGid !== intent.shopifyVariantGid ||
+			order.lineItems[0]?.quantity !== 1
+		) {
+			return { reason: "offering_mismatch" };
+		}
+		const line = order.lineItems[0];
+		if (
+			!line ||
+			order.currencyCode !== intent.currencyCode ||
+			!hasMatchingPaidMoney(
+				intent.amount,
+				intent.currencyCode,
+				line.paidAmount,
+				line.paidCurrencyCode,
+			)
+		) {
+			return { reason: "payment_mismatch" };
+		}
+		return {
+			classConfig: matchedConfig,
+			festivalId: matchedFestivalId,
+		};
+	}
+
 	private async projectConsentedCustomerProfile(
 		organizationId: string,
 		intent: CheckoutIntentRecord,
@@ -613,6 +773,9 @@ export class ShopifyOrderProjectionService {
 			grant?: Parameters<
 				MembershipCommerceRepository["finalizeDecision"]
 			>[0]["grant"];
+			classEntitlement?: Parameters<
+				MembershipCommerceRepository["finalizeDecision"]
+			>[0]["classEntitlement"];
 		},
 		projection?: ShopifyOrderProjectionInput,
 	) {
@@ -630,6 +793,7 @@ export class ShopifyOrderProjectionService {
 			},
 			...(projection ? { projection } : {}),
 			grant: input.grant,
+			classEntitlement: input.classEntitlement,
 		});
 		return result;
 	}
