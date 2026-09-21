@@ -1,6 +1,4 @@
-import type {
-	CustomerAccountRepository,
-} from "../customer/customer-account-repository.js";
+import type { CustomerAccountRepository } from "../customer/customer-account-repository.js";
 import { AppError } from "../errors/app-error.js";
 import type { OrganizationRepository } from "../repo/organization-repository.js";
 import type {
@@ -36,7 +34,11 @@ export class ClassCheckoutService {
 	) {}
 
 	async start(input: StartClassCheckoutInput): Promise<ClassCheckoutResult> {
-		if (!input.organizationId?.trim() || !input.customerId?.trim() || !input.sessionId?.trim()) {
+		if (
+			!input.organizationId?.trim() ||
+			!input.customerId?.trim() ||
+			!input.sessionId?.trim()
+		) {
 			throw new AppError("Customer session is invalid.", 401);
 		}
 		if (!input.festivalClassId?.trim()) {
@@ -63,7 +65,10 @@ export class ClassCheckoutService {
 			input.organizationId,
 			input.customerId,
 		);
-		if (!customer || customer.shopifyCustomerGid !== session.shopifyCustomerGid) {
+		if (
+			!customer ||
+			customer.shopifyCustomerGid !== session.shopifyCustomerGid
+		) {
 			throw new AppError("Customer session is invalid.", 401);
 		}
 
@@ -76,13 +81,21 @@ export class ClassCheckoutService {
 		});
 		if (existing) {
 			if (existing.kind === "in_progress") {
-				throw new AppError("Checkout is already in progress.", 409, "checkout_in_progress");
+				throw new AppError(
+					"Checkout is already in progress.",
+					409,
+					"checkout_in_progress",
+				);
 			}
 			if (existing.kind === "expired") {
 				throw new AppError("Checkout has expired.", 409, "checkout_expired");
 			}
 			if (existing.kind === "failed") {
-				throw new AppError("This checkout attempt cannot continue.", 409, "checkout_terminal_failure");
+				throw new AppError(
+					"This checkout attempt cannot continue.",
+					409,
+					"checkout_terminal_failure",
+				);
 			}
 			if (existing.kind === "ready") {
 				return {
@@ -99,7 +112,10 @@ export class ClassCheckoutService {
 		);
 		const child = children.find((item) => item.id === input.childId);
 		if (!child) {
-			throw new AppError("Child not found or does not belong to parent customer.", 404);
+			throw new AppError(
+				"Child not found or does not belong to parent customer.",
+				404,
+			);
 		}
 
 		// 4. Verifies active age snapshot for child (<= 90 days validity)
@@ -113,24 +129,30 @@ export class ClassCheckoutService {
 		}
 
 		const validUntil = new Date(activeSnapshot.validUntilIso);
-		const snapshotAgeMs = currentTime.getTime() - new Date(activeSnapshot.createdAtIso).getTime();
+		const snapshotAgeMs =
+			currentTime.getTime() - new Date(activeSnapshot.createdAtIso).getTime();
 		if (validUntil <= currentTime || snapshotAgeMs > MAX_SNAPSHOT_VALIDITY_MS) {
 			throw new AppError("Child age snapshot has expired.", 400);
 		}
 
 		// 5. Verifies class configuration exists, is active, and is tied to the active festival and organization
-		const festivals = await this.organizations.listFestivals(input.organizationId);
+		const festivals = await this.organizations.listFestivals(
+			input.organizationId,
+		);
 		const activeFestival = festivals.find((item) => item.isPrimary);
 		if (!activeFestival) {
 			throw new AppError("Active festival not found.", 404);
 		}
 
-		const classConfigs = await this.organizations.listFestivalClassConfigurations(
-			input.organizationId,
-			activeFestival.id,
-			false,
+		const classConfigs =
+			await this.organizations.listFestivalClassConfigurations(
+				input.organizationId,
+				activeFestival.id,
+				false,
+			);
+		const classConfig = classConfigs.find(
+			(item) => item.id === input.festivalClassId,
 		);
-		const classConfig = classConfigs.find((item) => item.id === input.festivalClassId);
 		if (!classConfig) {
 			throw new AppError("Festival class configuration not found.", 404);
 		}
@@ -141,12 +163,18 @@ export class ClassCheckoutService {
 			classConfig.organizationId !== input.organizationId ||
 			classConfig.festivalId !== activeFestival.id
 		) {
-			throw new AppError("Festival class configuration does not belong to the active festival.", 400);
+			throw new AppError(
+				"Festival class configuration does not belong to the active festival.",
+				400,
+			);
 		}
 
 		// 6. Verifies child's age meets festival_class_configurations [minimum_age, maximum_age] rules
 		const childAge = activeSnapshot.age;
-		if (childAge < classConfig.minimumAge || childAge > classConfig.maximumAge) {
+		if (
+			childAge < classConfig.minimumAge ||
+			childAge > classConfig.maximumAge
+		) {
 			throw new AppError(
 				`Child age (${childAge}) is outside the allowed range of [${classConfig.minimumAge}, ${classConfig.maximumAge}].`,
 				400,
@@ -161,7 +189,11 @@ export class ClassCheckoutService {
 				currentTime.toISOString(),
 			)
 		) {
-			throw new AppError("Checkout is already in progress.", 409, "checkout_in_progress");
+			throw new AppError(
+				"Checkout is already in progress.",
+				409,
+				"checkout_in_progress",
+			);
 		}
 
 		// 8. Creates a checkout intent with intent_type: 'class_entry'
@@ -186,13 +218,21 @@ export class ClassCheckoutService {
 		});
 
 		if (outcome.kind === "in_progress") {
-			throw new AppError("Checkout is already in progress.", 409, "checkout_in_progress");
+			throw new AppError(
+				"Checkout is already in progress.",
+				409,
+				"checkout_in_progress",
+			);
 		}
 		if (outcome.kind === "expired") {
 			throw new AppError("Checkout has expired.", 409, "checkout_expired");
 		}
 		if (outcome.kind === "failed") {
-			throw new AppError("This checkout attempt cannot continue.", 409, "checkout_terminal_failure");
+			throw new AppError(
+				"This checkout attempt cannot continue.",
+				409,
+				"checkout_terminal_failure",
+			);
 		}
 		if (outcome.kind === "created" || outcome.kind === "ready") {
 			return {

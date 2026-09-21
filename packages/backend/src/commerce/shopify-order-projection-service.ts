@@ -683,12 +683,11 @@ export class ShopifyOrderProjectionService {
 		let matchedConfig: FestivalClassConfiguration | undefined;
 		let matchedFestivalId: string | undefined;
 		for (const festival of festivals) {
-			const configs =
-				await this.organizations.listFestivalClassConfigurations(
-					organizationId,
-					festival.id,
-					false,
-				);
+			const configs = await this.organizations.listFestivalClassConfigurations(
+				organizationId,
+				festival.id,
+				false,
+			);
 			const found = configs.find((c) => c.id === intent.festivalClassId);
 			if (found) {
 				matchedConfig = found;

@@ -152,9 +152,7 @@ export class InMemoryClassEntitlementRepository
 		organizationId: string,
 		checkoutIntentId: string,
 	): Promise<ClassEntitlement | null> {
-		const id = this.byIntent.get(
-			`${organizationId}\u0000${checkoutIntentId}`,
-		);
+		const id = this.byIntent.get(`${organizationId}\u0000${checkoutIntentId}`);
 		if (!id) return null;
 		return this.getClassEntitlement(organizationId, id);
 	}

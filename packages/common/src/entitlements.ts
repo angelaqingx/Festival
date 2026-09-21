@@ -412,4 +412,3 @@ export interface ClassCheckoutIntent {
 	createdAt: string;
 	updatedAt?: string;
 }
-

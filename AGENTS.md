@@ -1,23 +1,11 @@
-# AGENTS.md
+# Subagent Delegation Principles
 
-## Autonomous Coding Principles
-
-### 1. Keep Changes Minimal
-
-Use the simplest implementation that satisfies the request.
-Change only in-scope files and behavior.
-
-### 2. Fail Fast and Explicitly
-
-Use assertions for impossible states.
-Handle external and recoverable failures explicitly.
-Do not hide uncertainty or errors.
-
-### 3. Verify, Then Declare Done
-
-Completion requires passing verification or explicitly documented blockers.
-Tests are mandatory when behavior is changed.
-
-### 4. Detect Drift
-
-If goals, scope, tests, touched surfaces, verification plans, or completion criteria drift, flag the change and continue with the user's latest direction.
+## Core Principle
+- **Use subagents for all tasks**: Break development work into small, bounded, single-purpose tasks and dispatch dedicated subagents for each step.
+- **Small and bounded**: Every subagent invocation must have a well-defined, tightly scoped objective (e.g., stage specific files, inspect diff, write a targeted unit test, verify build).
+- **Always invoke for repeated tasks**:
+  - **Git / GitHub Operations**: Branching, staging in-scope files only, conventional commits, status checks, pre-push verification.
+  - **Code Review & Diff Inspection**: Checking diff footprint, verifying absence of debug logging or credentials, catching scope creep.
+  - **Scoped Implementation**: Executing single-objective code modifications on targeted files.
+  - **Verification & Testing**: Running toolchain checks, format checks, builds, and automated tests.
+  - **Goal & Scope Tracking**: Validating progress against documented criteria and preventing drift.

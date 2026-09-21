@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
+import type { FestivalRecord } from "@festival/common";
+import { InMemoryCheckoutRepository } from "../src/checkout/checkout-repository.js";
 import {
 	ClassCheckoutService,
 	type StartClassCheckoutInput,
 } from "../src/checkout/class-checkout-service.js";
-import type { FestivalRecord } from "@festival/common";
-import { InMemoryCheckoutRepository } from "../src/checkout/checkout-repository.js";
 import { InMemoryCustomerAccountRepository } from "../src/customer/in-memory-customer-account-repository.js";
 import { InMemoryOrganizationRepository } from "../src/repo/in-memory-organization-repository.js";
 
@@ -166,7 +166,9 @@ describe("ClassCheckoutService", () => {
 		expect(result.intent.festivalClassId).toBe(f.classConfig.id);
 		expect(result.intent.childId).toBe(f.child.id);
 		expect(result.intent.shopifyProductGid).toBe("gid://shopify/Product/100");
-		expect(result.intent.shopifyVariantGid).toBe("gid://shopify/ProductVariant/200");
+		expect(result.intent.shopifyVariantGid).toBe(
+			"gid://shopify/ProductVariant/200",
+		);
 		expect(result.intent.amount).toBe("45.00");
 		expect(result.intent.currencyCode).toBe("USD");
 		expect(result.intent.organizationId).toBe(f.organization.id);
@@ -277,7 +279,10 @@ describe("ClassCheckoutService", () => {
 	});
 
 	it("fails when child has no age snapshot", async () => {
-		const f = await createFixture({ childAge: undefined, snapshotValidDays: 0 });
+		const f = await createFixture({
+			childAge: undefined,
+			snapshotValidDays: 0,
+		});
 
 		await expect(f.service.start(f.defaultInput)).rejects.toMatchObject({
 			status: 400,

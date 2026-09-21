@@ -136,4 +136,3 @@ describe("Teacher Membership entitlement contracts", () => {
 		expect(isClassEntitlementStatus("unknown")).toBe(false);
 	});
 });
-

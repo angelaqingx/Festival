@@ -135,8 +135,7 @@ async function fixture(
 		performanceMinutes: 15,
 		capacity: 25,
 		isActive: true,
-		shopifyProductGid:
-			options.shopifyProductGid ?? "gid://shopify/Product/100",
+		shopifyProductGid: options.shopifyProductGid ?? "gid://shopify/Product/100",
 		shopifyVariantGid:
 			options.shopifyVariantGid ?? "gid://shopify/ProductVariant/200",
 	});
