@@ -2365,4 +2365,29 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 			};
 		});
 	}
+
+	async listActiveTeachersForDivision(
+		organizationId: string,
+		divisionId: string,
+	): Promise<Array<{ id: string; name: string }>> {
+		await this.ensureReady();
+		const rows = (await sql.unsafe(
+			`SELECT DISTINCT
+				c.id,
+				COALESCE(c.name, '') AS name
+			 FROM ${this.schema}.membership_entitlements e
+			 JOIN ${this.schema}.organizations o ON o.id = e.organization_id
+			 JOIN ${this.schema}.membership_entitlement_divisions ed ON ed.entitlement_id = e.id
+			 JOIN ${this.schema}.festival_customers c ON c.id = e.customer_id AND c.organization_id = e.organization_id
+			 WHERE e.organization_id = $1
+			   AND e.entitlement_class = 'teacher_membership'
+			   AND ed.division_id = $2
+			   AND e.revoked_at IS NULL
+			   AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date
+			   AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date
+			 ORDER BY name, c.id`,
+			[organizationId, divisionId],
+		)) as Array<{ id: string; name: string }>;
+		return rows.map((row) => ({ id: row.id, name: row.name }));
+	}
 }
