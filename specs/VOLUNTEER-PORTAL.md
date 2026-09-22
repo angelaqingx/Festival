@@ -6,13 +6,23 @@ Extends [Side Quests #2: Volunteer Portal](SIDEQUESTS-2026.md#2-volunteer-portal
 
 ## Purpose and scope
 
-Provide self-service volunteer signup and cancellation, a shared coverage schedule, and admin tools to manage roles and slots. Reuse the existing Firebase configuration and authenticated accounts. Admin screens require existing admin authorization.
+Provide festival-specific self-service volunteer signup and cancellation, and admin tools to manage roles, slots, and coverage. Reuse the existing Firebase configuration and authenticated accounts. Admin screens require the Firebase `admin` intent type described below.
 
 Version one supports exactly one volunteer per slot. Multiple-capacity slots are deferred. Where additional coverage is needed, admins may create separately named roles such as “Table Monitor 1” and “Table Monitor 2.” Room Proctor uses the special structure described below.
 
+### Visibility and authorization
+
+- A Firebase `volunteer` intent type may access only that authenticated volunteer's own information and commitments for the selected festival. It must never access another volunteer's identity, contact information, assignments, or schedule.
+- Volunteer signup may show slots available to book, but it must not reveal who holds an unavailable slot or expose a consolidated coverage schedule.
+- A Firebase `admin` intent type may access all volunteers in the selected festival, including their names, contact information, assignments, and consolidated schedule. This applies to every Festival administrative role, including Admin, Division Chair, Concert Chair, and equivalent admin roles.
+
+### Festival scope
+
+All volunteer activity is scoped to exactly one festival. A volunteer signs up for duties and maintains a schedule within the selected festival. If the organization runs multiple festivals, the volunteer must sign up separately for each one; enrollment, contact information, commitments, roles, slots, and assignments do not carry over between festivals. Booking-conflict validation applies within a festival only.
+
 ## Signup screen
 
-The signup flow has four steps:
+The signup flow operates in a selected festival context and has four steps:
 
 1. **Authenticate:** Sign in using Firebase SSO or an email link, reusing the existing Firebase configuration.
 2. **Choose a role:** Display role descriptions and any optional HTTP link to additional details. Explain that volunteers choose one role per signup pass and can return to choose another role afterward.
@@ -24,7 +34,7 @@ Volunteers may complete one role’s bookings, return to the volunteer screen, a
 ### Booking rules
 
 - Each slot has a maximum of one active volunteer assignment.
-- Across all roles, a volunteer may hold at most one AM assignment and one PM assignment on a given festival-local date.
+- Across all roles in the selected festival, a volunteer may hold at most one AM assignment and one PM assignment on a given festival-local date.
 - AM and PM determine conflicts. Informational time text does not affect availability or conflict validation.
 - Submitting several slots is all-or-nothing. If any selection is unavailable or conflicts at submission time, no selected slots are booked. Explain the affected selections and require the volunteer to revise before resubmitting.
 - Enforce capacity and volunteer conflicts atomically, including simultaneous submissions.
@@ -34,17 +44,18 @@ Volunteers may complete one role’s bookings, return to the volunteer screen, a
 
 ### Roles
 
-Admins create roles before creating their slots. Each role has:
+Admins create roles within a festival before creating their slots. Each role has:
 
 - A slug.
+- A required display name entered by an admin. Role names may differ by festival.
 - A description.
 - An optional HTTP link to additional details.
 
-The exact relationship between role slug and visible role name remains an open decision.
+New festivals include two default roles, with initial display names **Room Proctor** and **General**. Admins may change those display names or add roles for festival-specific needs. A role's type, rather than its display name, determines its structure: only the Room Proctor type has the special structure described below; General and other roles use the standard structure.
 
 ### Slots
 
-Each slot belongs to a role and has:
+Each slot belongs to a role in one festival and has:
 
 - A required date.
 - A required AM or PM designation.
@@ -59,21 +70,22 @@ Multiple Room Proctor slots may share a date and AM/PM designation when they rep
 
 ## Review screens
 
-Both screens use the festival’s local timezone, default to a week view, and offer a day-view toggle. Display slots grouped roughly by AM and PM, including empty and filled slots and the assigned volunteer’s name. Dates use `MM/DD` and include weekday information.
+Both screens use the selected festival’s local timezone, default to a week view, and offer a day-view toggle. Dates use `MM/DD` and include weekday information. Visibility of slots and assignment details differs by intent type as specified below.
 
 ### Volunteer review
 
 - Requires authentication.
-- Shows the consolidated coverage schedule, including other volunteers’ names.
+- Shows only the authenticated volunteer's own commitments in the selected festival.
 - Allows volunteers to cancel only their own assignments.
-- Email and phone are visible only to the volunteer themselves and admins.
+- Shows only the authenticated volunteer's own contact information; email and phone for all other volunteers are inaccessible.
 
 ### Admin review
 
-- Requires admin authentication and authorization.
+- Requires the Firebase `admin` intent type, regardless of the holder's Festival administrative role.
 - Shows consolidated coverage and gaps, with assigned volunteer names.
+- Does not provide general volunteer-duty role filtering. An optional filter may distinguish Room Proctor assignments from non-Room-Proctor assignments.
 - Allows admins to cancel any assignment.
-- Allows admins to see volunteer contact information.
+- Allows admins to see all volunteer contact information and schedules for the selected festival.
 
 ### Cancellation
 
@@ -81,7 +93,7 @@ Volunteers and admins may cancel assignments at any time; there is no cancellati
 
 ## Admin build screen
 
-- Requires admin authentication and authorization.
+- Requires the Firebase `admin` intent type, regardless of the holder's Festival administrative role.
 - Create roles, then create slots for each role.
 - Edit and delete roles and slots regardless of signup status.
 - Version one does not require impact checks or a cancellation prerequisite before edits or deletion.
@@ -104,30 +116,33 @@ The Mailchimp audience/segment identifiers, event contract, failure retry policy
 
 Retain the sidequest’s conceptual records: `volunteer`, `volunteer_role`, `volunteer_shift`, and `volunteer_assignment`. Exact storage design is outside this specification draft.
 
-- A volunteer links to an existing authenticated account and has required name, account email, and phone.
-- A role defines its slug, description, optional details link, and whether it is the special Room Proctor role.
-- A shift represents a dated AM/PM slot, optional time text, and Room Proctor details where applicable.
-- An assignment connects a volunteer to a slot.
+- A volunteer enrollment links an existing authenticated account to one festival and has required name, account email, and phone. The same authenticated account may have separate volunteer enrollments in multiple festivals.
+- A role belongs to one festival and defines its slug, description, optional details link, and whether it is the special Room Proctor role.
+- A shift belongs to one festival role and represents a dated AM/PM slot, optional time text, and Room Proctor details where applicable.
+- An assignment connects a festival-scoped volunteer enrollment to a slot in that same festival.
 
 ## Acceptance criteria
 
 1. The four-step signup supports selecting multiple slots for one role and returning to book another role.
 2. Email is prefilled from authentication and cannot be edited; name and phone are required and are not prefilled, including for returning volunteers.
 3. A slot cannot acquire more than one active assignment, even under simultaneous submissions.
-4. A volunteer cannot book two slots in the same date/AM-PM period across any roles.
+4. A volunteer cannot book two slots in the same date/AM-PM period across any roles in the same festival.
 5. A conflicting multi-slot submission creates no bookings and requires revised selections.
 6. All slots require date and AM/PM; optional time text is displayed without time validation or conflict calculations.
 7. Room Proctor slots require both free-text Division and Adjudicator; other roles do not expose those fields.
 8. Two Room Proctor slots for different adjudicators can be filled independently in the same date/AM-PM period by different volunteers.
-9. Authenticated volunteers and admins can view empty and filled coverage in week and day views, with week as the default and names visible.
-10. Contact email and phone cannot be accessed by other volunteers.
+9. A Firebase `volunteer` intent type can view only its own commitments and contact information in the selected festival; it cannot access another volunteer's identity, contact information, assignments, schedule, or a consolidated coverage view.
+10. A Firebase `admin` intent type, including every Festival administrative role, can view all volunteer names, contact information, assignments, and consolidated coverage for the selected festival in week and day views, with week as the default.
 11. Volunteers can cancel their own assignments at any time; admins can cancel any assignment. The slot reopens immediately.
 12. Admins can create, edit, and delete roles and slots without signup-status impact checks. Non-admins cannot perform these actions.
 13. Each booked slot produces its own signup/welcome event and ordinary cancellation produces its own cancellation event; role deletion produces no events.
 14. Mailchimp failure leaves successful bookings and cancellations intact and reflected on the review page.
 15. Schedule dates display weekday and `MM/DD` in the festival’s local timezone.
+16. Volunteer enrollment, contact information, roles, slots, assignments, schedules, and conflict validation are scoped to a festival. The same authenticated account must sign up separately for each festival.
+17. The admin consolidated schedule has no general volunteer-duty role filter; it may optionally distinguish Room Proctor assignments from non-Room-Proctor assignments.
+18. Each role has an admin-entered display name. New festivals include Room Proctor and General roles by default, and only Room Proctor uses the special Division and Adjudicator slot structure.
 
-Implementation must include tests for changed behavior, particularly authorization, privacy, concurrent booking, all-or-nothing submission, cancellation, and Mailchimp failure isolation.
+Implementation must include tests for changed behavior, particularly Firebase intent-type authorization, volunteer privacy, festival isolation, concurrent booking, all-or-nothing submission, cancellation, and Mailchimp failure isolation.
 
 ## Deferred scope
 
@@ -143,6 +158,3 @@ The optional check-in tracking mentioned in sidequest #2 has not been requested 
 1. **Direct slot deletion:** Does deleting a filled slot suppress cancellation events, as role deletion does? Should deleting a role also remove its slots and assignments from the active schedule?
 2. **Edits to filled slots:** Should existing volunteers remain assigned when admins change a slot’s date or AM/PM, even if that creates a conflict with another assignment? No impact checks are requested, so this must be reconciled with the one-place-at-a-time rule.
 3. **Mailchimp failures and reminders:** Should failed events retry automatically, or is best-effort delivery sufficient? Are reminders configured entirely in Mailchimp, and are they required for version one?
-4. **Role naming:** Should admins enter a separate display name alongside the slug and description?
-5. **Review scope:** Is the consolidated schedule for all roles, with optional role filtering? How should the volunteer’s own bookings be distinguished?
-6. **Festival scope:** Are roles and slots scoped to a festival edition/year, and should review default to the festival’s first week or the current week?
