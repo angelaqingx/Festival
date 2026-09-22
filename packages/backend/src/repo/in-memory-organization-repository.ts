@@ -1266,6 +1266,11 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 			input.customerId,
 		);
 		this.entitlementGrants.set(record.id, record);
+		this.advanceEntitlementCohort(
+			record.organizationId,
+			record.customerId,
+			record.entitlementClass,
+		);
 		return this.withTeacherLifecycle(record);
 	}
 

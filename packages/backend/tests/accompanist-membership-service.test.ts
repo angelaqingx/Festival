@@ -269,4 +269,69 @@ describe("AccompanistMembershipService", () => {
 			}),
 		).rejects.toMatchObject({ status: 422 });
 	});
+
+	it("allows a customer holding a Teacher membership to simultaneously acquire an Accompanist membership", async () => {
+		const { repository, organization, division, service } = await setup();
+		const offering = await repository.createMembershipProductRecord({
+			organizationId: organization.id,
+			entitlementClass: "teacher_membership",
+			durationDays: 365,
+			isActive: true,
+			shopifyProductGid: "gid://shopify/Product/teacher",
+			shopifyVariantGid: "gid://shopify/ProductVariant/teacher",
+			productNameSnapshot: "Teacher Membership",
+		});
+		await repository.createEntitlementGrantSnapshot({
+			organizationId: organization.id,
+			customerId: "customer-1",
+			entitlementClass: "teacher_membership",
+			offeringId: offering.id,
+			durationDays: 365,
+			divisionId: division.id,
+			divisionNameSnapshot: division.displayName,
+			paidAmount: "75.00",
+			paidCurrencyCode: "USD",
+			checkoutIntentId: "checkout-teacher-1",
+			shopifyOrderGid: "gid://shopify/Order/teacher-1",
+			shopifyOrderLineGid: "gid://shopify/LineItem/teacher-1",
+			startsOn: "2026-09-12",
+			endsOn: "2027-09-12",
+			status: "active",
+			verifiedIdentityEmail: "shopper@example.com",
+		});
+
+		const result = await service.acquire({
+			organizationId: organization.id,
+			organizationTimezone: "UTC",
+			customerId: "customer-1",
+			verifiedShopifyCustomerEmail: "shopper@example.com",
+			payload: {
+				name: "Ava Accompanist",
+				email: "ava@example.com",
+				city: "Seattle",
+				phone: "+1 206 555 0100",
+				divisionIds: [division.id],
+			},
+		});
+
+		expect(result.membership).toMatchObject({
+			status: "active",
+			startsOn: "2026-09-12",
+			endsOn: "2027-09-12",
+		});
+
+		const teacherGrants = await repository.listEntitlementGrantSnapshots(
+			organization.id,
+			"customer-1",
+		);
+		const accompanistGrants = await repository.listAccompanistMembershipGrants({
+			organizationId: organization.id,
+			customerId: "customer-1",
+		});
+
+		expect(teacherGrants).toHaveLength(1);
+		expect(teacherGrants[0].status).toBe("active");
+		expect(accompanistGrants).toHaveLength(1);
+		expect(accompanistGrants[0].status).toBe("active");
+	});
 });
