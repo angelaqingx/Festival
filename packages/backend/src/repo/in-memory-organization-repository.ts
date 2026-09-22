@@ -25,6 +25,7 @@ import {
 	EMPTY_SHOPIFY_CAPABILITIES,
 	isEntitlementClass,
 	normalizeVerifiedShopifyIdentityEmail,
+	TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
 } from "@festival/common";
 import type {
 	AccompanistDivisionPolicyHistoryRecord,
@@ -1404,7 +1405,8 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 			.filter(
 				(grant) =>
 					grant.organizationId === organizationId &&
-					grant.divisionId === divisionId,
+					grant.divisionId === divisionId &&
+					grant.entitlementClass === TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
 			)
 			.map((grant) => this.withTeacherLifecycle(grant))
 			.filter((grant) => grant.status === "active");

@@ -834,4 +834,141 @@ describe("Registration Selection APIs (#143)", () => {
 			"Selected teacher is not eligible in this division.",
 		);
 	});
+
+	it("excludes accompanists and non-teacher entitlement classes from active teachers in division (#143)", async () => {
+		const f = await createSelectionFixture();
+		const parent = await f.createParentSession();
+
+		const child = await f.repository.createChild({
+			organizationId: f.org.id,
+			parentCustomerId: parent.customer.id,
+			displayName: "Clara",
+		});
+		await f.repository.createChildAgeSnapshot({
+			organizationId: f.org.id,
+			childId: child.id,
+			age: 10,
+			validUntilIso: new Date(
+				f.now().getTime() + 90 * 86_400_000,
+			).toISOString(),
+		});
+
+		// Create teacher offering & grant
+		const teacherOffering = await f.organizations.createMembershipProductRecord(
+			{
+				organizationId: f.org.id,
+				entitlementClass: "teacher_membership",
+				durationDays: 365,
+				isActive: true,
+				shopifyProductGid: "gid://shopify/Product/301",
+				shopifyVariantGid: "gid://shopify/ProductVariant/301",
+				productNameSnapshot: "Teacher Membership",
+			},
+		);
+
+		const teacherCustomer = await f.createCustomer(
+			"Teacher Bach",
+			"teacher.bach@example.com",
+			"t-bach",
+		);
+		await f.organizations.createEntitlementGrantSnapshot({
+			organizationId: f.org.id,
+			customerId: teacherCustomer.id,
+			entitlementClass: "teacher_membership",
+			offeringId: teacherOffering.id,
+			durationDays: 365,
+			divisionId: f.pianoDivision.id,
+			divisionNameSnapshot: "Piano",
+			paidAmount: "50.00",
+			paidCurrencyCode: "USD",
+			checkoutIntentId: "intent-bach",
+			shopifyOrderGid: "gid://shopify/Order/301",
+			shopifyOrderLineGid: "gid://shopify/LineItem/301",
+			startsOn: "2026-01-01",
+			endsOn: "2027-01-01",
+			status: "active",
+			verifiedIdentityEmail: "teacher.bach@example.com",
+		});
+
+		// Create active accompanist in the same piano division
+		await f.organizations.createAccompanistMembershipGrant({
+			organizationId: f.org.id,
+			customerId: "cust-acc-piano",
+			normalizedEmail: "acc.piano@example.com",
+			offeringNameSnapshot: "Accompanist Membership",
+			source: "accompanist_form",
+			contact: {
+				name: "Accompanist Liszt",
+				email: "acc.piano@example.com",
+				city: "Vancouver",
+				phone: "555-0199",
+			},
+			divisions: [{ divisionId: f.pianoDivision.id, divisionName: "Piano" }],
+			startsOn: "2026-01-01",
+			endsOn: "2027-01-01",
+		});
+		f.organizations.setCustomerName("cust-acc-piano", "Accompanist Liszt");
+
+		// Also create non-teacher grant in entitlementGrants
+		const accompanistOffering =
+			await f.organizations.createMembershipProductRecord({
+				organizationId: f.org.id,
+				entitlementClass: "accompanist_membership",
+				durationDays: 365,
+				isActive: true,
+				shopifyProductGid: "gid://shopify/Product/302",
+				shopifyVariantGid: "gid://shopify/ProductVariant/302",
+				productNameSnapshot: "Accompanist Offering",
+			});
+		const nonTeacherCustomer = await f.createCustomer(
+			"Non-Teacher Member",
+			"nonteacher@example.com",
+			"t-nonteacher",
+		);
+		await f.organizations.createEntitlementGrantSnapshot({
+			organizationId: f.org.id,
+			customerId: nonTeacherCustomer.id,
+			entitlementClass: "accompanist_membership",
+			offeringId: accompanistOffering.id,
+			durationDays: 365,
+			divisionId: f.pianoDivision.id,
+			divisionNameSnapshot: "Piano",
+			paidAmount: "50.00",
+			paidCurrencyCode: "USD",
+			checkoutIntentId: "intent-nonteacher",
+			shopifyOrderGid: "gid://shopify/Order/302",
+			shopifyOrderLineGid: "gid://shopify/LineItem/302",
+			startsOn: "2026-01-01",
+			endsOn: "2027-01-01",
+			status: "active",
+			verifiedIdentityEmail: "nonteacher@example.com",
+		});
+
+		// Verify repository method directly excludes accompanists / non-teachers
+		const repoTeachers = await f.organizations.listActiveTeachersForDivision(
+			f.org.id,
+			f.pianoDivision.id,
+		);
+		expect(repoTeachers).toEqual([
+			{
+				id: teacherCustomer.id,
+				name: "Teacher Bach",
+			},
+		]);
+
+		// Verify customer service method excludes accompanists / non-teachers
+		const serviceTeachers = await f.service.listRegistrationTeachers(
+			f.org.slug,
+			f.festival.shortName,
+			parent.sessionId,
+			child.id,
+			f.pianoDivision.id,
+		);
+		expect(serviceTeachers.teachers).toEqual([
+			{
+				id: teacherCustomer.id,
+				name: "Teacher Bach",
+			},
+		]);
+	});
 });
