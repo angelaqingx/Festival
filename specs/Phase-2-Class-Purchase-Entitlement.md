@@ -14,34 +14,43 @@ product implementation. The source research is preserved verbatim in
 
 ## Simplest happy path
 
-1. A Festival Admin creates a Festival-scoped Solo class, for example Spring
-   Festival / Cello-Bass / ages 8 through 10. The class has an active,
-   same-tenant division and subtype, inclusive minimum and maximum ages, price,
-   capacity, performance limits, and the required Festival context.
-2. The class receives one digital, no-shipping Shopify product and one trusted
-   variant. Festival reads it back and audits the association.
-3. A Shopify-authenticated parent adds a child. Festival derives an age
-   snapshot using the configured registration-age date and discards the
-   birthday.
-4. On one progressive entry-selection screen, the parent selects a child;
-   Division is then enabled. After both child and division are selected,
-   Teacher is enabled and must be selected. Festival snapshots the selected
-   teacher on the registration and shows only active, Festival-, division-, and
-   age-eligible classes.
-5. After choosing a class, the parent completes Festival information: musical
-   piece title, composer, movements, positive duration, and an optional
-   accompanist with an explicit **None** option. Festival owns this draft.
-6. Only a complete draft may create checkout. Festival creates one direct
-   Shopify checkout for that one class and sends the parent to Shopify payment.
-7. A browser return is only a processing state. Verified paid-order processing,
-   not the browser, creates the entitlement. Capacity allocation is explicitly
-   deferred to Phase 3's verified-payment workflow.
-8. The parent may start a separate flow for another child or another class for
-   the same child. The initial implementation has one class per checkout.
-9. The parent may edit Festival information only before the server-enforced
-   cutoff at Festival start minus six weeks in the Festival timezone. At or
-   after that timestamp, edits are rejected. Valid edits never change the
-   entitlement, paid price, selected class, or later allocation outcome.
+Maya Chen, a Festival Admin for Spring Festival, creates a Solo class for the
+Cello-Bass division for performers ages 8 through 10. The class belongs to
+Spring Festival and uses an active division and subtype from the same tenant.
+Maya sets its inclusive minimum and maximum ages, price, capacity, performance
+limits, and all required Festival context. Festival then gives that class one
+digital, no-shipping Shopify product with one trusted variant, reads the
+product back, and audits the association.
+
+Jordan Lee signs in through Shopify and adds their child, Alex Lee. Jordan
+provides Alex's birthday, but Festival uses it only to derive Alex's age
+snapshot from the configured registration-age date; Festival does not retain
+the birthday. On the entry-selection screen, Jordan selects Alex first. This
+enables Division. Once Jordan has selected both Alex and Cello-Bass, Teacher is
+enabled and Jordan must choose Alex's teacher, Dr. Rivera. Festival snapshots
+Dr. Rivera on the registration. The class list contains only classes that are
+active and eligible for Spring Festival, the selected division, and Alex's
+derived age snapshot.
+
+Jordan chooses the Cello-Bass Solo class and completes the Festival-owned
+registration draft: the musical piece title, composer, movements, and a
+positive duration. Jordan may select an accompanist, such as Sam Patel, or
+explicitly choose **None**. Festival will not offer checkout until this draft
+is complete. It then creates a direct Shopify checkout for this one class only
+and sends Jordan to Shopify to pay.
+
+When Jordan returns from Shopify, Festival shows only a processing state. The
+browser return does not create an entitlement. Festival creates it only after
+verified paid-order processing. Capacity allocation is deliberately outside
+this Phase 2 flow: it belongs to Phase 3's verified-payment workflow.
+
+Jordan can begin another independent purchase flow for a second child, or for
+another class for Alex. The initial experience always has one class per
+checkout. Before Spring Festival begins, Jordan may correct or enhance the
+Festival information on the registration, but only until the server-enforced
+cutoff of six weeks before the Festival start in the Festival timezone. At or
+after that timestamp, Festival rejects edits. A permitted edit never changes
+the entitlement, paid price, selected class, or any later allocation outcome.
 
 ## Work breakdown
 
