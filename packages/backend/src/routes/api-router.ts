@@ -1201,6 +1201,71 @@ export function buildApiRouter(
 		},
 	);
 
+	router.get(
+		"/organizations/:slug/customer/festivals/:festivalShortName/registration/teachers",
+		async (c) => {
+			try {
+				assertNoBearerPrincipal(c.req.header("Authorization"));
+				if (!customerAccountService)
+					throw new AppError("Customer Account is unavailable.", 503);
+				return c.json(
+					await customerAccountService.listRegistrationTeachers(
+						c.req.param("slug"),
+						c.req.param("festivalShortName"),
+						getCookie(c, CUSTOMER_SESSION_COOKIE),
+						c.req.query("childId") ?? "",
+						c.req.query("divisionId") ?? "",
+					),
+				);
+			} catch (error) {
+				return toJsonError(c, error);
+			}
+		},
+	);
+
+	router.get(
+		"/organizations/:slug/customer/festivals/:festivalShortName/registration/eligible-classes",
+		async (c) => {
+			try {
+				assertNoBearerPrincipal(c.req.header("Authorization"));
+				if (!customerAccountService)
+					throw new AppError("Customer Account is unavailable.", 503);
+				return c.json(
+					await customerAccountService.listRegistrationEligibleClasses(
+						c.req.param("slug"),
+						c.req.param("festivalShortName"),
+						getCookie(c, CUSTOMER_SESSION_COOKIE),
+						c.req.query("childId") ?? "",
+						c.req.query("divisionId") ?? "",
+						c.req.query("teacherId") ?? "",
+					),
+				);
+			} catch (error) {
+				return toJsonError(c, error);
+			}
+		},
+	);
+
+	router.get(
+		"/organizations/:slug/customer/festivals/:festivalShortName/registration/accompanists",
+		async (c) => {
+			try {
+				assertNoBearerPrincipal(c.req.header("Authorization"));
+				if (!customerAccountService)
+					throw new AppError("Customer Account is unavailable.", 503);
+				return c.json(
+					await customerAccountService.listRegistrationAccompanists(
+						c.req.param("slug"),
+						c.req.param("festivalShortName"),
+						getCookie(c, CUSTOMER_SESSION_COOKIE),
+					),
+				);
+			} catch (error) {
+				return toJsonError(c, error);
+			}
+		},
+	);
+
 	router.post(
 		"/organizations/:slug/customer/accompanist-membership",
 		async (c) => {

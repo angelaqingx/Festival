@@ -291,3 +291,26 @@ export function deriveEntitlementDates(input: {
 		endsOn: addCalendarDays(startsOn, input.durationDays),
 	};
 }
+
+export interface RegistrationTeacherSummary {
+	readonly id: string;
+	readonly name: string;
+}
+
+export interface RegistrationAccompanistSummary {
+	readonly id: string;
+	readonly name: string;
+}
+
+export interface RegistrationEligibleClass {
+	readonly id: string;
+	readonly displayName: string;
+	readonly divisionId: string;
+	readonly classSubtypeId: string;
+	readonly minimumAge: number;
+	readonly maximumAge: number;
+	readonly price: string;
+	readonly maximumPerformancePieces: number;
+	readonly performanceMinutes: number;
+	readonly capacity: number;
+}

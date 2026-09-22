@@ -109,6 +109,21 @@ export const CURRENT_ROUTE_SECURITY = [
 		authenticationClass: "customer",
 	},
 	{
+		method: "GET",
+		path: "/api/organizations/:slug/customer/festivals/:festivalShortName/registration/teachers",
+		authenticationClass: "customer",
+	},
+	{
+		method: "GET",
+		path: "/api/organizations/:slug/customer/festivals/:festivalShortName/registration/eligible-classes",
+		authenticationClass: "customer",
+	},
+	{
+		method: "GET",
+		path: "/api/organizations/:slug/customer/festivals/:festivalShortName/registration/accompanists",
+		authenticationClass: "customer",
+	},
+	{
 		method: "POST",
 		path: "/api/shopify/webhooks/orders-paid",
 		authenticationClass: "shopify-webhook",
