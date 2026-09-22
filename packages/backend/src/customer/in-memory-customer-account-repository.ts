@@ -345,9 +345,9 @@ export class InMemoryCustomerAccountRepository
 		input: Omit<
 			FestivalChildAgeSnapshot,
 			"id" | "createdAtIso" | "supersededAtIso"
-		>,
+		> & { createdAtIso?: string },
 	) {
-		const now = new Date().toISOString();
+		const now = input.createdAtIso ?? new Date().toISOString();
 		for (const snapshot of this.childAgeSnapshots.values())
 			if (
 				snapshot.organizationId === input.organizationId &&
@@ -358,7 +358,14 @@ export class InMemoryCustomerAccountRepository
 					...snapshot,
 					supersededAtIso: now,
 				});
-		const snapshot = { ...input, id: randomUUID(), createdAtIso: now };
+		const snapshot = {
+			organizationId: input.organizationId,
+			childId: input.childId,
+			age: input.age,
+			validUntilIso: input.validUntilIso,
+			id: randomUUID(),
+			createdAtIso: now,
+		};
 		this.childAgeSnapshots.set(snapshot.id, snapshot);
 		return snapshot;
 	}

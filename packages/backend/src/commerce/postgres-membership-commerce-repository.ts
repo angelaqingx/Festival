@@ -1,15 +1,21 @@
 import { randomUUID } from "node:crypto";
 import type {
+	ClassEntitlement,
+	ClassEntitlementStatus,
+	CreateClassEntitlementInput,
 	CreateEntitlementGrantSnapshotInput,
 	EntitlementClass,
 	EntitlementGrantSnapshot,
 } from "@festival/common";
 import {
 	addCalendarDays,
+	assertValidClassEntitlementInput,
 	assertValidEntitlementGrantSnapshotInput,
+	isClassEntitlementStatus,
 } from "@festival/common";
 import { sql } from "bun";
 import { initializePostgresSchema } from "../repo/postgres-schema.js";
+import type { ClassEntitlementFilter } from "./class-entitlement-repository.js";
 import type {
 	MembershipCommerceRepository,
 	MembershipDecisionStatus,
@@ -106,6 +112,27 @@ function reconciliationRun(
 			row.failure_category === null
 				? undefined
 				: (row.failure_category as MembershipReconciliationRun["failureCategory"]),
+	};
+}
+
+function classEntitlementFromRow(
+	row: Record<string, unknown>,
+): ClassEntitlement {
+	return {
+		id: String(row.id),
+		organizationId: String(row.organization_id),
+		festivalId: String(row.festival_id),
+		festivalClassId: String(row.festival_class_id),
+		parentCustomerId: String(row.parent_customer_id),
+		childId: String(row.child_id),
+		checkoutIntentId: String(row.checkout_intent_id),
+		shopifyOrderGid: String(row.shopify_order_gid),
+		shopifyOrderLineGid: String(row.shopify_order_line_gid),
+		paidAmountCents: Number(row.paid_amount_cents),
+		paidCurrencyCode: String(row.paid_currency_code),
+		status: row.status as ClassEntitlementStatus,
+		createdAt: String(row.created_at),
+		updatedAt: String(row.updated_at),
 	};
 }
 
@@ -291,21 +318,54 @@ export class PostgresMembershipCommerceRepository
 		};
 		projection?: ShopifyOrderProjectionInput;
 		grant?: CreateEntitlementGrantSnapshotInput;
+		classEntitlement?: CreateClassEntitlementInput;
 	}) {
 		await this.ensureReady();
 		if (input.decision.status === "approved") {
-			if (!input.grant) throw new Error("Approved decision requires a grant.");
-			assertValidEntitlementGrantSnapshotInput(input.grant);
-			if (
-				input.grant.organizationId !== input.decision.organizationId ||
-				input.grant.customerId !== input.decision.customerId ||
-				input.grant.checkoutIntentId !== input.decision.checkoutIntentId ||
-				input.grant.shopifyOrderGid !== input.decision.shopifyOrderGid ||
-				input.grant.shopifyOrderLineGid !== input.decision.shopifyOrderLineGid
-			)
-				throw new Error("Approved decision and grant do not match.");
-		} else if (input.grant) {
-			throw new Error("Non-approved decision cannot create a grant.");
+			if (input.grant && input.classEntitlement) {
+				throw new Error(
+					"Approved decision cannot specify both a membership grant and class entitlement.",
+				);
+			}
+			if (!input.grant && !input.classEntitlement) {
+				throw new Error(
+					"Approved decision requires a grant or class entitlement.",
+				);
+			}
+			if (input.grant) {
+				assertValidEntitlementGrantSnapshotInput(input.grant);
+				if (
+					input.grant.organizationId !== input.decision.organizationId ||
+					input.grant.customerId !== input.decision.customerId ||
+					input.grant.checkoutIntentId !== input.decision.checkoutIntentId ||
+					input.grant.shopifyOrderGid !== input.decision.shopifyOrderGid ||
+					input.grant.shopifyOrderLineGid !== input.decision.shopifyOrderLineGid
+				)
+					throw new Error("Approved decision and grant do not match.");
+			}
+			if (input.classEntitlement) {
+				assertValidClassEntitlementInput(input.classEntitlement);
+				if (
+					input.classEntitlement.organizationId !==
+						input.decision.organizationId ||
+					input.classEntitlement.parentCustomerId !==
+						input.decision.customerId ||
+					input.classEntitlement.checkoutIntentId !==
+						input.decision.checkoutIntentId ||
+					input.classEntitlement.shopifyOrderGid !==
+						input.decision.shopifyOrderGid ||
+					input.classEntitlement.shopifyOrderLineGid !==
+						input.decision.shopifyOrderLineGid
+				) {
+					throw new Error(
+						"Approved decision and class entitlement do not match.",
+					);
+				}
+			}
+		} else if (input.grant || input.classEntitlement) {
+			throw new Error(
+				"Non-approved decision cannot create a grant or class entitlement.",
+			);
 		}
 		if (
 			input.projection &&
@@ -343,7 +403,17 @@ export class PostgresMembershipCommerceRepository
 					`UPDATE ${this.schema}.shopify_webhook_deliveries SET status = 'processed', failure_category = NULL, processed_at = NOW() WHERE id = $1`,
 					[input.deliveryId],
 				);
-				return { decision: decision(existingRows[0]), existing: true };
+				const existingClass = input.decision.shopifyOrderLineGid
+					? await this.findClassEntitlementByOrderLine(
+							input.decision.organizationId,
+							input.decision.shopifyOrderLineGid,
+						)
+					: null;
+				return {
+					decision: decision(existingRows[0]),
+					classEntitlement: existingClass ?? undefined,
+					existing: true,
+				};
 			}
 			if (input.decision.checkoutIntentId) {
 				const correlatedRows = (await tx.unsafe(
@@ -358,11 +428,22 @@ export class PostgresMembershipCommerceRepository
 						`UPDATE ${this.schema}.shopify_webhook_deliveries SET status = 'processed', failure_category = NULL, processing_started_at = NULL, processed_at = NOW() WHERE id = $1`,
 						[input.deliveryId],
 					);
-					return { decision: decision(correlatedRows[0]), existing: true };
+					const existingClass = input.decision.shopifyOrderLineGid
+						? await this.findClassEntitlementByOrderLine(
+								input.decision.organizationId,
+								input.decision.shopifyOrderLineGid,
+							)
+						: null;
+					return {
+						decision: decision(correlatedRows[0]),
+						classEntitlement: existingClass ?? undefined,
+						existing: true,
+					};
 				}
 			}
 			let finalDecision = input.decision;
 			let grantInput = input.grant;
+			const classEntitlementInput = input.classEntitlement;
 			if (grantInput && finalDecision.customerId) {
 				if (!grantInput.verifiedIdentityEmail) {
 					finalDecision = {
@@ -543,6 +624,34 @@ export class PostgresMembershipCommerceRepository
 					createdAtIso: new Date().toISOString(),
 				};
 			}
+			let createdClassEntitlement: ClassEntitlement | undefined;
+			if (classEntitlementInput) {
+				const entitlementId = classEntitlementInput.id ?? randomUUID();
+				const entitlementRows = (await tx.unsafe(
+					`INSERT INTO ${this.schema}.class_entitlements (
+						id, organization_id, festival_id, festival_class_id, parent_customer_id, child_id, checkout_intent_id, shopify_order_gid, shopify_order_line_gid, paid_amount_cents, paid_currency_code, status, created_at, updated_at
+					) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW())
+					ON CONFLICT (organization_id, shopify_order_line_gid) DO UPDATE SET updated_at = ${this.schema}.class_entitlements.updated_at
+					RETURNING id, organization_id, festival_id, festival_class_id, parent_customer_id, child_id, checkout_intent_id, shopify_order_gid, shopify_order_line_gid, paid_amount_cents, paid_currency_code, status, created_at::text, updated_at::text`,
+					[
+						entitlementId,
+						classEntitlementInput.organizationId,
+						classEntitlementInput.festivalId,
+						classEntitlementInput.festivalClassId,
+						classEntitlementInput.parentCustomerId,
+						classEntitlementInput.childId,
+						classEntitlementInput.checkoutIntentId,
+						classEntitlementInput.shopifyOrderGid,
+						classEntitlementInput.shopifyOrderLineGid,
+						classEntitlementInput.paidAmountCents,
+						classEntitlementInput.paidCurrencyCode,
+						classEntitlementInput.status ?? "confirmed",
+					],
+				)) as Array<Record<string, unknown>>;
+				if (entitlementRows[0]) {
+					createdClassEntitlement = classEntitlementFromRow(entitlementRows[0]);
+				}
+			}
 			const now = finalDecision.updatedAtIso;
 			const decisionRows = existingRows[0]
 				? ((await tx.unsafe(
@@ -589,6 +698,7 @@ export class PostgresMembershipCommerceRepository
 			return {
 				decision: decision(decisionRows[0]),
 				grant: createdGrant,
+				classEntitlement: createdClassEntitlement,
 				existing: false,
 			};
 		});
@@ -634,5 +744,140 @@ export class PostgresMembershipCommerceRepository
 		)) as Array<Record<string, unknown>>;
 		if (!rows[0]) throw new Error("Reconciliation run was not recorded.");
 		return reconciliationRun(rows[0]);
+	}
+
+	async createClassEntitlement(
+		input: CreateClassEntitlementInput,
+	): Promise<ClassEntitlement> {
+		await this.ensureReady();
+		assertValidClassEntitlementInput(input);
+		const id = input.id ?? randomUUID();
+		const rows = (await sql.unsafe(
+			`INSERT INTO ${this.schema}.class_entitlements (
+				id, organization_id, festival_id, festival_class_id, parent_customer_id, child_id, checkout_intent_id, shopify_order_gid, shopify_order_line_gid, paid_amount_cents, paid_currency_code, status, created_at, updated_at
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW())
+			ON CONFLICT (organization_id, shopify_order_line_gid) DO NOTHING
+			RETURNING id, organization_id, festival_id, festival_class_id, parent_customer_id, child_id, checkout_intent_id, shopify_order_gid, shopify_order_line_gid, paid_amount_cents, paid_currency_code, status, created_at::text, updated_at::text`,
+			[
+				id,
+				input.organizationId,
+				input.festivalId,
+				input.festivalClassId,
+				input.parentCustomerId,
+				input.childId,
+				input.checkoutIntentId,
+				input.shopifyOrderGid,
+				input.shopifyOrderLineGid,
+				input.paidAmountCents,
+				input.paidCurrencyCode,
+				input.status ?? "confirmed",
+			],
+		)) as Array<Record<string, unknown>>;
+		if (rows[0]) return classEntitlementFromRow(rows[0]);
+		const existing = await this.findClassEntitlementByOrderLine(
+			input.organizationId,
+			input.shopifyOrderLineGid,
+		);
+		if (!existing) {
+			throw new Error("Class entitlement could not be created.");
+		}
+		return existing;
+	}
+
+	async getClassEntitlement(
+		organizationId: string,
+		id: string,
+	): Promise<ClassEntitlement | null> {
+		await this.ensureReady();
+		const rows = (await sql.unsafe(
+			`SELECT id, organization_id, festival_id, festival_class_id, parent_customer_id, child_id, checkout_intent_id, shopify_order_gid, shopify_order_line_gid, paid_amount_cents, paid_currency_code, status, created_at::text, updated_at::text
+			FROM ${this.schema}.class_entitlements
+			WHERE organization_id = $1 AND id = $2`,
+			[organizationId, id],
+		)) as Array<Record<string, unknown>>;
+		return rows[0] ? classEntitlementFromRow(rows[0]) : null;
+	}
+
+	async listClassEntitlements(
+		filter: ClassEntitlementFilter,
+	): Promise<ClassEntitlement[]> {
+		await this.ensureReady();
+		const conditions: string[] = ["organization_id = $1"];
+		const params: unknown[] = [filter.organizationId];
+		if (filter.festivalId) {
+			params.push(filter.festivalId);
+			conditions.push(`festival_id = $${params.length}`);
+		}
+		if (filter.festivalClassId) {
+			params.push(filter.festivalClassId);
+			conditions.push(`festival_class_id = $${params.length}`);
+		}
+		if (filter.parentCustomerId) {
+			params.push(filter.parentCustomerId);
+			conditions.push(`parent_customer_id = $${params.length}`);
+		}
+		if (filter.childId) {
+			params.push(filter.childId);
+			conditions.push(`child_id = $${params.length}`);
+		}
+		if (filter.status) {
+			params.push(filter.status);
+			conditions.push(`status = $${params.length}`);
+		}
+		const rows = (await sql.unsafe(
+			`SELECT id, organization_id, festival_id, festival_class_id, parent_customer_id, child_id, checkout_intent_id, shopify_order_gid, shopify_order_line_gid, paid_amount_cents, paid_currency_code, status, created_at::text, updated_at::text
+			FROM ${this.schema}.class_entitlements
+			WHERE ${conditions.join(" AND ")}
+			ORDER BY created_at DESC`,
+			params,
+		)) as Array<Record<string, unknown>>;
+		return rows.map(classEntitlementFromRow);
+	}
+
+	async findClassEntitlementByOrderLine(
+		organizationId: string,
+		shopifyOrderLineGid: string,
+	): Promise<ClassEntitlement | null> {
+		await this.ensureReady();
+		const rows = (await sql.unsafe(
+			`SELECT id, organization_id, festival_id, festival_class_id, parent_customer_id, child_id, checkout_intent_id, shopify_order_gid, shopify_order_line_gid, paid_amount_cents, paid_currency_code, status, created_at::text, updated_at::text
+			FROM ${this.schema}.class_entitlements
+			WHERE organization_id = $1 AND shopify_order_line_gid = $2`,
+			[organizationId, shopifyOrderLineGid],
+		)) as Array<Record<string, unknown>>;
+		return rows[0] ? classEntitlementFromRow(rows[0]) : null;
+	}
+
+	async findClassEntitlementByIntentId(
+		organizationId: string,
+		checkoutIntentId: string,
+	): Promise<ClassEntitlement | null> {
+		await this.ensureReady();
+		const rows = (await sql.unsafe(
+			`SELECT id, organization_id, festival_id, festival_class_id, parent_customer_id, child_id, checkout_intent_id, shopify_order_gid, shopify_order_line_gid, paid_amount_cents, paid_currency_code, status, created_at::text, updated_at::text
+			FROM ${this.schema}.class_entitlements
+			WHERE organization_id = $1 AND checkout_intent_id = $2`,
+			[organizationId, checkoutIntentId],
+		)) as Array<Record<string, unknown>>;
+		return rows[0] ? classEntitlementFromRow(rows[0]) : null;
+	}
+
+	async updateClassEntitlementStatus(
+		organizationId: string,
+		id: string,
+		status: ClassEntitlementStatus,
+	): Promise<ClassEntitlement | null> {
+		await this.ensureReady();
+		if (!isClassEntitlementStatus(status)) {
+			throw new Error("Class entitlement status is invalid.");
+		}
+		const rows = (await sql.unsafe(
+			`UPDATE ${this.schema}.class_entitlements
+			SET status = $3, updated_at = NOW()
+			WHERE organization_id = $1 AND id = $2
+			RETURNING id, organization_id, festival_id, festival_class_id, parent_customer_id, child_id, checkout_intent_id, shopify_order_gid, shopify_order_line_gid, paid_amount_cents, paid_currency_code, status, created_at::text, updated_at::text`,
+			[organizationId, id, status],
+		)) as Array<Record<string, unknown>>;
+		return rows[0] ? classEntitlementFromRow(rows[0]) : null;
 	}
 }

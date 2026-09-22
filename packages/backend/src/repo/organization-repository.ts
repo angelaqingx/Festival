@@ -188,7 +188,9 @@ export interface CreateFestivalClassConfigurationInput
 	extends Omit<
 		FestivalClassConfiguration,
 		"id" | "createdAtIso" | "updatedAtIso" | "isActive"
-	> {}
+	> {
+	isActive?: boolean;
+}
 
 export interface CreateAccompanistMembershipGrantInput
 	extends Omit<

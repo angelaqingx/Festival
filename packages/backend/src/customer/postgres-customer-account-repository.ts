@@ -526,11 +526,11 @@ export class PostgresCustomerAccountRepository
 		input: Omit<
 			FestivalChildAgeSnapshot,
 			"id" | "createdAtIso" | "supersededAtIso"
-		>,
+		> & { createdAtIso?: string },
 	): Promise<FestivalChildAgeSnapshot> {
 		await this.ensureReady();
 		const id = randomUUID();
-		const createdAtIso = new Date().toISOString();
+		const createdAtIso = input.createdAtIso ?? new Date().toISOString();
 		await sql.unsafe(
 			`UPDATE ${this.schema}.festival_child_age_snapshots SET superseded_at=$3 WHERE organization_id=$1 AND child_id=$2 AND superseded_at IS NULL`,
 			[input.organizationId, input.childId, createdAtIso],

@@ -1,3 +1,8 @@
+import type {
+	EntitlementClass,
+	TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
+} from "./entitlements.js";
+
 export const SHOPIFY_VERIFICATION_STATUSES = [
 	"unknown",
 	"ok",
@@ -388,8 +393,3 @@ export function validateMembershipProductInput(
 		input: normalizedInput as CreateMembershipProductInput,
 	};
 }
-
-import type {
-	EntitlementClass,
-	TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
-} from "./entitlements.js";

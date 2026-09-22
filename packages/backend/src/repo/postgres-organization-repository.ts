@@ -2097,7 +2097,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 	): Promise<FestivalClassConfiguration> {
 		await this.ensureReady();
 		const rows = (await sql.unsafe(
-			`INSERT INTO ${this.schema}.festival_class_configurations (id, organization_id, festival_id, display_name, class_subtype_id, division_id, minimum_age, maximum_age, price, maximum_performance_pieces, performance_minutes, capacity, shopify_product_gid, shopify_variant_gid) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id, organization_id, festival_id, display_name, class_subtype_id, division_id, minimum_age, maximum_age, price, maximum_performance_pieces, performance_minutes, capacity, is_active, shopify_product_gid, shopify_variant_gid, created_at, updated_at`,
+			`INSERT INTO ${this.schema}.festival_class_configurations (id, organization_id, festival_id, display_name, class_subtype_id, division_id, minimum_age, maximum_age, price, maximum_performance_pieces, performance_minutes, capacity, is_active, shopify_product_gid, shopify_variant_gid) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id, organization_id, festival_id, display_name, class_subtype_id, division_id, minimum_age, maximum_age, price, maximum_performance_pieces, performance_minutes, capacity, is_active, shopify_product_gid, shopify_variant_gid, created_at, updated_at`,
 			[
 				randomUUID(),
 				input.organizationId,
@@ -2111,6 +2111,7 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
 				input.maximumPerformancePieces,
 				input.performanceMinutes,
 				input.capacity,
+				input.isActive ?? true,
 				input.shopifyProductGid,
 				input.shopifyVariantGid,
 			],

@@ -3,7 +3,14 @@ import { PostgresCheckoutRepository } from "../src/checkout/postgres-checkout-re
 import { buildCanonicalPostgresSchemaSql } from "../src/repo/postgres-schema.js";
 
 async function source() {
-	return Bun.file("src/checkout/postgres-checkout-repository.ts").text();
+	return (
+		await Bun.file(
+			new URL(
+				"../src/checkout/postgres-checkout-repository.ts",
+				import.meta.url,
+			),
+		).text()
+	).replace(/\r\n/g, "\n");
 }
 
 describe("PostgresCheckoutRepository", () => {

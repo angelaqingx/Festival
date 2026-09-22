@@ -5,6 +5,7 @@ import type {
 	CheckoutCartRecord,
 	CheckoutIntentOutcome,
 	CheckoutIntentRecord,
+	CheckoutIntentType,
 	CheckoutRepository,
 	CreateCheckoutIntentInput,
 } from "./checkout-repository.js";
@@ -37,7 +38,7 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
 		idempotencyKey: string;
 	}) {
 		const rows = (await sql.unsafe(
-			`SELECT id, correlation_id, organization_id, customer_id, session_id, idempotency_key, offering_id, entitlement_class, duration_days, shopify_product_gid, shopify_variant_gid, policy_version, division_id, division_name_snapshot, staff_access_consent, amount, currency_code, cart_reference, status, expires_at::text, created_at::text FROM ${this.schema}.checkout_intents WHERE organization_id = $1 AND customer_id = $2 AND session_id = $3 AND idempotency_key = $4`,
+			`SELECT id, correlation_id, organization_id, customer_id, session_id, idempotency_key, intent_type, offering_id, entitlement_class, duration_days, festival_class_id, child_id, shopify_product_gid, shopify_variant_gid, policy_version, division_id, division_name_snapshot, staff_access_consent, amount, currency_code, cart_reference, status, expires_at::text, created_at::text FROM ${this.schema}.checkout_intents WHERE organization_id = $1 AND customer_id = $2 AND session_id = $3 AND idempotency_key = $4`,
 			[
 				input.organizationId,
 				input.customerId,
@@ -54,13 +55,15 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
 			await tx.unsafe("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
 				`${record.organizationId}:${record.customerId}`,
 			]);
-			const activeGrant = (await tx.unsafe(
-				`SELECT 1 FROM ${this.schema}.membership_entitlements grants JOIN ${this.schema}.organizations organization ON organization.id = grants.organization_id WHERE grants.organization_id = $1 AND grants.customer_id = $2 AND grants.entitlement_class = $3 AND grants.revoked_at IS NULL AND grants.starts_on > (NOW() AT TIME ZONE organization.timezone)::date LIMIT 1`,
-				[record.organizationId, record.customerId, record.entitlementClass],
-			)) as Array<Record<string, unknown>>;
-			if (activeGrant[0]) return { kind: "active" as const };
+			if (record.entitlementClass) {
+				const activeGrant = (await tx.unsafe(
+					`SELECT 1 FROM ${this.schema}.membership_entitlements grants JOIN ${this.schema}.organizations organization ON organization.id = grants.organization_id WHERE grants.organization_id = $1 AND grants.customer_id = $2 AND grants.entitlement_class = $3 AND grants.revoked_at IS NULL AND grants.starts_on > (NOW() AT TIME ZONE organization.timezone)::date LIMIT 1`,
+					[record.organizationId, record.customerId, record.entitlementClass],
+				)) as Array<Record<string, unknown>>;
+				if (activeGrant[0]) return { kind: "active" as const };
+			}
 			const existingRows = (await tx.unsafe(
-				`SELECT id, correlation_id, organization_id, customer_id, session_id, idempotency_key, offering_id, entitlement_class, duration_days, shopify_product_gid, shopify_variant_gid, policy_version, division_id, division_name_snapshot, staff_access_consent, amount, currency_code, cart_reference, status, expires_at::text, created_at::text FROM ${this.schema}.checkout_intents WHERE organization_id = $1 AND customer_id = $2 AND session_id = $3 AND idempotency_key = $4 FOR UPDATE`,
+				`SELECT id, correlation_id, organization_id, customer_id, session_id, idempotency_key, intent_type, offering_id, entitlement_class, duration_days, festival_class_id, child_id, shopify_product_gid, shopify_variant_gid, policy_version, division_id, division_name_snapshot, staff_access_consent, amount, currency_code, cart_reference, status, expires_at::text, created_at::text FROM ${this.schema}.checkout_intents WHERE organization_id = $1 AND customer_id = $2 AND session_id = $3 AND idempotency_key = $4 FOR UPDATE`,
 				[
 					record.organizationId,
 					record.customerId,
@@ -98,7 +101,7 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
 			const id = randomUUID(),
 				correlationId = randomUUID();
 			const rows = (await tx.unsafe(
-				`INSERT INTO ${this.schema}.checkout_intents (id, correlation_id, organization_id, customer_id, session_id, idempotency_key, offering_id, entitlement_class, duration_days, shopify_product_gid, shopify_variant_gid, policy_version, division_id, division_name_snapshot, staff_access_consent, amount, currency_code, status, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'creating',$18) RETURNING id, correlation_id, organization_id, customer_id, session_id, idempotency_key, offering_id, entitlement_class, duration_days, shopify_product_gid, shopify_variant_gid, policy_version, division_id, division_name_snapshot, staff_access_consent, amount, currency_code, cart_reference, status, expires_at::text, created_at::text`,
+				`INSERT INTO ${this.schema}.checkout_intents (id, correlation_id, organization_id, customer_id, session_id, idempotency_key, intent_type, offering_id, entitlement_class, duration_days, festival_class_id, child_id, shopify_product_gid, shopify_variant_gid, policy_version, division_id, division_name_snapshot, staff_access_consent, amount, currency_code, status, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'creating',$21) RETURNING id, correlation_id, organization_id, customer_id, session_id, idempotency_key, intent_type, offering_id, entitlement_class, duration_days, festival_class_id, child_id, shopify_product_gid, shopify_variant_gid, policy_version, division_id, division_name_snapshot, staff_access_consent, amount, currency_code, cart_reference, status, expires_at::text, created_at::text`,
 				[
 					id,
 					correlationId,
@@ -106,12 +109,15 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
 					record.customerId,
 					record.sessionId,
 					record.idempotencyKey,
-					record.offeringId,
-					record.entitlementClass,
-					record.durationDays,
+					record.intentType ?? "membership",
+					record.offeringId ?? null,
+					record.entitlementClass ?? null,
+					record.durationDays ?? null,
+					record.festivalClassId ?? null,
+					record.childId ?? null,
 					record.shopifyProductGid,
 					record.shopifyVariantGid,
-					record.policyVersion,
+					record.policyVersion ?? null,
 					record.divisionId ?? null,
 					record.divisionNameSnapshot ?? null,
 					record.staffAccessConsent ?? false,
@@ -207,7 +213,7 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
 	}
 	async findIntentByCorrelation(organizationId: string, correlationId: string) {
 		const rows = (await sql.unsafe(
-			`SELECT id, correlation_id, organization_id, customer_id, session_id, idempotency_key, offering_id, entitlement_class, duration_days, shopify_product_gid, shopify_variant_gid, policy_version, division_id, division_name_snapshot, staff_access_consent, amount, currency_code, cart_reference, status, expires_at::text, created_at::text FROM ${this.schema}.checkout_intents WHERE organization_id = $1 AND correlation_id = $2`,
+			`SELECT id, correlation_id, organization_id, customer_id, session_id, idempotency_key, intent_type, offering_id, entitlement_class, duration_days, festival_class_id, child_id, shopify_product_gid, shopify_variant_gid, policy_version, division_id, division_name_snapshot, staff_access_consent, amount, currency_code, cart_reference, status, expires_at::text, created_at::text FROM ${this.schema}.checkout_intents WHERE organization_id = $1 AND correlation_id = $2`,
 			[organizationId, correlationId],
 		)) as Array<Record<string, unknown>>;
 		return rows[0] ? this.intent(rows[0]) : null;
@@ -253,12 +259,28 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
 			customerId: String(row.customer_id),
 			sessionId: String(row.session_id),
 			idempotencyKey: String(row.idempotency_key),
-			offeringId: String(row.offering_id),
-			entitlementClass: "teacher_membership",
-			durationDays: Number(row.duration_days),
+			intentType: (row.intent_type as CheckoutIntentType) ?? "membership",
+			offeringId:
+				row.offering_id === null || row.offering_id === undefined
+					? null
+					: String(row.offering_id),
+			entitlementClass:
+				(row.entitlement_class as "teacher_membership" | null) ?? null,
+			durationDays:
+				row.duration_days !== null && row.duration_days !== undefined
+					? Number(row.duration_days)
+					: null,
+			festivalClassId:
+				row.festival_class_id === null || row.festival_class_id === undefined
+					? null
+					: String(row.festival_class_id),
+			childId:
+				row.child_id === null || row.child_id === undefined
+					? null
+					: String(row.child_id),
 			shopifyProductGid: String(row.shopify_product_gid),
 			shopifyVariantGid: String(row.shopify_variant_gid),
-			policyVersion: "v1",
+			policyVersion: (row.policy_version as "v1" | null) ?? null,
 			divisionId:
 				row.division_id === null || row.division_id === undefined
 					? null

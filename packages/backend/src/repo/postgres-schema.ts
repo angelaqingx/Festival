@@ -225,12 +225,32 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 			id TEXT PRIMARY KEY, correlation_id TEXT NOT NULL UNIQUE,
 			organization_id TEXT NOT NULL REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
 			customer_id TEXT NOT NULL, session_id TEXT NOT NULL, idempotency_key TEXT NOT NULL,
-			offering_id TEXT NOT NULL REFERENCES ${safeSchema}.products (id), entitlement_class TEXT NOT NULL, duration_days INTEGER NOT NULL,
-			shopify_product_gid TEXT NOT NULL, shopify_variant_gid TEXT NOT NULL, policy_version TEXT NOT NULL,
+			intent_type TEXT NOT NULL DEFAULT 'membership' CHECK (intent_type IN ('membership', 'class_entry')),
+			offering_id TEXT NULL REFERENCES ${safeSchema}.products (id), entitlement_class TEXT NULL, duration_days INTEGER NULL,
+			festival_class_id TEXT NULL REFERENCES ${safeSchema}.festival_class_configurations (id),
+			child_id TEXT NULL REFERENCES ${safeSchema}.festival_children (id),
+			shopify_product_gid TEXT NOT NULL, shopify_variant_gid TEXT NOT NULL, policy_version TEXT NULL,
 			division_id TEXT NULL, division_name_snapshot TEXT NULL, staff_access_consent BOOLEAN NOT NULL DEFAULT FALSE,
 			amount TEXT NOT NULL, currency_code TEXT NOT NULL, cart_reference TEXT NULL REFERENCES ${safeSchema}.checkout_carts (reference),
 			status TEXT NOT NULL CHECK (status IN ('creating', 'ready', 'checkout_started', 'failed', 'expired', 'superseded', 'approved', 'rejected', 'needs_review')),
 			expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE TABLE IF NOT EXISTS ${safeSchema}.class_entitlements (
+			id TEXT PRIMARY KEY,
+			organization_id TEXT NOT NULL REFERENCES ${safeSchema}.organizations (id) ON DELETE CASCADE,
+			festival_id TEXT NOT NULL REFERENCES ${safeSchema}.festivals (id) ON DELETE RESTRICT,
+			festival_class_id TEXT NOT NULL REFERENCES ${safeSchema}.festival_class_configurations (id) ON DELETE RESTRICT,
+			parent_customer_id TEXT NOT NULL,
+			child_id TEXT NOT NULL REFERENCES ${safeSchema}.festival_children (id) ON DELETE RESTRICT,
+			checkout_intent_id TEXT NOT NULL REFERENCES ${safeSchema}.checkout_intents (id) ON DELETE RESTRICT,
+			shopify_order_gid TEXT NOT NULL,
+			shopify_order_line_gid TEXT NOT NULL,
+			paid_amount_cents INTEGER NOT NULL CHECK (paid_amount_cents >= 0),
+			paid_currency_code TEXT NOT NULL CHECK (paid_currency_code ~ '^[A-Z]{3}$'),
+			status TEXT NOT NULL CHECK (status IN ('confirmed', 'waitlisted', 'cancelled', 'revoked')),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			FOREIGN KEY (parent_customer_id, organization_id) REFERENCES ${safeSchema}.festival_customers(id, organization_id) ON DELETE RESTRICT
 		);
 		CREATE TABLE IF NOT EXISTS ${safeSchema}.membership_entitlement_cohorts (
 			organization_id TEXT NOT NULL, customer_id TEXT NOT NULL,
@@ -397,6 +417,15 @@ export function buildCanonicalPostgresSchemaSql(schema: string): string {
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_app_user_email_lower ON ${safeSchema}.app_user(lower(email));
 		CREATE UNIQUE INDEX IF NOT EXISTS volunteers_org_uid_key ON ${safeSchema}.volunteers (organization_id, firebase_uid);
 		CREATE UNIQUE INDEX IF NOT EXISTS volunteer_assignments_active_shift_key ON ${safeSchema}.volunteer_assignments (shift_id) WHERE status = 'active';
+		CREATE INDEX IF NOT EXISTS idx_class_entitlements_org_class ON ${safeSchema}.class_entitlements (organization_id, festival_class_id);
+		CREATE INDEX IF NOT EXISTS idx_class_entitlements_org_parent ON ${safeSchema}.class_entitlements (organization_id, parent_customer_id);
+		CREATE INDEX IF NOT EXISTS idx_class_entitlements_org_child ON ${safeSchema}.class_entitlements (organization_id, child_id);
+		CREATE INDEX IF NOT EXISTS idx_class_entitlements_org_festival ON ${safeSchema}.class_entitlements (organization_id, festival_id);
+		CREATE INDEX IF NOT EXISTS idx_class_entitlements_checkout_intent ON ${safeSchema}.class_entitlements (organization_id, checkout_intent_id);
+		CREATE INDEX IF NOT EXISTS idx_class_entitlements_shopify_order ON ${safeSchema}.class_entitlements (organization_id, shopify_order_gid);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_class_entitlements_order_line ON ${safeSchema}.class_entitlements (organization_id, shopify_order_line_gid);
+		CREATE INDEX IF NOT EXISTS idx_checkout_intents_org_class ON ${safeSchema}.checkout_intents (organization_id, festival_class_id) WHERE festival_class_id IS NOT NULL;
+		CREATE INDEX IF NOT EXISTS idx_checkout_intents_org_child ON ${safeSchema}.checkout_intents (organization_id, child_id) WHERE child_id IS NOT NULL;
 	`;
 }
 

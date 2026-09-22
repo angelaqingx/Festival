@@ -292,6 +292,127 @@ export function deriveEntitlementDates(input: {
 	};
 }
 
+export const CLASS_ENTITLEMENT_STATUSES = [
+	"confirmed",
+	"waitlisted",
+	"cancelled",
+	"revoked",
+] as const;
+export type ClassEntitlementStatus =
+	(typeof CLASS_ENTITLEMENT_STATUSES)[number];
+
+export function isClassEntitlementStatus(
+	value: unknown,
+): value is ClassEntitlementStatus {
+	return CLASS_ENTITLEMENT_STATUSES.includes(value as ClassEntitlementStatus);
+}
+
+export interface ClassEntitlement {
+	id: string;
+	organizationId: string;
+	festivalId: string;
+	festivalClassId: string;
+	parentCustomerId: string;
+	childId: string;
+	checkoutIntentId: string;
+	shopifyOrderGid: string;
+	shopifyOrderLineGid: string;
+	paidAmountCents: number;
+	paidCurrencyCode: string;
+	status: ClassEntitlementStatus;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export type CreateClassEntitlementInput = Omit<
+	ClassEntitlement,
+	"id" | "createdAt" | "updatedAt"
+> & {
+	id?: string;
+	status?: ClassEntitlementStatus;
+	createdAt?: string;
+	updatedAt?: string;
+};
+
+export function assertValidClassEntitlementInput(
+	input: CreateClassEntitlementInput,
+): void {
+	if (!input.organizationId?.trim()) {
+		throw new Error("Organization is required for a class entitlement.");
+	}
+	if (!input.festivalId?.trim()) {
+		throw new Error("Festival is required for a class entitlement.");
+	}
+	if (!input.festivalClassId?.trim()) {
+		throw new Error("Festival class is required for a class entitlement.");
+	}
+	if (!input.parentCustomerId?.trim()) {
+		throw new Error("Parent customer is required for a class entitlement.");
+	}
+	if (!input.childId?.trim()) {
+		throw new Error("Child is required for a class entitlement.");
+	}
+	if (!input.checkoutIntentId?.trim()) {
+		throw new Error("Checkout intent is required for a class entitlement.");
+	}
+	if (!input.shopifyOrderGid?.trim()) {
+		throw new Error("Shopify order is required for a class entitlement.");
+	}
+	if (!input.shopifyOrderLineGid?.trim()) {
+		throw new Error("Shopify order line is required for a class entitlement.");
+	}
+	if (
+		typeof input.paidAmountCents !== "number" ||
+		!Number.isInteger(input.paidAmountCents) ||
+		input.paidAmountCents < 0
+	) {
+		throw new Error("Paid amount in cents must be a non-negative integer.");
+	}
+	if (!/^[A-Z]{3}$/.test(input.paidCurrencyCode)) {
+		throw new Error("Paid currency must be a three-letter code.");
+	}
+	if (input.status !== undefined && !isClassEntitlementStatus(input.status)) {
+		throw new Error("Class entitlement status is invalid.");
+	}
+}
+
+export interface ClassCheckoutIntentPayload {
+	organizationId: string;
+	festivalId: string;
+	festivalClassId: string;
+	parentCustomerId: string;
+	childId: string;
+	amountCents: number;
+	currencyCode: string;
+}
+
+export interface ClassCheckoutIntent {
+	id: string;
+	correlationId: string;
+	organizationId: string;
+	intentType: "class_entry";
+	festivalId: string;
+	festivalClassId: string;
+	parentCustomerId: string;
+	childId: string;
+	amountCents: number;
+	currencyCode: string;
+	cartReference?: string | null;
+	status:
+		| "creating"
+		| "ready"
+		| "checkout_started"
+		| "failed"
+		| "expired"
+		| "superseded"
+		| "approved"
+		| "rejected"
+		| "needs_review";
+	expiresAt: string;
+	createdAt: string;
+	updatedAt?: string;
+}
+
 export interface RegistrationTeacherSummary {
 	readonly id: string;
 	readonly name: string;
