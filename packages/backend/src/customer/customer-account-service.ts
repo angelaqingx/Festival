@@ -13,15 +13,20 @@ import type {
 	CustomerProfile,
 	CustomerProfileResponse,
 	CustomerSessionResponse,
+	RegistrationAccompanistSummary,
+	RegistrationEligibleClass,
+	RegistrationTeacherSummary,
 	SaveCustomerAccountSettingsResponse,
 	UpdateCustomerProfileInput,
 } from "@festival/common";
 import {
 	CUSTOMER_ACCOUNT_API_VERSION,
 	CUSTOMER_STAFF_ACCESS_PRIVACY_NOTICE_VERSION,
+	calendarDateInTimezone,
 	validateCustomerAccountSettings,
 	validateCustomerProfileInput,
 } from "@festival/common";
+import { lifecycleForEntitlementRead } from "../commerce/entitlement-lifecycle.js";
 import { AppError } from "../errors/app-error.js";
 import type { OrganizationRepository } from "../repo/organization-repository.js";
 import {
@@ -1390,5 +1395,205 @@ export class CustomerAccountService {
 		url.searchParams.set("id_token_hint", bundle.idToken);
 		url.searchParams.set("post_logout_redirect_uri", this.urls(slug).logoutUrl);
 		return url.toString();
+	}
+
+	private async requireValidChildAge(
+		organizationId: string,
+		customerId: string,
+		childId: string,
+	): Promise<number> {
+		if (!childId || typeof childId !== "string") {
+			throw new AppError("Child ID is required.", 400);
+		}
+		const children = await this.repository.listChildren(
+			organizationId,
+			customerId,
+		);
+		const child = children.find((item) => item.id === childId);
+		if (!child) {
+			throw new AppError("Child was not found.", 404);
+		}
+		const ageSnapshots = await this.repository.listChildAgeSnapshots(
+			organizationId,
+			child.id,
+		);
+		const currentSnapshot = ageSnapshots.find(
+			(snapshot) => !snapshot.supersededAtIso,
+		);
+		if (
+			!currentSnapshot ||
+			new Date(currentSnapshot.validUntilIso) <= this.now()
+		) {
+			throw new AppError(
+				"Child age snapshot is expired or missing. Please refresh age before selecting classes.",
+				409,
+			);
+		}
+		return currentSnapshot.age;
+	}
+
+	private async requireFestival(
+		organizationId: string,
+		festivalShortName: string,
+	) {
+		if (!festivalShortName || typeof festivalShortName !== "string") {
+			throw new AppError("Festival short name is required.", 400);
+		}
+		const festival = await this.organizations.findFestivalByShortName(
+			organizationId,
+			festivalShortName,
+		);
+		if (!festival) {
+			throw new AppError("Festival was not found.", 404);
+		}
+		return festival;
+	}
+
+	private async requireActiveDivision(
+		organizationId: string,
+		divisionId: string,
+	) {
+		if (!divisionId || typeof divisionId !== "string") {
+			throw new AppError("Division ID is required.", 400);
+		}
+		const divisions = await this.organizations.listDivisions(
+			organizationId,
+			true,
+		);
+		const division = divisions.find((item) => item.id === divisionId);
+		if (!division) {
+			throw new AppError("Division was not found.", 404);
+		}
+		return division;
+	}
+
+	async listRegistrationTeachers(
+		slug: string,
+		festivalShortName: string,
+		sessionId: string | undefined,
+		childId: string,
+		divisionId: string,
+	): Promise<{ teachers: RegistrationTeacherSummary[] }> {
+		const access = await this.customerReadAccess(slug, sessionId);
+		await this.requireFestival(access.organizationId, festivalShortName);
+		await this.requireValidChildAge(
+			access.organizationId,
+			access.customerId,
+			childId,
+		);
+		await this.requireActiveDivision(access.organizationId, divisionId);
+
+		const teachers = await this.organizations.listActiveTeachersForDivision(
+			access.organizationId,
+			divisionId,
+		);
+		return {
+			teachers: teachers.map((teacher) => ({
+				id: teacher.id,
+				name: teacher.name,
+			})),
+		};
+	}
+
+	async listRegistrationEligibleClasses(
+		slug: string,
+		festivalShortName: string,
+		sessionId: string | undefined,
+		childId: string,
+		divisionId: string,
+		teacherId: string,
+	): Promise<{ classes: RegistrationEligibleClass[] }> {
+		const access = await this.customerReadAccess(slug, sessionId);
+		const festival = await this.requireFestival(
+			access.organizationId,
+			festivalShortName,
+		);
+		const childAge = await this.requireValidChildAge(
+			access.organizationId,
+			access.customerId,
+			childId,
+		);
+		await this.requireActiveDivision(access.organizationId, divisionId);
+
+		if (!teacherId || typeof teacherId !== "string") {
+			throw new AppError("Teacher ID is required.", 400);
+		}
+		const activeTeachers =
+			await this.organizations.listActiveTeachersForDivision(
+				access.organizationId,
+				divisionId,
+			);
+		if (!activeTeachers.some((teacher) => teacher.id === teacherId)) {
+			throw new AppError(
+				"Selected teacher is not eligible in this division.",
+				400,
+			);
+		}
+
+		const classes = await this.organizations.listFestivalClassConfigurations(
+			access.organizationId,
+			festival.id,
+			true,
+		);
+		const eligible = classes.filter(
+			(c) =>
+				c.divisionId === divisionId &&
+				c.minimumAge <= childAge &&
+				childAge <= c.maximumAge,
+		);
+
+		return {
+			classes: eligible.map((item) => ({
+				id: item.id,
+				displayName: item.displayName,
+				divisionId: item.divisionId,
+				classSubtypeId: item.classSubtypeId,
+				minimumAge: item.minimumAge,
+				maximumAge: item.maximumAge,
+				price: item.price,
+				maximumPerformancePieces: item.maximumPerformancePieces,
+				performanceMinutes: item.performanceMinutes,
+				capacity: item.capacity,
+			})),
+		};
+	}
+
+	async listRegistrationAccompanists(
+		slug: string,
+		festivalShortName: string,
+		sessionId: string | undefined,
+	): Promise<{ accompanists: RegistrationAccompanistSummary[] }> {
+		const access = await this.customerReadAccess(slug, sessionId);
+		await this.requireFestival(access.organizationId, festivalShortName);
+
+		const timezone = await this.organizations.getOrganizationTimezone(
+			access.organizationId,
+		);
+		const today = calendarDateInTimezone(this.now().toISOString(), timezone);
+		const grants = await this.organizations.listAccompanistMembershipGrants({
+			organizationId: access.organizationId,
+			currentOnly: true,
+		});
+		const activeGrants = grants
+			.map((grant) => ({
+				grant,
+				status: lifecycleForEntitlementRead(grant, today),
+			}))
+			.filter((item) => item.status === "active");
+
+		const seen = new Set<string>();
+		const accompanists: RegistrationAccompanistSummary[] = [];
+		for (const { grant } of activeGrants) {
+			if (!seen.has(grant.customerId)) {
+				seen.add(grant.customerId);
+				accompanists.push({
+					id: grant.customerId,
+					name: grant.contact.name,
+				});
+			}
+		}
+		return {
+			accompanists: accompanists.sort((a, b) => a.name.localeCompare(b.name)),
+		};
 	}
 }

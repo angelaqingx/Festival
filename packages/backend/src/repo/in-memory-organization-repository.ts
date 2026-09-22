@@ -25,6 +25,7 @@ import {
 	EMPTY_SHOPIFY_CAPABILITIES,
 	isEntitlementClass,
 	normalizeVerifiedShopifyIdentityEmail,
+	TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
 } from "@festival/common";
 import type {
 	AccompanistDivisionPolicyHistoryRecord,
@@ -1393,5 +1394,39 @@ export class InMemoryOrganizationRepository implements OrganizationRepository {
 		}
 		this.membershipIdentityEmails.set(emailKey, customerId);
 		this.membershipIdentityEmailsByCustomer.set(customerKey, normalizedEmail);
+	}
+
+	private readonly customerNames = new Map<string, string>();
+
+	setCustomerName(customerId: string, name: string): void {
+		this.customerNames.set(customerId, name);
+	}
+
+	async listActiveTeachersForDivision(
+		organizationId: string,
+		divisionId: string,
+	): Promise<Array<{ id: string; name: string }>> {
+		const activeGrants = [...this.entitlementGrants.values()]
+			.filter(
+				(grant) =>
+					grant.organizationId === organizationId &&
+					grant.divisionId === divisionId &&
+					grant.entitlementClass === TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
+			)
+			.map((grant) => this.withTeacherLifecycle(grant))
+			.filter((grant) => grant.status === "active");
+
+		const seen = new Set<string>();
+		const result: Array<{ id: string; name: string }> = [];
+		for (const grant of activeGrants) {
+			if (!seen.has(grant.customerId)) {
+				seen.add(grant.customerId);
+				result.push({
+					id: grant.customerId,
+					name: this.customerNames.get(grant.customerId) || "Teacher",
+				});
+			}
+		}
+		return result.sort((a, b) => a.name.localeCompare(b.name));
 	}
 }

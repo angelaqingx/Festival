@@ -403,4 +403,8 @@ export interface OrganizationRepository {
 		reason: string;
 		revokedAtIso: string;
 	}): Promise<{ revocation: EntitlementRevocationRecord; existing: boolean }>;
+	listActiveTeachersForDivision(
+		organizationId: string,
+		divisionId: string,
+	): Promise<Array<{ id: string; name: string }>>;
 }
