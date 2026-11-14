@@ -116,10 +116,18 @@ describe("public organization landing page", () => {
 		expect(styles).toContain("opacity: 1;");
 	});
 
-	it("renders the primary Festival link or no-Festival state", () => {
-		expect(page).toContain("Our Next Festival");
-		expect(page).toContain("Welcome currently no festivals scheduled");
-		expect(page).toContain("getPrimaryFestivalPath");
+	it("renders upcoming festival titles as banner links or shows an empty state", () => {
+		expect(page).toContain('route.kind === "org-root"');
+		expect(page).toContain("getPublicOrganizationLanding");
+		expect(page).toContain('aria-label="Upcoming festivals"');
+		expect(page).toContain("each={result.festivals}");
+		expect(page).toContain("{festival.name}");
+		expect(page).toContain("festival.shortName");
+		expect(page).toContain("festival.startDate.slice(5, 7)");
+		expect(page).toContain("No festivals are currently scheduled.");
+	});
+
+	it("uses the header to sign in from the organization landing page", () => {
 		expect(appHeader).toContain('variant="compact-header"');
 		expect(appHeader).toContain("onClick={login}");
 		expect(appHeader).toContain("isOrganizationPageRoute(route)");
