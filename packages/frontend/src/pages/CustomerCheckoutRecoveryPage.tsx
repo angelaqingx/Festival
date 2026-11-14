@@ -1,11 +1,10 @@
-import { createEffect, createSignal, onMount, Show } from "solid-js";
+import { createEffect, createSignal, Show } from "solid-js";
 import type { FestivalAppController } from "../app/useFestivalAppController.js";
 import { Button } from "../components/Button.js";
 import { useCustomerIdentity } from "../domains/customer/CustomerIdentityContext.js";
 import {
 	customerCheckoutRecoverySignInPath,
 	getCustomerCheckoutRecoveryReview,
-	getCustomerSession,
 	type RecoveryReviewDto,
 	resumeCustomerCheckoutRecovery,
 } from "../lib/api.js";
@@ -123,19 +122,6 @@ export function CustomerCheckoutRecoveryPage(
 		const r = route();
 		return "token" in r && typeof r.token === "string" ? r.token : "";
 	};
-
-	onMount(async () => {
-		if (!customerIdentity.customerSession().authenticated && slug()) {
-			try {
-				const sessionRes = await getCustomerSession(slug());
-				if (sessionRes.session?.authenticated) {
-					customerIdentity.setCustomerSession(sessionRes.session);
-				}
-			} catch {
-				// unauthenticated handled by fallback
-			}
-		}
-	});
 
 	async function loadReview() {
 		const s = slug();
