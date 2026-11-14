@@ -17,6 +17,7 @@ import {
 	validateOrganizationShortName,
 } from "@festival/common";
 import {
+	BoundedAsyncCache,
 	type DomainCacheInvalidator,
 	emitDomainInvalidation,
 	type S09InvalidationSink,
@@ -25,6 +26,9 @@ import {
 import type { AppUserMembershipRepository } from "./app-user-membership-repository.js";
 import { toSessionMembership } from "./tenant-mappers.js";
 import type { TenantRepository } from "./tenant-repository.js";
+
+const PUBLIC_ORGANIZATION_LIST_TTL_MS = 4 * 60 * 60_000;
+const PUBLIC_ORGANIZATION_LIST_MAX_BYTES = 256 * 1024;
 
 function normalizeUserIdentity(identity: AuthenticatedUser): AuthenticatedUser {
 	return {
@@ -37,6 +41,14 @@ function normalizeUserIdentity(identity: AuthenticatedUser): AuthenticatedUser {
 /** Handles tenant organizations, user sessions, timezones, and accompanist policies. */
 export class TenantOrganizationService {
 	private cacheInvalidator?: S09InvalidationSink | DomainCacheInvalidator;
+	private readonly publicOrganizationListCache = new BoundedAsyncCache<
+		"all",
+		PublicOrganizationListResponse
+	>({
+		maxEntries: 1,
+		maxEntryBytes: PUBLIC_ORGANIZATION_LIST_MAX_BYTES,
+		maxTotalBytes: PUBLIC_ORGANIZATION_LIST_MAX_BYTES,
+	});
 
 	constructor(
 		private readonly tenants: TenantRepository,
@@ -71,7 +83,24 @@ export class TenantOrganizationService {
 	}
 
 	async listPublicOrganizations(): Promise<PublicOrganizationListResponse> {
-		return { organizations: await this.tenants.listOrganizationSlugs() };
+		const listing = await this.publicOrganizationListCache.getOrLoad(
+			"all",
+			async () => {
+				const value = {
+					organizations: await this.tenants.listOrganizationSlugs(),
+				};
+				const bytes = Buffer.byteLength(JSON.stringify(value));
+				return {
+					value,
+					ttlMs: PUBLIC_ORGANIZATION_LIST_TTL_MS,
+					bytes,
+					cache: bytes > PUBLIC_ORGANIZATION_LIST_MAX_BYTES ? false : undefined,
+				};
+			},
+		);
+		return {
+			organizations: listing.organizations.map(({ slug }) => ({ slug })),
+		};
 	}
 
 	async listMemberships(
@@ -108,6 +137,8 @@ export class TenantOrganizationService {
 			slug: slugCheck.normalized,
 			defaultCurrencyCode: input.defaultCurrencyCode,
 		});
+		// The organization is already public even if creating its membership fails.
+		this.publicOrganizationListCache.deleteWhere(() => true);
 		const membership = await this.memberships.createMembership({
 			organizationId: organization.id,
 			userId: user.id,
