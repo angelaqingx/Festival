@@ -123,7 +123,11 @@ export function AppHeader(props: AppHeaderProps) {
 			fallback={
 				<header class="masthead">
 					<div>
-						<p class="eyebrow">Music Festival Administration</p>
+						<p class="eyebrow">
+							{props.app.route().kind === "home"
+								? "Front Page"
+								: "Music Festival Administration"}
+						</p>
 						<Show when={props.app.isAdminRoute()} fallback={<h1>Festival</h1>}>
 							<h1>{props.app.adminBreadcrumb()}</h1>
 						</Show>

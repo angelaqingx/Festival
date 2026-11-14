@@ -27,7 +27,7 @@ export function HomePage(props: HomePageProps) {
 					<For each={organizations()}>
 						{(organization) => (
 							<a
-								class="home-organization-tile"
+								class="home-organization-tile parent-brand-mark"
 								href={buildOrgRootPath(organization.slug)}
 							>
 								{organization.slug.toUpperCase()}

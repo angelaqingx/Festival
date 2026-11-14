@@ -805,16 +805,11 @@ button.compact-header-button {
 	gap: 1rem;
 }
 
-.home-organization-tile {
-	display: grid;
-	place-items: center;
+.home-organization-tile.parent-brand-mark {
+	min-width: 0;
+	height: auto;
 	min-height: 6.25rem;
 	padding: 0.75rem;
-	border: 1px solid var(--bullet-panel-border);
-	border-radius: 12px;
-	background: var(--bullet-panel);
-	font-size: 1.1rem;
-	font-weight: 700;
 	overflow-wrap: anywhere;
 	text-align: center;
 	text-decoration: none;
