@@ -805,7 +805,6 @@ button.compact-header-button {
 	gap: 1rem;
 	padding: 1rem;
 	border-radius: var(--bullet-radius);
-	background: var(--bullet-ink);
 }
 
 .home-organization-tile.parent-brand-mark {
@@ -813,23 +812,21 @@ button.compact-header-button {
 	height: auto;
 	min-height: 6.25rem;
 	padding: 0.75rem;
-	color: #e7c779;
+	border-color: #e8dcc1;
+	background-color: #f7f0e2;
+	color: #775817;
 	overflow-wrap: anywhere;
 	text-align: center;
 	text-decoration: none;
 }
 
 .home-organization-tile:hover {
-	background-image: radial-gradient(
-		ellipse,
-		var(--bullet-accent),
-		transparent 75%
-	);
-	text-decoration: underline;
+	background-image: radial-gradient(ellipse closest-side, #f7f0e2, #f1e6ce);
+	text-decoration: underline var(--bullet-gold);
 }
 
 .home-organization-tile:focus-visible {
-	outline: 2px solid var(--bullet-paper);
+	outline: 2px solid currentcolor;
 	outline-offset: 2px;
 }
 
