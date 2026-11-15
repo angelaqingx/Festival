@@ -1,6 +1,6 @@
 import { createEffect, createResource, Show } from "solid-js";
 import type { FestivalAppController } from "../app/useFestivalAppController.js";
-import { useOptionalCustomerIdentity } from "../domains/customer/CustomerIdentityContext.js";
+import { useCustomerIdentity } from "../domains/customer/CustomerIdentityContext.js";
 import {
 	customerLandingSignInPath,
 	getPublicOrganizationLanding,
@@ -21,10 +21,7 @@ interface AppHeaderProps {
 }
 
 export function AppHeader(props: AppHeaderProps) {
-	const customerIdentity = useOptionalCustomerIdentity() ?? {
-		customerSession: () => ({ authenticated: false as const }),
-		isCustomerSessionLoading: () => false,
-	};
+	const customerIdentity = useCustomerIdentity();
 	const slug = () => {
 		const route = props.app.route();
 		return isOrganizationPageRoute(route)

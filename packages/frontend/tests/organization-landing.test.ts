@@ -15,6 +15,9 @@ const customerIdentityContext = await Bun.file(
 	),
 ).text();
 const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+const appRoutes = await Bun.file(
+	new URL("../src/app/AppRoutes.tsx", import.meta.url),
+).text();
 const sideNavigation = await Bun.file(
 	new URL("../src/components/OrganizationSideNavigation.tsx", import.meta.url),
 ).text();
@@ -70,7 +73,7 @@ describe("public organization landing page", () => {
 		);
 		expect(appHeader).toContain("isOrganizationPageRoute");
 		expect(appHeader).not.toContain("getCustomerSession");
-		expect(appHeader).toContain("useOptionalCustomerIdentity()");
+		expect(appHeader).toContain("useCustomerIdentity()");
 		expect(appHeader).toContain("customerIdentity.customerSession()");
 		expect(customerIdentityContext).toContain("getCustomerSession");
 		expect(appHeader).toContain("logoutCustomer");
@@ -79,6 +82,13 @@ describe("public organization landing page", () => {
 		expect(appHeader).toContain('class="org-landing-header parent-header"');
 		expect(page).not.toContain('class="org-landing-header parent-header"');
 		expect(page).not.toContain("handleLogout");
+	});
+
+	it("shares the customer identity provider across the header and routed pages", () => {
+		expect(app).toMatch(
+			/<FestivalShellProvider value=\{app\}>\s*<CustomerIdentityProvider>[\s\S]*<AppHeader app=\{app\} \/>[\s\S]*\{props\.children\}[\s\S]*<\/CustomerIdentityProvider>\s*<\/FestivalShellProvider>/,
+		);
+		expect(appRoutes).not.toContain("CustomerIdentityProvider");
 	});
 
 	it("keeps the children route in its Organization context for customer authentication", () => {
