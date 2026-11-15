@@ -4,6 +4,7 @@ import type {
 } from "@festival/common";
 import {
 	type CreateChildWithAgeSnapshotInput,
+	type CustomerSessionRepository,
 	PostgresChildProfileRepository,
 	PostgresCustomerIntegrationRepository,
 	PostgresCustomerProfileRepository,
@@ -90,8 +91,14 @@ export class PostgresCustomerAccountRepository
 	replaceSessionTokens(input: CustomerSessionTokenReplacementInput) {
 		return this.sessions.replaceSessionTokens(input);
 	}
-	revokeSession(id: string, at: string) {
-		return this.sessions.revokeSession(id, at);
+	withSessionRefreshLock<T>(
+		sessionId: string,
+		operation: (sessions: CustomerSessionRepository) => Promise<T>,
+	) {
+		return this.sessions.withSessionRefreshLock(sessionId, operation);
+	}
+	revokeSession(id: string, at: string, expectedEncryptedTokens?: string) {
+		return this.sessions.revokeSession(id, at, expectedEncryptedTokens);
 	}
 	revokeOrganizationSessions(org: string, at: string) {
 		return this.sessions.revokeOrganizationSessions(org, at);

@@ -175,7 +175,15 @@ export interface CustomerSessionRepository {
 	replaceSessionTokens(
 		input: CustomerSessionTokenReplacementInput,
 	): Promise<CustomerSessionRecord | null>;
-	revokeSession(sessionId: string, revokedAtIso: string): Promise<void>;
+	withSessionRefreshLock?<T>(
+		sessionId: string,
+		operation: (sessions: CustomerSessionRepository) => Promise<T>,
+	): Promise<T>;
+	revokeSession(
+		sessionId: string,
+		revokedAtIso: string,
+		expectedEncryptedTokens?: string,
+	): Promise<void>;
 	revokeOrganizationSessions(
 		organizationId: string,
 		revokedAtIso: string,

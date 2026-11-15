@@ -333,9 +333,18 @@ export class InMemoryCustomerAccountRepository
 		this.sessions.set(session.sessionId, updated);
 		return updated;
 	}
-	async revokeSession(id: string, at: string) {
+	async revokeSession(
+		id: string,
+		at: string,
+		expectedEncryptedTokens?: string,
+	) {
 		const session = this.sessions.get(id);
-		if (session && !session.revokedAtIso)
+		if (
+			session &&
+			!session.revokedAtIso &&
+			(expectedEncryptedTokens === undefined ||
+				session.encryptedTokens === expectedEncryptedTokens)
+		)
 			this.sessions.set(id, { ...session, revokedAtIso: at });
 	}
 	async revokeOrganizationSessions(org: string, at: string) {

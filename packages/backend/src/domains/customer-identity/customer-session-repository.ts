@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { AppError } from "@festival/common";
 import { sql } from "bun";
 import {
 	initializePostgresSchema,
@@ -64,13 +65,34 @@ async function queryJoinedSession(
 	};
 }
 
+async function releaseRefreshConnection(
+	connection: Awaited<ReturnType<typeof sql.reserve>>,
+	key: string,
+) {
+	try {
+		// Also release a lock whose acquisition succeeded before its response failed.
+		await connection.unsafe(
+			"SELECT pg_advisory_unlock(hashtextextended($1, 0))",
+			[key],
+		);
+	} catch (error) {
+		// Session locks survive pooling, so an uncertain unlock discards the socket.
+		await connection.close({ timeout: 0 });
+		throw error;
+	}
+	connection.release();
+}
+
 /** Postgres repository for Shopify OAuth states and customer sessions. */
 export class PostgresCustomerSessionRepository
 	implements CustomerSessionRepository
 {
 	private readonly schema: string;
 
-	constructor(schema: string) {
+	constructor(
+		schema: string,
+		private readonly runner: Pick<typeof sql, "unsafe"> = sql,
+	) {
 		this.schema = postgresSchemaName(schema);
 	}
 
@@ -159,7 +181,7 @@ export class PostgresCustomerSessionRepository
 
 	async getSession(sessionId: string): Promise<CustomerSessionRecord | null> {
 		await this.ensureReady();
-		const rows = (await sql.unsafe(
+		const rows = (await this.runner.unsafe(
 			`SELECT * FROM ${this.schema}.shopify_customer_sessions WHERE session_id = $1`,
 			[sessionId],
 		)) as SessionRow[];
@@ -200,7 +222,7 @@ export class PostgresCustomerSessionRepository
 		input: CustomerSessionTokenReplacementInput,
 	): Promise<CustomerSessionRecord | null> {
 		await this.ensureReady();
-		const rows = (await sql.unsafe(
+		const rows = (await this.runner.unsafe(
 			`UPDATE ${this.schema}.shopify_customer_sessions
 			SET encrypted_tokens = $5, last_seen_at = GREATEST(last_seen_at, $6), expires_at = LEAST(expires_at, $7)
 			WHERE session_id = $1 AND organization_id = $2 AND integration_version = $3 AND encrypted_tokens = $4 AND revoked_at IS NULL AND expires_at > $6 AND last_seen_at > $8
@@ -219,11 +241,48 @@ export class PostgresCustomerSessionRepository
 		return rows[0] ? sessionRowToRecord(rows[0]) : null;
 	}
 
-	async revokeSession(sessionId: string, revokedAtIso: string): Promise<void> {
+	async withSessionRefreshLock<T>(
+		sessionId: string,
+		operation: (sessions: CustomerSessionRepository) => Promise<T>,
+	): Promise<T> {
 		await this.ensureReady();
-		await sql.unsafe(
-			`UPDATE ${this.schema}.shopify_customer_sessions SET revoked_at = $2 WHERE session_id = $1`,
-			[sessionId, revokedAtIso],
+		const connection = await sql.reserve();
+		const key = `${this.schema}:customer-refresh:${sessionId}`;
+		let acquired = false;
+		try {
+			const deadline = Date.now() + 10_000;
+			while (!acquired) {
+				const rows = await connection.unsafe(
+					"SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS acquired",
+					[key],
+				);
+				acquired = rows[0]?.acquired === true;
+				if (!acquired) {
+					if (Date.now() >= deadline)
+						throw new AppError(
+							"Customer Account authentication is unavailable.",
+							503,
+						);
+					await new Promise((resolve) => setTimeout(resolve, 50));
+				}
+			}
+			return await operation(
+				new PostgresCustomerSessionRepository(this.schema, connection),
+			);
+		} finally {
+			await releaseRefreshConnection(connection, key);
+		}
+	}
+
+	async revokeSession(
+		sessionId: string,
+		revokedAtIso: string,
+		expectedEncryptedTokens?: string,
+	): Promise<void> {
+		await this.ensureReady();
+		await this.runner.unsafe(
+			`UPDATE ${this.schema}.shopify_customer_sessions SET revoked_at = $2 WHERE session_id = $1 AND ($3::text IS NULL OR encrypted_tokens = $3)`,
+			[sessionId, revokedAtIso, expectedEncryptedTokens ?? null],
 		);
 	}
 

@@ -18,8 +18,8 @@ The companion worktree owns frontend checkout actions and clients, checkout muta
 
 | Unit | Progress | Required evidence |
 |---|---|---|
-| #399 browser-bound OAuth callback | Reviewed and validated, awaiting commit | A valid transaction presented by a browser without the initiating binding fails before session creation. Original-browser success, OAuth denial, nonce mismatch, state replay, and supported concurrent sign-in attempts remain covered. |
-| #401 transient and concurrent token refresh | Pending | Token endpoint transient failures preserve the valid Festival session and subsequent CSRF availability. Across two service instances, a losing refresh cannot revoke the winner. Invalid or revoked credentials fail closed. Verify repository token replacement concurrency on PostgreSQL. |
+| #399 browser-bound OAuth callback | Committed and pushed in 82f229a | A valid transaction presented by a browser without the initiating binding fails before session creation. Original-browser success, OAuth denial, nonce mismatch, state replay, and supported concurrent sign-in attempts remain covered. |
+| #401 transient and concurrent token refresh | Reviewed and validated, awaiting commit | Token endpoint transient failures preserve the valid Festival session and subsequent CSRF availability. Across two service instances, a losing refresh cannot revoke the winner. Invalid or revoked credentials fail closed. Verify repository token replacement concurrency on PostgreSQL. |
 
 OAuth browser binding must preserve the configured secure cookie behavior and supported authentication return paths. Refresh changes must distinguish retryable transport failures from genuinely invalid credentials and resolve concurrent updates from current persisted state.
 
@@ -48,4 +48,4 @@ Run targeted checks for each unit. Full branch validation follows the repository
 
 Each logical unit requires an independent exact-diff review before its commit. Store the scoped review in `tasks/auth-customer-identity/code-review.md` using the code-review skill helper with an explicit base. Record findings, verdict, confidence, targeted check results, commit SHA, and later CI status when available. Re-review changes made after approval. The final PR must show green checks for its current head and clean mergeability against the current base before the authorized merge pipeline.
 
-Unit #399 has passed independent review and targeted validation as recorded in `code-review.md`. Its commit and PR status are pending. Unit #401 implementation, validation, and review are pending.
+Unit #399 passed independent review and validation and was committed/pushed as `82f229a85cb92634133f763c12f32a8568ec1bd2`. Unit #401 passed independent review and PostgreSQL-backed validation and is awaiting its authorized commit. Evidence is recorded in `code-review.md`. Final remote checks and merge pipeline remain pending.
