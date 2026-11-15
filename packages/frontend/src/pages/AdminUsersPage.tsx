@@ -12,11 +12,29 @@ interface AdminUsersPageProps {
 
 export function AdminUsersPage(props: AdminUsersPageProps) {
 	const adminOrg = useAdminOrg();
+	const isBusy = () =>
+		props.app.isBusy() || adminOrg.isAdminUsersMutationPending();
 	return (
 		<Show
-			when={props.app.isAdminMember()}
+			when={adminOrg.canManageAdminUsers()}
 			fallback={
-				<AccessDeniedPanel message="Only Admin members can manage organization users." />
+				<Show
+					when={!adminOrg.isLoadingAdminUsers()}
+					fallback={<p role="status">Loading organization users…</p>}
+				>
+					<Show
+						when={adminOrg.adminUsersLoadError()}
+						fallback={
+							<AccessDeniedPanel message="Only Admin members can manage organization users." />
+						}
+					>
+						{(message) => (
+							<p class="field-error" role="alert">
+								{message()}
+							</p>
+						)}
+					</Show>
+				</Show>
 			}
 		>
 			<section class="panel flow-panel">
@@ -26,6 +44,16 @@ export function AdminUsersPage(props: AdminUsersPageProps) {
 						<p>Accepted members and pending invites.</p>
 					</div>
 				</header>
+				<Show when={adminOrg.adminUsersStatusMessage()}>
+					{(message) => <p role="status">{message()}</p>}
+				</Show>
+				<Show when={adminOrg.adminUsersMutationError()}>
+					{(message) => (
+						<p class="field-error" role="alert">
+							{message()}
+						</p>
+					)}
+				</Show>
 				<div class="admin-list">
 					<For each={adminOrg.adminUsers()}>
 						{(entry) => (
@@ -38,7 +66,7 @@ export function AdminUsersPage(props: AdminUsersPageProps) {
 									class="icon-button trash-button"
 									aria-label={`Remove ${entry.email}`}
 									onClick={() => void adminOrg.handleDeleteAdminUser(entry)}
-									disabled={props.app.isBusy() || entry.isSelf}
+									disabled={isBusy() || entry.isSelf}
 								/>
 							</div>
 						)}
@@ -76,7 +104,7 @@ export function AdminUsersPage(props: AdminUsersPageProps) {
 				<Button
 					type="button"
 					onClick={adminOrg.handleCreateAdminInvite}
-					disabled={props.app.isBusy()}
+					disabled={isBusy()}
 				>
 					Send invite
 				</Button>
