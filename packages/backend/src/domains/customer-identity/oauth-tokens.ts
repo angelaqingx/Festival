@@ -2,7 +2,9 @@ import { createPublicKey, verify as verifySignature } from "node:crypto";
 import { AppError } from "@festival/common";
 import {
 	type BoundedAsyncCache,
+	CustomerAccountInvalidResponseError,
 	type CustomerAccountTransport,
+	CustomerAccountUpstreamError,
 	SHOPIFY_CUSTOMER_CLIENT_SECRET_PURPOSE,
 	SHOPIFY_CUSTOMER_TOKENS_PURPOSE,
 	type ShopifySecretKeyring,
@@ -61,6 +63,17 @@ function audienceIncludes(value: unknown, clientId: string): boolean {
 	);
 }
 
+function tokenExchangeError(error: unknown): never {
+	if (
+		error instanceof CustomerAccountInvalidResponseError ||
+		(error instanceof CustomerAccountUpstreamError &&
+			(error.upstreamStatus === 401 || error.oauthError !== undefined))
+	) {
+		throw new AppError("Customer session is invalid.", 401);
+	}
+	throw error;
+}
+
 export async function exchangeOAuthTokens(
 	integration: CustomerAccountIntegrationRecord,
 	oidc: Discovery,
@@ -83,7 +96,7 @@ export async function exchangeOAuthTokens(
 			},
 			body,
 		},
-	);
+	).catch(tokenExchangeError);
 	const t = payload as TokenResponse;
 	const idToken =
 		typeof t.id_token === "string" ? t.id_token : ctx.existingIdToken;

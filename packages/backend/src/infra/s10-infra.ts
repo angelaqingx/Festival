@@ -6,8 +6,10 @@ import type {
 
 export { lifecycleForEntitlementRead } from "../commerce/entitlement-lifecycle.js";
 export {
+	CustomerAccountInvalidResponseError,
 	CustomerAccountTransport,
 	type CustomerAccountTransportOptions,
+	CustomerAccountUpstreamError,
 } from "../customer/customer-account-transport.js";
 export {
 	BoundedAsyncCache,

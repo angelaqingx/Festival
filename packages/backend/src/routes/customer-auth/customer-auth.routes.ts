@@ -1,10 +1,12 @@
+import { createHash } from "node:crypto";
 import { type Context, Hono } from "hono";
-import { setCookie } from "hono/cookie";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { type ApiVariables, toJsonError } from "../../auth/tenant-context.js";
 import {
 	CUSTOMER_SESSION_COOKIE,
 	type CustomerAccountService,
 } from "../../customer/customer-account-service.js";
+import { OAUTH_STATE_TTL_MS } from "../../domains/customer-identity/index.js";
 import { AppError } from "../../errors/app-error.js";
 import type { PublicMembershipProductService } from "../../shopify/public-membership-product-service.js";
 import {
@@ -60,6 +62,38 @@ export interface CustomerAuthRoutesOptions {
 
 type CustomerAuthContext = Context<{ Variables: Partial<ApiVariables> }>;
 
+const OAUTH_COOKIE_OPTIONS = {
+	httpOnly: true,
+	secure: true,
+	sameSite: "Lax" as const,
+	path: "/",
+};
+
+function oauthCookieName(state: string): string {
+	return `__Host-festival_customer_oauth_${createHash("sha256").update(state).digest("hex")}`;
+}
+
+function bindOAuthBrowser(c: CustomerAuthContext, authorizationUrl: string) {
+	const state = new URL(authorizationUrl).searchParams.get("state");
+	if (!state) {
+		throw new AppError("Customer Account authentication is unavailable.", 503);
+	}
+	setCookie(c, oauthCookieName(state), state, {
+		...OAUTH_COOKIE_OPTIONS,
+		maxAge: OAUTH_STATE_TTL_MS / 1000,
+	});
+	return authorizationUrl;
+}
+
+function requireOAuthBrowser(c: CustomerAuthContext): string {
+	const state = c.req.query("state");
+	if (!state || getCookie(c, oauthCookieName(state)) !== state) {
+		throw new AppError("Customer authentication response is invalid.", 400);
+	}
+	deleteCookie(c, oauthCookieName(state), OAUTH_COOKIE_OPTIONS);
+	return state;
+}
+
 function requireOrganizationSlug(c: CustomerAuthContext): string {
 	const slug = c.req.param("slug");
 	if (!slug) {
@@ -89,10 +123,13 @@ async function startCustomerAuthHandler(
 			await publicMembershipProductService.resolvePurchasable(slug, offeringId);
 		}
 		return c.redirect(
-			await customerAccountService.start(
-				slug,
-				c.req.query("returnTo"),
-				offeringId,
+			bindOAuthBrowser(
+				c,
+				await customerAccountService.start(
+					slug,
+					c.req.query("returnTo"),
+					offeringId,
+				),
 			),
 		);
 	} catch (error) {
@@ -112,15 +149,14 @@ async function callbackCustomerAuthHandler(
 				"Customer Account integration is not configured.",
 				503,
 			);
+		const state = requireOAuthBrowser(c);
 		if (c.req.query("error") && !c.req.query("code")) {
 			return c.redirect(
-				await customerAccountService.authenticationFailure(
-					c.req.query("state"),
-				),
+				await customerAccountService.authenticationFailure(state),
 			);
 		}
 		const result = await customerAccountService.callback(
-			c.req.query("state"),
+			state,
 			c.req.query("code"),
 			async (slug, offeringId) => {
 				if (!publicMembershipProductService)

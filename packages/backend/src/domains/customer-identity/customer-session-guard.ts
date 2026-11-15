@@ -1,21 +1,19 @@
 import { AppError, type OrganizationRecord } from "@festival/common";
-import {
-	type BoundedAsyncCache,
-	type CustomerAccountTransport,
-	SHOPIFY_CUSTOMER_TOKENS_PURPOSE,
-	type ShopifySecretKeyring,
+import type {
+	BoundedAsyncCache,
+	CustomerAccountTransport,
+	ShopifySecretKeyring,
 } from "../../infra/s10-infra.js";
+import {
+	buildSessionTouchInput,
+	refreshSessionTokens,
+} from "./customer-token-refresh.js";
 import {
 	type ApiDiscovery,
 	type Discovery,
 	resolveUrls,
 } from "./oauth-discovery.js";
-import {
-	decryptTokenBundle,
-	exchangeOAuthTokens,
-	type TokenBundle,
-	verifyCustomerIdToken,
-} from "./oauth-tokens.js";
+import { decryptTokenBundle, type TokenBundle } from "./oauth-tokens.js";
 import type {
 	CustomerAccountIntegrationRecord,
 	CustomerIntegrationRepository,
@@ -43,19 +41,7 @@ export interface SessionGuardContext {
 	): Promise<{ oidc: Discovery; api: ApiDiscovery }>;
 }
 
-export function buildSessionTouchInput(
-	idleMs: number,
-	session: CustomerSessionRecord,
-	seenAt: Date,
-) {
-	return {
-		sessionId: session.sessionId,
-		organizationId: session.organizationId,
-		integrationVersion: session.integrationVersion,
-		seenAtIso: seenAt.toISOString(),
-		idleCutoffIso: new Date(seenAt.getTime() - idleMs).toISOString(),
-	};
-}
+export { buildSessionTouchInput } from "./customer-token-refresh.js";
 
 export async function validateSessionRecord(
 	ctx: SessionGuardContext,
@@ -142,85 +128,6 @@ export async function resolveAccessBundle(
 			updated.encryptedTokens,
 		),
 	};
-}
-
-async function executeTokenRefresh(
-	ctx: SessionGuardContext,
-	latest: CustomerSessionRecord,
-	integration: CustomerAccountIntegrationRecord,
-	current: TokenBundle,
-	oidc: Discovery,
-): Promise<CustomerSessionRecord> {
-	if (oidc.issuer !== current.issuer) {
-		throw new AppError("Customer session is invalid.", 401);
-	}
-	const next = await exchangeOAuthTokens(
-		integration,
-		oidc,
-		new URLSearchParams({
-			grant_type: "refresh_token",
-			client_id: integration.clientId,
-			refresh_token: current.refreshToken,
-		}),
-		{
-			transport: ctx.transport,
-			keyring: ctx.keyring,
-			now: ctx.now,
-			existingIdToken: current.idToken,
-		},
-	);
-	if (next.idToken !== current.idToken) {
-		await verifyCustomerIdToken(next.idToken, integration, oidc, {
-			transport: ctx.transport,
-			jwksCache: ctx.jwksCache,
-			jwksTtlMs: ctx.jwksTtlMs,
-			now: ctx.now,
-		});
-	}
-	const updated = await ctx.sessions.replaceSessionTokens({
-		...buildSessionTouchInput(ctx.idleMs, latest, ctx.now()),
-		expectedEncryptedTokens: latest.encryptedTokens,
-		replacementEncryptedTokens: ctx.keyring.encrypt(JSON.stringify(next), {
-			organizationId: latest.organizationId,
-			purpose: SHOPIFY_CUSTOMER_TOKENS_PURPOSE,
-		}),
-		replacementExpiresAtIso: next.refreshExpiresAtIso ?? latest.expiresAtIso,
-	});
-	if (!updated) throw new AppError("Customer session is invalid.", 401);
-	return updated;
-}
-
-async function refreshSessionTokens(
-	ctx: SessionGuardContext,
-	session: CustomerSessionRecord,
-	integration: CustomerAccountIntegrationRecord,
-): Promise<CustomerSessionRecord> {
-	const latest = await ctx.sessions.getSession(session.sessionId);
-	if (
-		!latest ||
-		latest.revokedAtIso ||
-		latest.integrationVersion !== integration.integrationVersion
-	) {
-		throw new AppError("Customer session is invalid.", 401);
-	}
-	const current = decryptTokenBundle(
-		ctx.keyring,
-		latest.organizationId,
-		latest.encryptedTokens,
-	);
-	if (
-		new Date(current.accessExpiresAtIso).getTime() >
-		ctx.now().getTime() + 30_000
-	) {
-		return latest;
-	}
-	const { oidc } = await ctx.discover(integration);
-	try {
-		return await executeTokenRefresh(ctx, latest, integration, current, oidc);
-	} catch {
-		await ctx.sessions.revokeSession(latest.sessionId, ctx.now().toISOString());
-		throw new AppError("Customer session is invalid.", 401);
-	}
 }
 
 export async function requireCsrfValidatedSession(

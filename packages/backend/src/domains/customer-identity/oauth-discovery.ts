@@ -4,7 +4,11 @@ import {
 	CUSTOMER_ACCOUNT_API_VERSION,
 	type CustomerOrdersResponse,
 } from "@festival/common";
-import type { CustomerAccountTransport } from "../../infra/s10-infra.js";
+import {
+	CustomerAccountInvalidResponseError,
+	type CustomerAccountTransport,
+	CustomerAccountUpstreamError,
+} from "../../infra/s10-infra.js";
 
 export const CUSTOMER_SESSION_COOKIE = "festival_customer_session";
 export const OAUTH_STATE_TTL_MS = 10 * 60_000;
@@ -135,7 +139,12 @@ export async function transportJson(
 				...(init?.headers ?? {}),
 			},
 		});
-	} catch {
+	} catch (error) {
+		if (
+			error instanceof CustomerAccountUpstreamError ||
+			error instanceof CustomerAccountInvalidResponseError
+		)
+			throw error;
 		throw safeAuthError();
 	}
 }

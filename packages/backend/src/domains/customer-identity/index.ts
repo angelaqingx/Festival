@@ -10,6 +10,7 @@ export {
 export { PostgresCustomerProfileRepository } from "./customer-profile-repository.js";
 export { CustomerProfileService } from "./customer-profile-service.js";
 export { PostgresCustomerSessionRepository } from "./customer-session-repository.js";
+export { OAUTH_STATE_TTL_MS } from "./oauth-discovery.js";
 export type {
 	ApplyCustomerProfileInput,
 	ChildProfileRepository,

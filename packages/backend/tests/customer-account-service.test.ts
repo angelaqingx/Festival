@@ -4,6 +4,7 @@ import {
 	CUSTOMER_STAFF_ACCESS_PRIVACY_NOTICE_VERSION,
 	deriveFestivalMetadataCutoff,
 } from "@festival/common";
+import { Hono } from "hono";
 import { InMemoryCheckoutRepository } from "../src/checkout/checkout-repository.js";
 import { InMemoryMembershipCommerceRepository } from "../src/commerce/membership-commerce-repository.js";
 import type {
@@ -16,6 +17,7 @@ import { CustomerAccountTransport } from "../src/customer/customer-account-trans
 import { InMemoryCustomerAccountRepository } from "../src/customer/in-memory-customer-account-repository.js";
 import { InMemoryRepertoireRepository } from "../src/repertoire/index.js";
 import { InMemoryOrganizationRepository } from "../src/repo/in-memory-organization-repository.js";
+import { buildCustomerAuthRoutes } from "../src/routes/customer-auth/customer-auth.routes.js";
 import {
 	SHOPIFY_CUSTOMER_TOKENS_PURPOSE,
 	ShopifySecretKeyring,
@@ -301,6 +303,163 @@ async function fixture(
 		graphqlRequests: () => [...graphqlRequests],
 	};
 }
+
+function customerOAuthApp(service: CustomerAccountService) {
+	return new Hono().route(
+		"/api",
+		buildCustomerAuthRoutes({ customerAccountService: service }),
+	);
+}
+
+async function startBrowserOAuth(app: ReturnType<typeof customerOAuthApp>) {
+	const response = await app.request(
+		"/api/organizations/festival/customer-auth/start",
+	);
+	expect(response.status).toBe(302);
+	const authorization = new URL(response.headers.get("location") ?? "");
+	const state = authorization.searchParams.get("state") ?? "";
+	const nonce = authorization.searchParams.get("nonce") ?? "";
+	const rawCookie = response.headers.getSetCookie()[0] ?? "";
+	expect(state).not.toBe("");
+	expect(nonce).not.toBe("");
+	return { state, nonce, rawCookie, cookie: rawCookie.split(";")[0] };
+}
+
+describe("customer OAuth browser binding", () => {
+	it("rejects another browser before consuming state, then authenticates the initiating browser once", async () => {
+		const f = await fixture();
+		const app = customerOAuthApp(f.service);
+		const flow = await startBrowserOAuth(app);
+		const anotherBrowser = await startBrowserOAuth(app);
+		const callback = `/api/customer-auth/callback?state=${flow.state}&code=code`;
+		for (const cookie of [
+			"",
+			anotherBrowser.cookie,
+			flow.cookie.replace(/=.*/, "=wrong"),
+		]) {
+			const rejected = await app.request(callback, {
+				headers: { Cookie: cookie },
+			});
+			expect(rejected.status).toBe(400);
+			expect(rejected.headers.get("set-cookie")).toBeNull();
+		}
+		expect(f.tokenCalls()).toBe(0);
+		f.setTokenClaims({ nonce: flow.nonce });
+		const accepted = await app.request(callback, {
+			headers: { Cookie: flow.cookie },
+		});
+		expect(accepted.status).toBe(302);
+		const cookies = accepted.headers.getSetCookie();
+		const sessionCookie = cookies.find((cookie) =>
+			cookie.startsWith("festival_customer_session="),
+		);
+		const sessionId = sessionCookie?.split(";")[0].split("=")[1];
+		expect(
+			(await f.service.session("festival", sessionId)).session.authenticated,
+		).toBe(true);
+		expect(
+			cookies.some(
+				(cookie) =>
+					cookie.startsWith(flow.cookie.split("=")[0]) &&
+					cookie.includes("Max-Age=0"),
+			),
+		).toBe(true);
+		const replay = await app.request(callback, {
+			headers: { Cookie: flow.cookie },
+		});
+		expect(replay.status).toBe(400);
+		expect(replay.headers.get("set-cookie")).not.toContain(
+			"festival_customer_session=",
+		);
+		expect(f.tokenCalls()).toBe(1);
+	});
+
+	it("binds OAuth denial to the initiating browser and consumes its state", async () => {
+		const f = await fixture();
+		const app = customerOAuthApp(f.service);
+		const flow = await startBrowserOAuth(app);
+		const anotherBrowser = await startBrowserOAuth(app);
+		const callback = `/api/customer-auth/callback?state=${flow.state}&error=access_denied`;
+		for (const cookie of ["", anotherBrowser.cookie]) {
+			const rejected = await app.request(callback, {
+				headers: { Cookie: cookie },
+			});
+			expect(rejected.status).toBe(400);
+			expect(rejected.headers.get("set-cookie")).toBeNull();
+		}
+		const denied = await app.request(callback, {
+			headers: { Cookie: flow.cookie },
+		});
+		expect(denied.status).toBe(302);
+		expect(denied.headers.get("location")).toBe(
+			"/org/festival/account?authError=authentication",
+		);
+		expect(denied.headers.get("set-cookie")).toContain("Max-Age=0");
+		expect(denied.headers.get("set-cookie")).not.toContain(
+			"festival_customer_session=",
+		);
+		const replay = await app.request(callback, {
+			headers: { Cookie: flow.cookie },
+		});
+		expect(replay.status).toBe(400);
+		expect(f.tokenCalls()).toBe(0);
+	});
+
+	it("preserves concurrent sign-ins completed in reverse order and clears only the completed flow", async () => {
+		const f = await fixture();
+		const app = customerOAuthApp(f.service);
+		const first = await startBrowserOAuth(app);
+		const second = await startBrowserOAuth(app);
+		expect(first.cookie.split("=")[0]).not.toBe(second.cookie.split("=")[0]);
+		const jar = `${first.cookie}; ${second.cookie}`;
+		for (const flow of [second, first]) {
+			f.setTokenClaims({ nonce: flow.nonce });
+			const response = await app.request(
+				`/api/customer-auth/callback?state=${flow.state}&code=code`,
+				{
+					headers: { Cookie: jar },
+				},
+			);
+			expect(response.status).toBe(302);
+			const cleared = response.headers
+				.getSetCookie()
+				.filter((cookie) => cookie.startsWith("__Host-"));
+			expect(cleared).toHaveLength(1);
+			expect(cleared[0]).toStartWith(`${flow.cookie.split("=")[0]}=`);
+			expect(cleared[0]).toContain("Max-Age=0");
+		}
+		expect(f.tokenCalls()).toBe(2);
+	});
+
+	it("sets a short-lived host-only secure cookie and rejects expired state even if the cookie is retained", async () => {
+		const f = await fixture();
+		const app = customerOAuthApp(f.service);
+		const flow = await startBrowserOAuth(app);
+		expect(flow.rawCookie).toStartWith("__Host-festival_customer_oauth_");
+		for (const flag of [
+			"HttpOnly",
+			"Secure",
+			"SameSite=Lax",
+			"Path=/",
+			"Max-Age=600",
+		]) {
+			expect(flow.rawCookie).toContain(flag);
+		}
+		expect(flow.rawCookie).not.toContain("Domain=");
+		f.setNow(new Date(Date.now() + 11 * 60_000));
+		const response = await app.request(
+			`/api/customer-auth/callback?state=${flow.state}&code=code`,
+			{
+				headers: { Cookie: flow.cookie },
+			},
+		);
+		expect(response.status).toBe(400);
+		expect(response.headers.get("set-cookie")).not.toContain(
+			"festival_customer_session=",
+		);
+		expect(f.tokenCalls()).toBe(0);
+	});
+});
 
 describe("CustomerAccountService", () => {
 	it("creates and refreshes age snapshots without retaining birthdays", async () => {
