@@ -105,6 +105,54 @@ describe("Repertoire validation & transformation helpers", () => {
 		expect(validatePieceComposer("Claude Debussy")).toBeNull();
 	});
 
+	it("enforces linked and manual title limits in draft and signup validation", () => {
+		const work = {
+			id: "linked-concerto",
+			title: `  ${"A".repeat(300)}  `,
+			composerName: "Composer",
+			classifications: ["concerto"],
+			isActive: true,
+		};
+		const draft = applyCatalogWorkSelection(createEmptyPieceDraft(), work.id, [
+			work,
+		]);
+		const unlinked = applyCatalogWorkSelection(draft, "");
+		const options = { requiresConcerto: true, catalogWorks: [work] };
+		const canContinueSignup = (piece: typeof draft) =>
+			isRegistrationSelectionValid(
+				{ hasCurrentValidAgeSnapshot: true },
+				{ requiresConcerto: true, maximumPerformancePieces: 1 },
+				"division",
+				"teacher",
+				"class",
+				[pieceDraftToRepertoirePiece(piece)],
+				[work],
+			);
+
+		expect(validatePieceTitle(draft.title, draft.catalogWorkId)).toBeNull();
+		expect(arePiecesValid([draft], options)).toBe(true);
+		expect(canContinueSignup(draft)).toBe(true);
+		expect(
+			arePiecesValid([{ ...draft, title: "A".repeat(301) }], options),
+		).toBe(false);
+
+		expect(unlinked.title).toBe(draft.title);
+		expect(validatePieceTitle(unlinked.title, unlinked.catalogWorkId)).toBe(
+			"Title cannot exceed 200 characters.",
+		);
+		expect(arePiecesValid([unlinked], options)).toBe(false);
+		expect(canContinueSignup(unlinked)).toBe(false);
+		expect(
+			arePiecesValid(
+				[{ ...unlinked, title: `  ${"A".repeat(200)}  ` }],
+				options,
+			),
+		).toBe(true);
+		expect(
+			arePiecesValid([{ ...unlinked, title: "A".repeat(201) }], options),
+		).toBe(false);
+	});
+
 	it("enforces duration greater than 0 seconds", () => {
 		expect(validatePieceDuration(0, 0)).toBe(
 			"Duration must be greater than 0 seconds.",

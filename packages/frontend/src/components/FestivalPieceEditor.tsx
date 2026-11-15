@@ -82,7 +82,7 @@ export function FestivalPieceEditor(props: FestivalPieceEditorProps) {
 		event.preventDefault();
 		const current = draft();
 		const validationError =
-			validatePieceTitle(current.title) ||
+			validatePieceTitle(current.title, current.catalogWorkId) ||
 			validatePieceComposer(current.composer) ||
 			validatePieceDuration(current.durationMinutes, current.durationSeconds);
 		if (validationError) {

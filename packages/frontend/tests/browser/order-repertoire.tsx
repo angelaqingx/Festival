@@ -13,7 +13,12 @@ const legacyPiece = {
 	composer: "Legacy composer",
 	durationSeconds: 180,
 };
-const linkedPiece = { ...legacyPiece, catalogWorkId: "saved-work" };
+const longCatalogTitle = "Long catalog title, ".repeat(13).trim();
+const linkedPiece = {
+	...legacyPiece,
+	title: longCatalogTitle,
+	catalogWorkId: "saved-work",
+};
 const catalogWork = {
 	id: "new-concerto",
 	title: "Concerto in A",
@@ -24,7 +29,7 @@ const catalogWork = {
 const missingComposerWork = {
 	...catalogWork,
 	id: "unknown-composer",
-	title: "Concerto with unknown composer",
+	title: longCatalogTitle,
 	composerName: null,
 };
 const registrations = ["legacy", "linked", "solo", "closed", "two-pieces"].map(
@@ -191,6 +196,10 @@ async function verify() {
 		saves[2]?.pieces[0].durationSeconds === 240,
 		"Duration edit reached the save request",
 	);
+	assert(
+		saves[2]?.pieces[0].title === longCatalogTitle,
+		"Duration edit preserved a linked title over 200 characters",
+	);
 
 	editButtons()[2].click();
 	assert(
@@ -253,14 +262,27 @@ async function verify() {
 		!element<HTMLInputElement>(title).readOnly,
 		"Manual entry unlocks a linked work title",
 	);
+	assert(
+		element<HTMLInputElement>(title).value === longCatalogTitle,
+		"Manual entry keeps the title",
+	);
+	element(save).click();
+	assert(
+		document.querySelector(`${dialog} [role="alert"]`)?.textContent?.trim() ===
+			"Title cannot exceed 200 characters.",
+		"Unlinking reapplies the manual title limit",
+	);
+	assert(saves.length === 4, "An overlong manual title is not submitted");
+	const shorterTitle = "Manually edited concerto";
+	enter(title, shorterTitle);
 	element(save).click();
 	await waitFor(
 		() => !document.querySelector(dialog),
 		"Manual concerto edit did not save",
 	);
 	assert(
-		saves[4]?.pieces[0].title === missingComposerWork.title,
-		"Manual entry keeps the title",
+		saves[4]?.pieces[0].title === shorterTitle,
+		"Manual entry saves after shortening the title",
 	);
 	assert(
 		!saves[4]?.pieces[0].catalogWorkId,

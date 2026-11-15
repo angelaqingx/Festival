@@ -21,6 +21,7 @@ import {
 	validateRepertoirePiece,
 	validateTransferRegistrationInput,
 } from "./registration-validation.js";
+import { MAX_CATALOG_WORK_TITLE_LENGTH } from "./repertoire.js";
 import { nonEmptyText } from "./schema-utils.js";
 
 export type {
@@ -38,7 +39,7 @@ export {
 };
 
 export const RepertoirePieceSchema = v.object({
-	title: nonEmptyText("Title", 300),
+	title: nonEmptyText("Title", MAX_CATALOG_WORK_TITLE_LENGTH),
 	composer: nonEmptyText("Composer", 300),
 	movement: v.optional(v.nullable(v.string())),
 	durationSeconds: v.pipe(

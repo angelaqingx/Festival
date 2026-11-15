@@ -85,7 +85,7 @@ export function FestivalRepertoireModal(props: FestivalRepertoireModalProps) {
 		if (!arePiecesValid(pieces())) {
 			const invalidIndex = pieces().findIndex(
 				(p) =>
-					validatePieceTitle(p.title) ||
+					validatePieceTitle(p.title, p.catalogWorkId) ||
 					validatePieceComposer(p.composer) ||
 					validatePieceDuration(p.durationMinutes, p.durationSeconds),
 			);
@@ -253,10 +253,17 @@ export function FestivalRepertoireModal(props: FestivalRepertoireModalProps) {
 												)}
 											</Show>
 										</Show>
-										<Show when={touched() && validatePieceTitle(piece().title)}>
-											<p class="field-error" role="alert">
-												{validatePieceTitle(piece().title)}
-											</p>
+										<Show
+											when={
+												touched() &&
+												validatePieceTitle(piece().title, piece().catalogWorkId)
+											}
+										>
+											{(titleError) => (
+												<p class="field-error" role="alert">
+													{titleError()}
+												</p>
+											)}
 										</Show>
 
 										<label

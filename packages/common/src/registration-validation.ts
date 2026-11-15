@@ -8,6 +8,7 @@ import {
 	isRegistrationActorRole,
 	type RegistrationActorRole,
 } from "./registration.js";
+import { getRepertoireTitleLimit } from "./repertoire.js";
 
 function asTrimmed(value: unknown): string {
 	return typeof value === "string" ? value.trim() : "";
@@ -119,6 +120,12 @@ export function validateRepertoirePiece(
 		}
 	}
 
+	const titleLimit = getRepertoireTitleLimit(catalogWorkId);
+	if (title.length > titleLimit) {
+		errors.push(
+			`Piece at index ${index} title must be ${titleLimit} characters or less.`,
+		);
+	}
 	if (errors.length > 0) return null;
 	return {
 		title,

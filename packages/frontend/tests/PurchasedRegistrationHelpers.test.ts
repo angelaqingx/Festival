@@ -160,6 +160,32 @@ describe("purchased registration policy and data", () => {
 		).toBe("active-customer");
 		expect(purchasedRegistrationUpdate([piece], "").accompanistId).toBeNull();
 	});
+	it("validates the title limit for purchased pieces before and after unlinking", () => {
+		const configuration = registration().festivalClass;
+		if (!configuration) throw new Error("fixture");
+		const linked = { ...piece, title: `  ${"A".repeat(300)}  ` };
+		const { catalogWorkId: _catalogWorkId, ...unlinked } = linked;
+
+		expect(
+			validatePurchasedRegistrationPieces([linked], configuration),
+		).toBeNull();
+		expect(
+			validatePurchasedRegistrationPieces(
+				[{ ...linked, title: "A".repeat(301) }],
+				configuration,
+			),
+		).toContain("300");
+		expect(
+			validatePurchasedRegistrationPieces([unlinked], configuration),
+		).toContain("200");
+		expect(
+			validatePurchasedRegistrationPieces(
+				[{ ...unlinked, title: `  ${"A".repeat(200)}  ` }],
+				configuration,
+			),
+		).toBeNull();
+	});
+
 	it("rejects invalid whole-second durations and class policy violations rather than normalizing them away", () => {
 		const configuration = registration().festivalClass;
 		if (!configuration) throw new Error("fixture");

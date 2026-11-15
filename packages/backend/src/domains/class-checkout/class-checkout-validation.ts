@@ -3,6 +3,7 @@ import {
 	AppError,
 	type FestivalClassConfiguration,
 	type FestivalRecord,
+	getRepertoireTitleLimit,
 	isCatalogWorkClassifiedAsConcerto,
 	isFestivalRegistrationOpen,
 	type RepertoirePiece,
@@ -84,9 +85,10 @@ export function validateRepertoirePiece(piece: unknown): void {
 	if (typeof p.title !== "string" || !p.title.trim()) {
 		throw new AppError("Repertoire piece title is required.", 400);
 	}
-	if (p.title.trim().length > 200) {
+	const titleLimit = getRepertoireTitleLimit(p.catalogWorkId);
+	if (p.title.trim().length > titleLimit) {
 		throw new AppError(
-			"Repertoire piece title cannot exceed 200 characters.",
+			`Repertoire piece title cannot exceed ${titleLimit} characters.`,
 			400,
 		);
 	}
@@ -141,8 +143,8 @@ function normalizeValidatedPiece(
 				"concerto_catalog_work_required",
 			);
 		}
-	} else if (catalogWorkId && options?.preResolvedWorksById) {
-		const work = options.preResolvedWorksById.get(catalogWorkId);
+	} else if (catalogWorkId) {
+		const work = options?.preResolvedWorksById?.get(catalogWorkId);
 		if (!work?.isActive) {
 			throw new AppError(
 				"Selected catalog work was not found or is inactive.",

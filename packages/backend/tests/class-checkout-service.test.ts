@@ -5669,7 +5669,7 @@ describe("ClassCheckoutService", () => {
 			}
 		});
 
-		it("accepts a catalog work classified as concerto and persists catalogWorkId", async () => {
+		it("preserves a 300-character concerto title only when linked to valid catalog work", async () => {
 			const f = await createFixture();
 			const concertoSubtype =
 				await f.organizations.createRegistrationCatalogValue({
@@ -5696,10 +5696,11 @@ describe("ClassCheckoutService", () => {
 					shopifyVariantGid: "gid://shopify/ProductVariant/201",
 				});
 
+			const linkedTitle = "Piano Concerto in A minor, Op. 16".padEnd(300, "x");
 			f.repertoire.seedCanonicalWork({
 				id: "work-concerto-1",
 				organizationId: f.organization.id,
-				title: "Piano Concerto in A minor, Op. 16",
+				title: linkedTitle,
 				composerName: "Edvard Grieg",
 				classifications: ["concerto"],
 				isActive: true,
@@ -5713,18 +5714,33 @@ describe("ClassCheckoutService", () => {
 				return metadata;
 			};
 
+			const piece: RepertoirePiece = {
+				title: linkedTitle,
+				composer: "Edvard Grieg",
+				movement: "I. Allegro molto moderato",
+				durationSeconds: 300,
+				catalogWorkId: "work-concerto-1",
+			};
+			for (const [invalidPiece, limit] of [
+				[{ ...piece, catalogWorkId: null }, 200],
+				[{ ...piece, title: `${linkedTitle}x` }, 300],
+			] as const) {
+				await expect(
+					f.service.start({
+						...f.defaultInput,
+						idempotencyKey: `long-title-${limit}`,
+						festivalClassId: concertoClass.id,
+						pieces: [invalidPiece],
+					}),
+				).rejects.toMatchObject({
+					status: 400,
+					message: `Repertoire piece title cannot exceed ${limit} characters.`,
+				});
+			}
 			const result = await f.service.start({
 				...f.defaultInput,
 				festivalClassId: concertoClass.id,
-				pieces: [
-					{
-						title: "Piano Concerto in A minor, Op. 16",
-						composer: "Edvard Grieg",
-						movement: "I. Allegro molto moderato",
-						durationSeconds: 300,
-						catalogWorkId: "work-concerto-1",
-					} as RepertoirePiece,
-				],
+				pieces: [piece],
 			});
 
 			expect(result.intentId).toBeDefined();
@@ -5732,13 +5748,7 @@ describe("ClassCheckoutService", () => {
 			expect(captured[0].repertoireItems[0]?.catalogWorkId).toBe(
 				"work-concerto-1",
 			);
-			expect(
-				(
-					captured[0].repertoireJson[0] as RepertoirePiece & {
-						catalogWorkId?: string | null;
-					}
-				)?.catalogWorkId,
-			).toBe("work-concerto-1");
+			expect(captured[0].repertoireJson).toEqual([piece]);
 		});
 
 		it("continues to allow free-text repertoire without catalogWorkId on non-concerto classes", async () => {
