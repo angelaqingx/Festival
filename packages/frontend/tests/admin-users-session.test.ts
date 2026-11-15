@@ -140,6 +140,72 @@ describe("Admin Users roster session isolation", () => {
 		}
 	});
 
+	it("clears the roster when the same user's session has no membership", async () => {
+		const response = rosterResponse("alpha-member");
+		const view = mountRoster(async () => response);
+		try {
+			await Bun.sleep(0);
+			expect(view.adminUsers()).toEqual(response.users);
+
+			view.setSession({
+				...adminSession("alice", "alpha"),
+				membership: undefined,
+			});
+
+			expect(view.adminUsers()).toEqual([]);
+			expect(view.canManageAdminUsers()).toBe(false);
+			await Bun.sleep(0);
+			expect(view.adminUsers()).toEqual([]);
+		} finally {
+			view.dispose();
+		}
+	});
+
+	it("clears the roster on a role downgrade with a mixed-case organization URL", async () => {
+		const response = rosterResponse("alpha-member");
+		const view = mountRoster(async () => response);
+		try {
+			view.setRoute(usersRoute("ALPHA"));
+			await Bun.sleep(0);
+			expect(view.adminUsers()).toEqual(response.users);
+
+			view.setSession(adminSession("alice", "alpha", "Read Only"));
+
+			expect(view.adminUsers()).toEqual([]);
+			expect(view.canManageAdminUsers()).toBe(false);
+		} finally {
+			view.dispose();
+		}
+	});
+
+	it("reauthorizes secondary organization access on session refresh", async () => {
+		const response = rosterResponse("beta-member");
+		let requestCount = 0;
+		const view = mountRoster(async () => {
+			if (++requestCount === 1) return response;
+			throw new ApiError("Organization access denied.", 403);
+		});
+		try {
+			batch(() => {
+				view.setRoute(usersRoute("beta"));
+				view.setSession(adminSession("alice", "alpha", "Read Only"));
+			});
+			await Bun.sleep(0);
+			expect(view.adminUsers()).toEqual(response.users);
+
+			view.setSession(adminSession("alice", "alpha", "Read Only"));
+
+			expect(view.adminUsers()).toEqual([]);
+			expect(view.canManageAdminUsers()).toBe(false);
+			await Bun.sleep(0);
+			expect(requestCount).toBe(2);
+			expect(view.isLoadingAdminUsers()).toBe(false);
+			expect(view.canManageAdminUsers()).toBe(false);
+		} finally {
+			view.dispose();
+		}
+	});
+
 	it("allows an authorized secondary organization and clears rows when its role is downgraded", async () => {
 		let beta = rosterResponse("secondary-member");
 		const view = mountRoster(async (_token, slug) =>

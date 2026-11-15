@@ -16,25 +16,13 @@ export function AdminUsersPage(props: AdminUsersPageProps) {
 		props.app.isBusy() || adminOrg.isAdminUsersMutationPending();
 	return (
 		<Show
-			when={adminOrg.canManageAdminUsers()}
+			when={
+				adminOrg.canManageAdminUsers() ||
+				adminOrg.isLoadingAdminUsers() ||
+				adminOrg.adminUsersLoadError()
+			}
 			fallback={
-				<Show
-					when={!adminOrg.isLoadingAdminUsers()}
-					fallback={<p role="status">Loading organization users…</p>}
-				>
-					<Show
-						when={adminOrg.adminUsersLoadError()}
-						fallback={
-							<AccessDeniedPanel message="Only Admin members can manage organization users." />
-						}
-					>
-						{(message) => (
-							<p class="field-error" role="alert">
-								{message()}
-							</p>
-						)}
-					</Show>
-				</Show>
+				<AccessDeniedPanel message="Only Admin members can manage organization users." />
 			}
 		>
 			<section class="panel flow-panel">
@@ -47,67 +35,88 @@ export function AdminUsersPage(props: AdminUsersPageProps) {
 				<Show when={adminOrg.adminUsersStatusMessage()}>
 					{(message) => <p role="status">{message()}</p>}
 				</Show>
-				<Show when={adminOrg.adminUsersMutationError()}>
+				<Show when={adminOrg.isLoadingAdminUsers()}>
+					<p role="status">Loading organization users…</p>
+				</Show>
+				<Show when={adminOrg.adminUsersLoadError()}>
 					{(message) => (
-						<p class="field-error" role="alert">
-							{message()}
-						</p>
+						<>
+							<p class="field-error" role="alert">
+								{message()}
+							</p>
+							<Button
+								type="button"
+								variant="secondary"
+								onClick={() => void adminOrg.retryAdminUsers()}
+							>
+								Try again
+							</Button>
+						</>
 					)}
 				</Show>
-				<div class="admin-list">
-					<For each={adminOrg.adminUsers()}>
-						{(entry) => (
-							<div class={`admin-user-row admin-user-row-${entry.status}`}>
-								<span class="status-dot" aria-hidden="true" />
-								<strong>{entry.email}</strong>
-								<span>{entry.role}</span>
-								<button
-									type="button"
-									class="icon-button trash-button"
-									aria-label={`Remove ${entry.email}`}
-									onClick={() => void adminOrg.handleDeleteAdminUser(entry)}
-									disabled={isBusy() || entry.isSelf}
-								/>
-							</div>
+				<Show when={adminOrg.canManageAdminUsers()}>
+					<Show when={adminOrg.adminUsersMutationError()}>
+						{(message) => (
+							<p class="field-error" role="alert">
+								{message()}
+							</p>
 						)}
-					</For>
-				</div>
-				<label class="field">
-					<span>Email</span>
-					<input
-						type="email"
-						value={adminOrg.inviteDraft().email}
-						onInput={(event) =>
-							adminOrg.setInviteDraft((current) => ({
-								...current,
-								email: event.currentTarget.value,
-							}))
-						}
-					/>
-				</label>
-				<label class="field">
-					<span>Role</span>
-					<select
-						value={adminOrg.inviteDraft().role}
-						onInput={(event) =>
-							adminOrg.setInviteDraft((current) => ({
-								...current,
-								role: event.currentTarget.value as OrganizationRole,
-							}))
-						}
-					>
-						<For each={ORGANIZATION_ROLES}>
-							{(role) => <option value={role}>{role}</option>}
+					</Show>
+					<div class="admin-list">
+						<For each={adminOrg.adminUsers()}>
+							{(entry) => (
+								<div class={`admin-user-row admin-user-row-${entry.status}`}>
+									<span class="status-dot" aria-hidden="true" />
+									<strong>{entry.email}</strong>
+									<span>{entry.role}</span>
+									<button
+										type="button"
+										class="icon-button trash-button"
+										aria-label={`Remove ${entry.email}`}
+										onClick={() => void adminOrg.handleDeleteAdminUser(entry)}
+										disabled={isBusy() || entry.isSelf}
+									/>
+								</div>
+							)}
 						</For>
-					</select>
-				</label>
-				<Button
-					type="button"
-					onClick={adminOrg.handleCreateAdminInvite}
-					disabled={isBusy()}
-				>
-					Send invite
-				</Button>
+					</div>
+					<label class="field">
+						<span>Email</span>
+						<input
+							type="email"
+							value={adminOrg.inviteDraft().email}
+							onInput={(event) =>
+								adminOrg.setInviteDraft((current) => ({
+									...current,
+									email: event.currentTarget.value,
+								}))
+							}
+						/>
+					</label>
+					<label class="field">
+						<span>Role</span>
+						<select
+							value={adminOrg.inviteDraft().role}
+							onInput={(event) =>
+								adminOrg.setInviteDraft((current) => ({
+									...current,
+									role: event.currentTarget.value as OrganizationRole,
+								}))
+							}
+						>
+							<For each={ORGANIZATION_ROLES}>
+								{(role) => <option value={role}>{role}</option>}
+							</For>
+						</select>
+					</label>
+					<Button
+						type="button"
+						onClick={adminOrg.handleCreateAdminInvite}
+						disabled={isBusy()}
+					>
+						Send invite
+					</Button>
+				</Show>
 			</section>
 		</Show>
 	);

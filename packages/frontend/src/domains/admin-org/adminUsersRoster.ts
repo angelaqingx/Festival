@@ -41,29 +41,43 @@ export function createAdminUsersRoster(
 	shell: AdminUsersShell,
 	fetchUsers = getAdminUsers,
 ) {
-	const adminUsersScope = createMemo<AdminUsersScope | null>((previous) => {
-		const route = shell.route();
-		const user = shell.firebaseUser();
-		const session = shell.session();
-		if (
-			route.kind !== "org-admin-users" ||
-			!user ||
-			!session.authenticated ||
-			session.user?.uid !== user.uid
-		) {
-			return null;
-		}
-		const membership = session.membership;
-		if (
-			membership?.organizationSlug === route.slug &&
-			membership.role !== "Admin"
-		) {
-			return null;
-		}
-		return previous?.uid === user.uid && previous.slug === route.slug
-			? previous
-			: { uid: user.uid, slug: route.slug };
-	}, null);
+	const adminUsersScope = createMemo<AdminUsersScope | null>(
+		on(
+			[shell.route, shell.firebaseUser, shell.session],
+			(
+				[route, user, session],
+				previousInput,
+				previousScope,
+			): AdminUsersScope | null => {
+				if (
+					route.kind !== "org-admin-users" ||
+					!user ||
+					!session.authenticated ||
+					session.user?.uid !== user.uid ||
+					!session.membership
+				) {
+					return null;
+				}
+				const slug = route.slug.toLowerCase();
+				const membership = session.membership;
+				const hasTargetMembership =
+					membership.organizationSlug.toLowerCase() === slug;
+				if (hasTargetMembership && membership.role !== "Admin") return null;
+
+				// A refreshed session may report only the primary membership.
+				// Reauthorize the roster if it omits the route's membership.
+				if (
+					previousScope?.uid === user.uid &&
+					previousScope.slug === slug &&
+					(hasTargetMembership || previousInput?.[2] === session)
+				) {
+					return previousScope;
+				}
+				return { uid: user.uid, slug };
+			},
+		),
+		null,
+	);
 	const [load, setLoad] = createSignal<AdminUsersLoad>();
 	const [mutation, setMutation] = createSignal<AdminUsersMutation>();
 	let latestRequest = 0;
@@ -114,6 +128,11 @@ export function createAdminUsersRoster(
 		}
 	}
 
+	async function retryAdminUsers() {
+		const failedLoad = currentLoad();
+		if (failedLoad?.state === "error") await loadAdminUsers(failedLoad.scope);
+	}
+
 	function reportAdminUsersMutationError(
 		scope: AdminUsersScope,
 		error: string,
@@ -145,10 +164,8 @@ export function createAdminUsersRoster(
 			await run(token);
 			if (!isAdminUsersScopeCurrent(scope) || !canManageAdminUsers()) return;
 			onSuccess?.();
+			setMutation({ scope, pending: true, message });
 			await loadAdminUsers(scope);
-			if (isAdminUsersScopeCurrent(scope) && canManageAdminUsers()) {
-				setMutation({ scope, pending: false, message });
-			}
 		} catch (error) {
 			if (!isAdminUsersScopeCurrent(scope)) return;
 			if (isAccessDenied(error)) denyAccess(scope);
@@ -192,5 +209,6 @@ export function createAdminUsersRoster(
 		isAdminUsersMutationPending: () => currentMutation()?.pending ?? false,
 		mutateAdminUsers,
 		reportAdminUsersMutationError,
+		retryAdminUsers,
 	};
 }
