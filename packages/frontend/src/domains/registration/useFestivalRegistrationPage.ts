@@ -4,13 +4,11 @@ import type { FestivalAppController } from "../../app/useFestivalAppController.j
 import { buildFestivalRegistrationPath } from "../../lib/routes.js";
 import {
 	createRegistrationSelectHandlers,
-	doesClassRequireConcerto,
 	findById,
 	isInstrumentSelectionValid,
 	isRegistrationSelectionValid,
 } from "../../pages/festivalRegistrationHelpers.js";
 import {
-	useConcertoCatalogSearch,
 	useRegistrationOptions,
 	useRegistrationWaitlist,
 } from "../../pages/festivalRegistrationHooks.js";
@@ -203,11 +201,6 @@ export function useFestivalRegistrationPage(
 			selectedClassId: () => waitlistTarget()?.classId ?? "",
 			selectedChildId: () => waitlistTarget()?.childId ?? "",
 		});
-	const catalogSearch = useConcertoCatalogSearch(
-		() => props.slug,
-		() => props.festivalSlug,
-		() => view() === "class" && doesClassRequireConcerto(selectedClass()),
-	);
 	const closeWaitlist = () => signals.setWaitlistTarget(null);
 	const selectHandlers = createRegistrationSelectHandlers(
 		setSelectedChildId,
@@ -312,7 +305,6 @@ export function useFestivalRegistrationPage(
 			selectedTeacherId(),
 			selectedClassId(),
 			signals.pieces(),
-			catalogSearch.catalogWorks(),
 		) &&
 		isInstrumentSelectionValid(instruments(), signals.selectedInstrumentId()) &&
 		Boolean(selectedTeacher()) &&
@@ -417,7 +409,6 @@ export function useFestivalRegistrationPage(
 		sessionProfile,
 		currentWaitlistEntry,
 		handleWaitlistEntryChanged,
-		catalogSearch,
 		selectHandlers,
 		getCsrf,
 		isPurchased,

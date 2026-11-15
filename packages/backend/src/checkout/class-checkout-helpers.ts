@@ -48,6 +48,7 @@ export async function resolvePieceCatalogWorks(
 export interface LegacyRepertoireValidationOptions
 	extends RepertoireValidationOptions {
 	requireConcertoMovement?: boolean;
+	requireConcertoCatalogWork?: boolean;
 	subtype?: RegistrationCatalogValue | null;
 	catalogWorksById?: ReadonlyMap<string, CanonicalWork | null>;
 }
@@ -60,7 +61,8 @@ export function validateAndNormalizeRepertoirePieces(
 	if (!Array.isArray(pieces)) {
 		throw new AppError("Repertoire pieces must be a non-empty array.", 400);
 	}
-	const requireConcertoCatalogWork =
+	const catalogWorkMustBeConcerto =
+		options?.catalogWorkMustBeConcerto ??
 		options?.requireConcertoCatalogWork ??
 		options?.requireConcertoMovement ??
 		doesClassRequireConcerto(festivalClass, options?.subtype ?? null);
@@ -69,7 +71,7 @@ export function validateAndNormalizeRepertoirePieces(
 		festivalClass,
 		{
 			...options,
-			requireConcertoCatalogWork,
+			catalogWorkMustBeConcerto,
 			preResolvedWorksById:
 				options?.preResolvedWorksById ?? options?.catalogWorksById,
 		},

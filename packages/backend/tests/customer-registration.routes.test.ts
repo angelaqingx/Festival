@@ -2050,6 +2050,7 @@ describe("Customer Registration Routes", () => {
 					entitlement: {
 						id: entitlement.id,
 						festivalId: festival.id,
+						festivalShortName: "spring-2026",
 						festivalClassId: classConfig.id,
 						childId: child.id,
 						status: "confirmed",
@@ -2061,6 +2062,7 @@ describe("Customer Registration Routes", () => {
 						festivalId: festival.id,
 						displayName: "Piano Solo Level 1",
 						classSubtypeId: "subtype-piano",
+						requiresConcerto: false,
 						divisionId: "div-1",
 						minimumAge: 5,
 						maximumAge: 18,

@@ -20,6 +20,8 @@ import type { OrganizationRepository } from "../repo/organization-repository.js"
 export interface RegistrationItemContext {
 	childrenById: Map<string, { id: string; name: string }>;
 	classConfigsByFestival: Map<string, Map<string, FestivalClassConfiguration>>;
+	festivalsById: Map<string, FestivalRecord>;
+	subtypesById: Map<string, RegistrationCatalogValue>;
 	metadataByEntitlementId: Map<string, ClassRegistrationMetadata>;
 	paidAtByOrderGid: Map<string, string | null>;
 	editCutoffs: Map<string, Date>;
@@ -28,10 +30,12 @@ export interface RegistrationItemContext {
 
 export function toEntitlementSummary(
 	e: ClassEntitlement,
+	festivalShortName: string | undefined,
 ): CustomerClassEntitlementSummary {
 	return {
 		id: e.id,
 		festivalId: e.festivalId,
+		...(festivalShortName ? { festivalShortName } : {}),
 		festivalClassId: e.festivalClassId,
 		childId: e.childId,
 		status: e.status,
@@ -42,12 +46,14 @@ export function toEntitlementSummary(
 
 export function toFestivalClassSummary(
 	c: FestivalClassConfiguration,
+	subtype: RegistrationCatalogValue | null,
 ): CustomerFestivalClassSummary {
 	return {
 		id: c.id,
 		festivalId: c.festivalId,
 		displayName: c.displayName,
 		classSubtypeId: c.classSubtypeId,
+		requiresConcerto: doesClassRequireConcerto(c, subtype),
 		divisionId: c.divisionId,
 		minimumAge: c.minimumAge,
 		maximumAge: c.maximumAge,
@@ -85,8 +91,16 @@ export function buildRegistrationItem(
 	const metadata = ctx.metadataByEntitlementId.get(entitlement.id) ?? null;
 	const editCutoff = ctx.editCutoffs.get(entitlement.festivalId);
 	return {
-		entitlement: toEntitlementSummary(entitlement),
-		festivalClass: fc ? toFestivalClassSummary(fc) : undefined,
+		entitlement: toEntitlementSummary(
+			entitlement,
+			ctx.festivalsById.get(entitlement.festivalId)?.shortName,
+		),
+		festivalClass: fc
+			? toFestivalClassSummary(
+					fc,
+					ctx.subtypesById.get(fc.classSubtypeId) ?? null,
+				)
+			: undefined,
 		child,
 		metadata: metadata ? toMetadataSummary(metadata) : null,
 		paidAtIso: ctx.paidAtByOrderGid.get(entitlement.shopifyOrderGid) ?? null,
@@ -232,26 +246,40 @@ export async function loadRegistrationResponseItems(
 		nowMs: number;
 	},
 ) {
-	const [projections, classConfigsByFestival, metadataByEntitlementId] =
-		await Promise.all([
-			commerce.listOrderProjectionsByGids(input.organizationId, [
-				...new Set(input.entitlements.map((e) => e.shopifyOrderGid)),
-			]),
-			loadClassConfigsByFestival(organizations, input.organizationId, [
-				...new Set(input.entitlements.map((e) => e.festivalId)),
-			]),
-			loadMetadataMap(
-				checkout,
-				input.organizationId,
-				input.entitlements.map((e) => e.id),
-			),
-		]);
+	if (input.entitlements.length === 0) return [];
+	const [
+		projections,
+		classConfigsByFestival,
+		metadataByEntitlementId,
+		subtypes,
+	] = await Promise.all([
+		commerce.listOrderProjectionsByGids(input.organizationId, [
+			...new Set(input.entitlements.map((e) => e.shopifyOrderGid)),
+		]),
+		loadClassConfigsByFestival(organizations, input.organizationId, [
+			...new Set(input.entitlements.map((e) => e.festivalId)),
+		]),
+		loadMetadataMap(
+			checkout,
+			input.organizationId,
+			input.entitlements.map((e) => e.id),
+		),
+		organizations.listRegistrationCatalogValues(
+			input.organizationId,
+			"class_subtype",
+			false,
+		),
+	]);
 	const { deriveFestivalMetadataCutoff } = await import("@festival/common");
 	const ctx: RegistrationItemContext = {
 		childrenById: new Map(
 			input.children.map((c) => [c.id, { id: c.id, name: c.displayName }]),
 		),
 		classConfigsByFestival,
+		festivalsById: new Map(
+			input.festivals.map((festival) => [festival.id, festival]),
+		),
+		subtypesById: new Map(subtypes.map((subtype) => [subtype.id, subtype])),
 		metadataByEntitlementId,
 		paidAtByOrderGid: new Map(
 			projections.map((p) => [p.shopifyOrderGid, p.fullyPaidAtIso ?? null]),

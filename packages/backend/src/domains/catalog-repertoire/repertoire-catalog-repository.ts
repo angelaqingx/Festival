@@ -161,6 +161,65 @@ async function attachWorkClassificationsTx(
 	}
 }
 
+function concertoFilter(schema: string): string {
+	return `(
+		NOT $4::boolean
+		OR EXISTS (
+			SELECT 1
+			FROM ${schema}.repertoire_work_classifications rwc_c
+			JOIN ${schema}.repertoire_classifications rcl_c
+			  ON rcl_c.id = rwc_c.repertoire_classification_id
+			WHERE rwc_c.repertoire_work_id = rw.id
+			  AND rcl_c.organization_id = rw.organization_id
+			  AND lower(trim(rcl_c.normalized_name)) = 'concerto'
+		)
+	)`;
+}
+
+const typeaheadOrder = `CASE
+	WHEN rw.normalized_title = $4 THEN 0
+	WHEN rw.normalized_title LIKE $5 THEN 1
+	ELSE 2
+END, rw.normalized_title, rw.id`;
+
+function typeaheadCatalogSource(schema: string, concertoOnly = false): string {
+	const concerto = concertoOnly
+		? `AND rw.id IN (
+			SELECT rwc_c.repertoire_work_id
+			FROM ${schema}.repertoire_work_classifications rwc_c
+			JOIN ${schema}.repertoire_classifications rcl_c
+			  ON rcl_c.id = rwc_c.repertoire_classification_id
+			 AND rcl_c.organization_id = rwc_c.organization_id
+			WHERE rwc_c.organization_id = $1
+			  AND lower(trim(rcl_c.normalized_name)) = 'concerto'
+		)`
+		: "";
+	// Separate title and composer candidates so each branch can use its trigram index.
+	return `(
+		SELECT rw.*
+		FROM ${schema}.repertoire_works rw
+		JOIN (
+			SELECT id AS work_id
+			FROM ${schema}.repertoire_works
+			WHERE organization_id = $1 AND is_active = TRUE AND normalized_title LIKE $2
+			UNION
+			SELECT rwc.repertoire_work_id
+			FROM ${schema}.repertoire_contributors rc
+			JOIN ${schema}.repertoire_work_contributors rwc
+			  ON rwc.repertoire_contributor_id = rc.id AND rwc.organization_id = rc.organization_id
+			WHERE rc.organization_id = $1 AND rc.normalized_name LIKE $2
+			  AND NOT EXISTS (
+				SELECT 1 FROM ${schema}.repertoire_work_contributors earlier
+				WHERE earlier.repertoire_work_id = rwc.repertoire_work_id
+				  AND earlier.position < rwc.position
+			  )
+		) matching ON matching.work_id = rw.id
+		WHERE rw.organization_id = $1 AND rw.is_active = TRUE ${concerto}
+		ORDER BY ${typeaheadOrder}
+		LIMIT $3
+	)`;
+}
+
 /** PostgreSQL catalog repository for canonical repertoire works, composers, and #360 concertos. */
 export class PostgresRepertoireCatalogRepository
 	implements RepertoireCatalogRepository
@@ -180,7 +239,29 @@ export class PostgresRepertoireCatalogRepository
 	): Promise<CanonicalWork[]> {
 		await this.ensureReady();
 		const limit = input.limit ?? 20;
-		const term = `%${input.query.trim()}%`;
+		const query = input.query.trim();
+		if (input.typeahead && !query) return [];
+		const normalized = query.toLowerCase();
+		const literal = normalized.replace(/[\\%_]/g, "\\$&");
+		const source = input.typeahead
+			? typeaheadCatalogSource(this.schema, input.concertoOnly)
+			: `${this.schema}.repertoire_works`;
+		const filter = input.typeahead
+			? `ORDER BY ${typeaheadOrder}`
+			: `WHERE rw.organization_id = $1
+				AND rw.is_active = TRUE
+				AND ${concertoFilter(this.schema)}
+				AND (rw.display_title ILIKE $2 OR COALESCE(rc.display_name, '') ILIKE $2)
+				ORDER BY rw.display_title ASC
+				LIMIT $3`;
+		const params = input.typeahead
+			? [input.organizationId, `%${literal}%`, limit, normalized, `${literal}%`]
+			: [
+					input.organizationId,
+					`%${query}%`,
+					limit,
+					input.concertoOnly ?? false,
+				];
 		const rows = (await sql.unsafe(
 			`SELECT
 				rw.id, rw.organization_id, rw.display_title, rw.normalized_title,
@@ -197,7 +278,7 @@ export class PostgresRepertoireCatalogRepository
 					),
 					ARRAY[]::text[]
 				) AS classifications
-			 FROM ${this.schema}.repertoire_works rw
+			 FROM ${source} rw
 			 LEFT JOIN LATERAL (
 				SELECT rc_inner.id, rc_inner.display_name
 				FROM ${this.schema}.repertoire_work_contributors rwc
@@ -207,24 +288,8 @@ export class PostgresRepertoireCatalogRepository
 				ORDER BY rwc.position ASC
 				LIMIT 1
 			 ) rc ON TRUE
-			 WHERE rw.organization_id = $1
-			   AND rw.is_active = TRUE
-			   AND (
-					NOT $4::boolean
-					OR EXISTS (
-						SELECT 1
-						FROM ${this.schema}.repertoire_work_classifications rwc_c
-						JOIN ${this.schema}.repertoire_classifications rcl_c
-						  ON rcl_c.id = rwc_c.repertoire_classification_id
-						WHERE rwc_c.repertoire_work_id = rw.id
-						  AND rcl_c.organization_id = rw.organization_id
-						  AND lower(trim(rcl_c.normalized_name)) = 'concerto'
-					)
-			   )
-			   AND (rw.display_title ILIKE $2 OR COALESCE(rc.display_name, '') ILIKE $2)
-			 ORDER BY rw.display_title ASC
-			 LIMIT $3`,
-			[input.organizationId, term, limit, input.concertoOnly ?? false],
+			 ${filter}`,
+			params,
 		)) as Array<Record<string, unknown>>;
 		return rows.map(mapCanonicalWorkRow);
 	}

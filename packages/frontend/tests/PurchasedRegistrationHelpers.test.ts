@@ -5,6 +5,7 @@ import type {
 } from "@festival/common";
 import {
 	canEditPurchasedRegistration,
+	getEditableRegistrationPieces,
 	groupPurchasedRegistrations,
 	KEEP_CURRENT_ACCOMPANIST,
 	purchasedRegistrationReadOnlyReason,
@@ -124,6 +125,34 @@ describe("purchased registration policy and data", () => {
 		expect(update).not.toHaveProperty("accompanistId");
 		expect(update.pieces?.[0]).toEqual(piece);
 		expect(update.pieces?.[0]).not.toBe(piece);
+	});
+	it("keeps family selections and manual pieces while dropping deleted links", () => {
+		const item = registration();
+		if (!item.metadata) throw new Error("fixture");
+		const { catalogWorkId: _catalogWorkId, ...legacyPiece } = piece;
+		const normalizedItem = {
+			id: "piece-1",
+			organizationId: "organization-1",
+			registrationMetadataId: item.metadata.id,
+			titleSnapshot: "Concerto",
+			performedMovementText: null,
+			durationSeconds: 180,
+			contributors: [],
+		};
+		const [reviewedManual, deleted, linked] = getEditableRegistrationPieces({
+			...item,
+			metadata: {
+				...item.metadata,
+				repertoireJson: [legacyPiece, piece, piece],
+				repertoireItems: [
+					{ ...normalizedItem, displayOrder: 2, catalogWorkId: null },
+					{ ...normalizedItem, displayOrder: 1, catalogWorkId: "from-catalog" },
+				],
+			},
+		});
+		expect(reviewedManual).toEqual(legacyPiece);
+		expect(deleted).toEqual(legacyPiece);
+		expect(linked).toEqual(piece);
 	});
 	it("sends only explicit accompanist changes through the existing API contract", () => {
 		expect(

@@ -1782,7 +1782,7 @@ describe("CustomerAccountService", () => {
 		}
 	});
 
-	it("enforces concerto catalog work requirement when updating registration metadata (#197)", async () => {
+	it("updates manual and linked concerto registration repertoire", async () => {
 		const f = await fixture();
 		await f.organizations.updateOrganizationTimezone(
 			f.org.id,
@@ -1873,26 +1873,30 @@ describe("CustomerAccountService", () => {
 		);
 		f.setNow(new Date(cutoff.getTime() - 10_000));
 
-		// 1. Free-text repertoire without catalogWorkId is rejected with 400
-		await expect(
-			f.service.updateRegistrationMetadata(
-				"festival",
-				"spring-2026",
-				entitlement.id,
-				auth.sessionId,
-				csrfToken,
-				origin,
-				{
-					pieces: [
-						{
-							title: "Piano Concerto in A minor",
-							composer: "Edvard Grieg",
-							durationSeconds: 300,
-						},
-					],
-				},
-			),
-		).rejects.toMatchObject({ status: 400 });
+		const manualPiece = {
+			title: "Piano Concerto in A minor",
+			composer: "Edvard Grieg",
+			durationSeconds: 305,
+		};
+		const manualUpdate = await f.service.updateRegistrationMetadata(
+			"festival",
+			"spring-2026",
+			entitlement.id,
+			auth.sessionId,
+			csrfToken,
+			origin,
+			{ pieces: [manualPiece] },
+		);
+		expect(manualUpdate.metadata.repertoireJson).toEqual([manualPiece]);
+		expect(manualUpdate.metadata.repertoireItems[0]?.catalogWorkId).toBeNull();
+		const registrations = await f.service.listClassRegistrations(
+			"festival",
+			auth.sessionId,
+			"spring-2026",
+		);
+		expect(registrations.registrations[0]?.metadata?.repertoireJson).toEqual([
+			manualPiece,
+		]);
 
 		// 2. Catalog work not classified as concerto is rejected with 400
 		f.repertoire.seedCanonicalWork({

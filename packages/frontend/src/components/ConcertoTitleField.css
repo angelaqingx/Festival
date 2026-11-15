@@ -1,0 +1,38 @@
+.concerto-title-field {
+	display: grid;
+	gap: 0.4rem;
+}
+
+.concerto-title-suggestions {
+	border: 1px solid currentColor;
+	margin: 0;
+	max-height: 12rem;
+	overflow-y: auto;
+	padding: 0;
+}
+
+.concerto-title-suggestions > button {
+	display: block;
+	width: 100%;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	font: inherit;
+	text-align: left;
+	padding: 0.4rem 0.55rem;
+}
+
+.concerto-title-suggestions > button:hover,
+.concerto-title-suggestions > button[aria-selected="true"] {
+	background: var(--panel, #f3f3f3);
+	outline: 2px solid currentColor;
+	outline-offset: -2px;
+}
+
+.concerto-title-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+}

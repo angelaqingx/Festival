@@ -6,7 +6,10 @@ import {
 	type OrganizationRecord,
 } from "@festival/common";
 import type { CheckoutRepository } from "./checkout-types.js";
-import { buildPortRegistrationItem } from "./customer-registration-query-helpers.js";
+import {
+	buildPortRegistrationItem,
+	type RegistrationListContext,
+} from "./customer-registration-query-helpers.js";
 import { queryConfirmedCountsSql } from "./customer-registration-sql-queries.js";
 import type {
 	CheckoutCatalogReadPort,
@@ -135,12 +138,10 @@ async function loadPortRegistrationLookups(
 
 export async function listClassRegistrationsFromPorts(
 	deps: CustomerQueryPortDeps,
-	params: {
+	params: Omit<RegistrationListContext, "nowMs"> & {
 		organizationId: string;
 		customerId: string;
 		targetFestival: FestivalRecord | null;
-		festivals: FestivalRecord[];
-		editCutoffs: Map<string, Date>;
 	},
 ): Promise<CustomerClassRegistrationsResponse> {
 	const entitlements = await deps.commerce.listClassEntitlements({
@@ -161,17 +162,17 @@ export async function listClassRegistrationsFromPorts(
 		params.organizationId,
 		params.customerId,
 		entitlements,
-		params.festivals,
+		[...params.festivalsById.values()],
 	);
 	const nowMs = deps.now().getTime();
 	return {
 		registrations: entitlements.map((entitlement) =>
 			buildPortRegistrationItem(entitlement, {
+				...params,
 				childrenById,
 				classConfigsByFestival,
 				metadataByEntitlementId: metadataMap,
 				paidAtByOrderGid,
-				editCutoffs: params.editCutoffs,
 				nowMs,
 			}),
 		),

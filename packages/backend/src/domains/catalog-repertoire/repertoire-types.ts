@@ -75,6 +75,7 @@ export interface SearchCatalogWorksInput {
 	organizationId: string;
 	query: string;
 	concertoOnly?: boolean;
+	typeahead?: boolean;
 	limit?: number;
 }
 

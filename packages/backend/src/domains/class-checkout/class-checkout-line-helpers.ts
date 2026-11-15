@@ -41,7 +41,7 @@ export async function resolveLinePiecesAndInstrument(params: {
 		params.line.pieces ?? [],
 		params.festivalClass,
 		{
-			requireConcertoCatalogWork: doesClassRequireConcerto(
+			catalogWorkMustBeConcerto: doesClassRequireConcerto(
 				params.festivalClass,
 				params.subtype,
 			),

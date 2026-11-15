@@ -112,9 +112,7 @@ export function validatePieceCatalogWork(
 			: optionsOrRequiresConcerto;
 	if (!options?.requiresConcerto) return null;
 	const workId = piece.catalogWorkId?.trim();
-	if (!workId) {
-		return "Concerto classes require selecting a concerto work from the catalog.";
-	}
+	if (!workId) return null;
 	if (options.catalogWorks) {
 		const work = options.catalogWorks.find((w) => w.id === workId);
 		if (!work || !isCatalogWorkClassifiedAsConcerto(work)) {

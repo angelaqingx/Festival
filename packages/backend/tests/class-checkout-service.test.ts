@@ -5539,8 +5539,8 @@ describe("ClassCheckoutService", () => {
 		});
 	});
 
-	describe("Concerto catalog work requirement (#197)", () => {
-		it("rejects free-text repertoire when class requires a concerto", async () => {
+	describe("Concerto class repertoire", () => {
+		it("persists a manually entered concerto without a catalog link", async () => {
 			const f = await createFixture();
 			const concertoSubtype =
 				await f.organizations.createRegistrationCatalogValue({
@@ -5567,22 +5567,26 @@ describe("ClassCheckoutService", () => {
 					shopifyVariantGid: "gid://shopify/ProductVariant/201",
 				});
 
-			await expect(
-				f.service.start({
-					...f.defaultInput,
-					festivalClassId: concertoClass.id,
-					pieces: [
-						{
-							title: "Piano Concerto in A minor, Op. 16",
-							composer: "Edvard Grieg",
-							durationSeconds: 300,
-						},
-					],
-				}),
-			).rejects.toMatchObject({
-				status: 400,
-				code: "concerto_catalog_work_required",
+			const captured: ClassRegistrationMetadata[] = [];
+			const insert = f.checkout.insertRegistrationMetadata.bind(f.checkout);
+			f.checkout.insertRegistrationMetadata = async (params) => {
+				const metadata = await insert(params);
+				captured.push(metadata);
+				return metadata;
+			};
+			const manualPiece = {
+				title: "Piano Concerto in A minor, Op. 16",
+				composer: "Edvard Grieg",
+				durationSeconds: 300,
+			};
+			const result = await f.service.start({
+				...f.defaultInput,
+				festivalClassId: concertoClass.id,
+				pieces: [manualPiece],
 			});
+			expect(result.intentId).toBeDefined();
+			expect(captured[0]?.repertoireJson).toEqual([manualPiece]);
+			expect(captured[0]?.repertoireItems[0]?.catalogWorkId).toBeNull();
 		});
 
 		it("rejects catalog work not classified as concerto or unknown catalogWorkId", async () => {
@@ -5630,9 +5634,18 @@ describe("ClassCheckoutService", () => {
 				isActive: true,
 			});
 
+			f.repertoire.seedCanonicalWork({
+				id: "work-inactive-concerto",
+				organizationId: f.organization.id,
+				title: "Inactive Concerto",
+				classifications: ["concerto"],
+				isActive: false,
+			});
+
 			for (const catalogWorkId of [
 				"work-sonata",
 				"work-unclassified",
+				"work-inactive-concerto",
 				"unknown-work-id",
 			]) {
 				await expect(

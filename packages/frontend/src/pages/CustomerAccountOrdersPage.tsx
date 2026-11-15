@@ -1,4 +1,9 @@
-import type { CustomerOrderSummary, RepertoirePiece } from "@festival/common";
+import {
+	type CustomerClassRegistrationItem,
+	type CustomerOrderSummary,
+	doesClassRequireConcerto,
+	type RepertoirePiece,
+} from "@festival/common";
 import { createSignal, For, Show } from "solid-js";
 import type { FestivalAppController } from "../app/useFestivalAppController.js";
 import { Button } from "../components/Button.js";
@@ -17,43 +22,33 @@ import {
 	type ClassOption,
 	CustomerTransferRegistrationModal,
 } from "./CustomerTransferRegistrationModal.js";
+import {
+	canEditPurchasedRegistration,
+	getEditableRegistrationPieces,
+} from "./PurchasedRegistrationHelpers.js";
 
-interface RegistrationItemRecord {
-	entitlement: {
-		id: string;
-		festivalId?: string;
+interface RegistrationItemRecord extends CustomerClassRegistrationItem {
+	entitlement: CustomerClassRegistrationItem["entitlement"] & {
 		festivalSlug?: string;
-		festivalShortName?: string;
-		status?: string;
-		festivalClassId?: string;
 		orderId?: string;
 		divisionId?: string;
 		teacherId?: string;
-		childId?: string;
-		[key: string]: unknown;
 	};
-	festivalClass?: {
-		id: string;
-		displayName: string;
-		price?: string;
-		divisionId?: string;
+	festivalClass?: NonNullable<
+		CustomerClassRegistrationItem["festivalClass"]
+	> & {
 		festivalSlug?: string;
 		festivalShortName?: string;
-		[key: string]: unknown;
 	};
-	child?: { id: string; name: string };
-	metadata?: {
-		id: string;
-		repertoireJson: RepertoirePiece[];
-		teacherMembershipId?: string;
-		teacherId?: string;
-		[key: string]: unknown;
-	} | null;
+	metadata?:
+		| (NonNullable<CustomerClassRegistrationItem["metadata"]> & {
+				teacherId?: string;
+		  })
+		| null;
 	festivalSlug?: string;
 	festivalShortName?: string;
 	divisionId?: string;
 	teacherId?: string;
-	[key: string]: unknown;
 }
 
 function isRegistrationActiveOrWaitlisted(status?: string): boolean {
@@ -71,7 +66,6 @@ export function CustomerAccountOrdersPage(props: {
 	>([]);
 	const [next, setNext] = createSignal<string | null>(null);
 	const [error, setError] = createSignal("");
-	const [editError, setEditError] = createSignal<string | null>(null);
 	const [activeRegistration, setActiveRegistration] =
 		createSignal<RegistrationItemRecord | null>(null);
 
@@ -103,48 +97,43 @@ export function CustomerAccountOrdersPage(props: {
 
 	async function loadRegistrations() {
 		try {
-			const res = (await listCustomerClassRegistrations(
-				props.slug,
-			)) as unknown as {
-				registrations?: RegistrationItemRecord[];
-			};
-			if (res && Array.isArray(res.registrations)) {
-				setRegistrations(res.registrations);
-			}
+			const response = await listCustomerClassRegistrations(props.slug);
+			setRegistrations(response.registrations);
 		} catch {
 			// Handled gracefully in UI
 		}
 	}
 
 	async function handleSaveRepertoire(
+		target: CustomerClassRegistrationItem,
 		savedPieces: RepertoirePiece[],
 		csrfToken: string,
 	) {
-		const target = activeRegistration();
-		if (!target?.metadata) return;
-		setEditError(null);
-		const targetFestivalSlug =
-			target.entitlement.festivalSlug ??
-			target.entitlement.festivalShortName ??
-			target.festivalClass?.festivalSlug ??
-			target.festivalClass?.festivalShortName ??
-			target.festivalSlug ??
-			target.festivalShortName ??
-			target.entitlement.festivalId ??
-			"";
-		try {
-			await updateRegistrationMetadata(
-				props.slug,
-				targetFestivalSlug,
-				target.metadata.id,
-				csrfToken,
-				{ pieces: savedPieces },
-			);
-			await loadRegistrations();
-			setActiveRegistration(null);
-		} catch (err) {
-			setEditError((err as Error).message);
+		const { festivalShortName, id } = target.entitlement;
+		if (!festivalShortName || !canEditPurchasedRegistration(target)) {
+			throw new Error("Editing is no longer available for this registration.");
 		}
+		const { metadata } = await updateRegistrationMetadata(
+			props.slug,
+			festivalShortName,
+			id,
+			csrfToken,
+			{ pieces: savedPieces },
+		);
+		setRegistrations((current) =>
+			current.map((registration) =>
+				registration.entitlement.id === id && registration.metadata
+					? {
+							...registration,
+							metadata: {
+								...registration.metadata,
+								repertoireJson: metadata.repertoireJson,
+								repertoireItems: metadata.repertoireItems,
+							},
+						}
+					: registration,
+			),
+		);
 	}
 
 	async function handleOpenTransfer(item: RegistrationItemRecord) {
@@ -304,8 +293,12 @@ export function CustomerAccountOrdersPage(props: {
 													<Button
 														type="button"
 														variant="secondary"
+														disabled={
+															!item.entitlement.festivalShortName ||
+															!canEditPurchasedRegistration(item)
+														}
 														onClick={() => {
-															setEditError(null);
+															if (!canEditPurchasedRegistration(item)) return;
 															setActiveRegistration(item);
 														}}
 													>
@@ -365,11 +358,6 @@ export function CustomerAccountOrdersPage(props: {
 									)}
 								</For>
 							</ul>
-						</Show>
-						<Show when={editError()}>
-							<p class="field-error" role="alert">
-								{editError()}
-							</p>
 						</Show>
 						<Show when={actionError()}>
 							<p class="field-error" role="alert">
@@ -445,18 +433,21 @@ export function CustomerAccountOrdersPage(props: {
 						)}
 					</Show>
 
-					<Show when={activeRegistration()}>
-						<FestivalRepertoireModal
-							isOpen={Boolean(activeRegistration())}
-							maxPieces={3}
-							initialPieces={
-								activeRegistration()?.metadata?.repertoireJson ?? []
-							}
-							onSave={(saved) =>
-								void handleSaveRepertoire(saved, session.csrfToken)
-							}
-							onClose={() => setActiveRegistration(null)}
-						/>
+					<Show when={activeRegistration()} keyed>
+						{(item) => (
+							<FestivalRepertoireModal
+								organizationSlug={props.slug}
+								festivalSlug={item.entitlement.festivalShortName ?? ""}
+								maxPieces={item.festivalClass?.maximumPerformancePieces ?? 1}
+								performanceMinutes={item.festivalClass?.performanceMinutes}
+								initialPieces={getEditableRegistrationPieces(item)}
+								suggestConcertos={doesClassRequireConcerto(item.festivalClass)}
+								onSave={(saved) =>
+									handleSaveRepertoire(item, saved, session.csrfToken)
+								}
+								onClose={() => setActiveRegistration(null)}
+							/>
+						)}
 					</Show>
 
 					<Show when={dropTarget()}>

@@ -197,11 +197,16 @@ export class CustomerRegistrationQueryService {
 					trimmedShortName,
 				)
 			: null;
-		const [festivals, timezone] = await Promise.all([
+		const [festivals, timezone, subtypes] = await Promise.all([
 			targetFestival
 				? Promise.resolve([targetFestival])
 				: this.catalog.listFestivals(access.organization.id),
 			this.organizations.getOrganizationTimezone(access.organization.id),
+			this.catalog.listRegistrationCatalogValues(
+				access.organization.id,
+				"class_subtype",
+				false,
+			),
 		]);
 		const tz = timezone || "UTC";
 		const editCutoffs = new Map(
@@ -210,6 +215,13 @@ export class CustomerRegistrationQueryService {
 				deriveFestivalMetadataCutoff(f.startDate, tz),
 			]),
 		);
+		const registrationContext = {
+			festivalsById: new Map(
+				festivals.map((festival) => [festival.id, festival]),
+			),
+			subtypesById: new Map(subtypes.map((subtype) => [subtype.id, subtype])),
+			editCutoffs,
+		};
 		if (this.schema) {
 			const rows = await queryClassRegistrationsJoinedSql(
 				this.schema,
@@ -218,19 +230,17 @@ export class CustomerRegistrationQueryService {
 				targetFestival?.id,
 			);
 			return {
-				registrations: buildJoinedRegistrationItems(
-					rows,
-					editCutoffs,
-					this.now().getTime(),
-				),
+				registrations: buildJoinedRegistrationItems(rows, {
+					...registrationContext,
+					nowMs: this.now().getTime(),
+				}),
 			};
 		}
 		return listClassRegistrationsFromPorts(this.portDeps(), {
+			...registrationContext,
 			organizationId: access.organization.id,
 			customerId: access.customerId,
 			targetFestival,
-			festivals,
-			editCutoffs,
 		});
 	}
 

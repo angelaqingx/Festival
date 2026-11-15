@@ -378,9 +378,14 @@ export function FestivalRegistrationClassView(props: RegistrationViewProps) {
 								onChange={state.setPieces}
 								maxPieces={normalizeMaxPieces(cls.maximumPerformancePieces)}
 								performanceMinutes={cls.performanceMinutes}
-								requiresConcerto={doesClassRequireConcerto(cls)}
-								catalogWorks={state.catalogSearch.catalogWorks()}
-								catalogSearch={state.catalogSearch}
+								catalogScope={
+									doesClassRequireConcerto(cls)
+										? {
+												organizationSlug: page.slug,
+												festivalSlug: page.festivalSlug,
+											}
+										: undefined
+								}
 								onDirtyChange={state.setPieceDirty}
 							/>
 						</fieldset>
