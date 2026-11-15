@@ -1,4 +1,5 @@
 import { Route, type RouteSectionProps, useParams } from "@solidjs/router";
+import { createMemo, Show } from "solid-js";
 import { AdminOrgProvider } from "../domains/admin-org/AdminOrgContext.js";
 import { ClassRegistrationProvider } from "../domains/registration/ClassRegistrationContext.js";
 import { STAFF_ORGANIZATION_CHOOSER_PATH } from "../lib/routes.js";
@@ -114,14 +115,28 @@ function publicOrgRoutes() {
 function regView(view: "workspace" | "class" | "cart") {
 	return () => {
 		const p = useParams();
+		const app = useFestivalShell();
+		const scope = createMemo(
+			() => ({ slug: p.slug ?? "", festivalSlug: p.festivalSlug ?? "" }),
+			undefined,
+			{
+				equals: (previous, next) =>
+					previous.slug === next.slug &&
+					previous.festivalSlug === next.festivalSlug,
+			},
+		);
 		return (
-			<Pages.FestivalClassRegistrationPage
-				app={useFestivalShell()}
-				slug={p.slug ?? ""}
-				festivalSlug={p.festivalSlug ?? ""}
-				view={view}
-				classId={p.classId ? decodeURIComponent(p.classId) : undefined}
-			/>
+			<Show when={scope()} keyed>
+				{({ slug, festivalSlug }) => (
+					<Pages.FestivalClassRegistrationPage
+						app={app}
+						slug={slug}
+						festivalSlug={festivalSlug}
+						view={view}
+						classId={p.classId ? decodeURIComponent(p.classId) : undefined}
+					/>
+				)}
+			</Show>
 		);
 	};
 }
