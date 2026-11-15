@@ -267,7 +267,10 @@ function mapOrderNode(
 			return {
 				title: String(lineValue.title ?? ""),
 				quantity: Number(lineValue.quantity),
-				total: parseMoney(lineValue.totalPrice),
+				total:
+					lineValue.totalPrice === null
+						? null
+						: parseMoney(lineValue.totalPrice),
 			};
 		}),
 	};

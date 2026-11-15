@@ -205,6 +205,11 @@ async function fixture(
 												quantity: 1,
 												totalPrice: { amount: "25.00", currencyCode: "USD" },
 											},
+											{
+												title: "Additional entry",
+												quantity: 1,
+												totalPrice: null,
+											},
 										],
 									},
 								},
@@ -555,6 +560,7 @@ describe("CustomerAccountService", () => {
 					quantity: 1,
 					total: { amount: "25.00", currencyCode: "USD" },
 				},
+				{ title: "Additional entry", quantity: 1, total: null },
 			],
 		});
 		expect(JSON.stringify(orders)).not.toContain("gid://shopify/Customer");

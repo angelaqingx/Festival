@@ -1500,6 +1500,104 @@ describe("ClassCheckoutService", () => {
 		).toHaveLength(1);
 	});
 
+	it("allows both classes to be checked out again after the office closes an expired attached cart", async () => {
+		const f = await createFixture();
+		const festival = required(f.festival);
+		const concertoSubtype =
+			await f.organizations.createRegistrationCatalogValue({
+				organizationId: f.organization.id,
+				kind: "class_subtype",
+				displayName: "Concerto",
+				normalizedName: "concerto",
+			});
+		const concerto = await f.organizations.createFestivalClassConfiguration({
+			organizationId: f.organization.id,
+			festivalId: festival.id,
+			displayName: "Junior Piano Concerto",
+			classSubtypeId: concertoSubtype.id,
+			divisionId: f.division.id,
+			minimumAge: 8,
+			maximumAge: 12,
+			price: "55.00",
+			maximumPerformancePieces: 2,
+			performanceMinutes: 10,
+			capacity: 20,
+			shopifyProductGid: "gid://shopify/Product/101",
+			shopifyVariantGid: "gid://shopify/ProductVariant/201",
+		});
+		const input = {
+			...f.defaultInput,
+			festivalShortName: festival.shortName,
+			lineItems: [f.classConfig.id, concerto.id].map((festivalClassId) => ({
+				festivalClassId,
+				childId: f.child.id,
+				teacherId: f.teacherId,
+				pieces: f.defaultPieces,
+			})),
+		};
+		const original = await f.service.start(input);
+		const execution = required(
+			await f.checkout.classExecutions.get(
+				f.organization.id,
+				original.intentId,
+			),
+		);
+		const recoveryInput = {
+			organizationId: input.organizationId,
+			customerId: input.customerId,
+			sessionId: input.sessionId,
+			idempotencyKey: input.idempotencyKey,
+			festivalShortName: input.festivalShortName,
+			recoveryReference: execution.recoveryReference,
+		};
+		f.now.setTime(f.now.getTime() + 31 * 60_000);
+		await expect(
+			f.service.recoveryStatus(recoveryInput),
+		).resolves.toMatchObject({
+			status: "recovery_required",
+			reasonCode: "checkout_expired",
+			retryAllowed: false,
+		});
+		const expired = required(
+			await f.checkout.classExecutions.get(
+				f.organization.id,
+				original.intentId,
+			),
+		);
+		await f.service.resolveRecovery({
+			organizationId: f.organization.id,
+			recoveryReference: execution.recoveryReference,
+			expectedGeneration: expired.generation,
+			actorId: "admin",
+			reason: "Verified expired checkout is safe to close",
+			action: "abandon_unknown",
+			acknowledgeUnknown: true,
+		});
+		const closed = {
+			status: "resolved",
+			reasonCode: "checkout_abandoned",
+			retryAllowed: false,
+		};
+		await expect(
+			f.service.recoveryStatus(recoveryInput),
+		).resolves.toMatchObject(closed);
+		await expect(f.service.start(input)).rejects.toMatchObject({
+			code: "checkout_abandoned",
+			recovery: closed,
+		});
+		const replacement = await f.service.start({
+			...input,
+			idempotencyKey: "replacement-after-office-closure",
+		});
+		expect(replacement.intentId).not.toBe(original.intentId);
+		expect(replacement.checkoutUrl).toBe(
+			`https://${f.storeDomain}/checkouts/c123`,
+		);
+		expect(
+			replacement.intent?.lines?.map((line) => line.festivalClassId),
+		).toEqual([f.classConfig.id, concerto.id]);
+	});
+
 	it("routes a checkout blocked by an expired cart to its festival, while approved operations do not block", async () => {
 		const f = await createFixture();
 		const original = {

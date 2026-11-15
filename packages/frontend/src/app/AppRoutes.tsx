@@ -1,8 +1,11 @@
 import { Route, type RouteSectionProps, useParams } from "@solidjs/router";
-import { createMemo, Show } from "solid-js";
+import { createMemo, type JSX, Show } from "solid-js";
 import { AdminOrgProvider } from "../domains/admin-org/AdminOrgContext.js";
 import { ClassRegistrationProvider } from "../domains/registration/ClassRegistrationContext.js";
-import { STAFF_ORGANIZATION_CHOOSER_PATH } from "../lib/routes.js";
+import {
+	decodeRouteSegment,
+	STAFF_ORGANIZATION_CHOOSER_PATH,
+} from "../lib/routes.js";
 import { HomePage } from "../pages/HomePage.js";
 import { OrganizationChooser } from "../pages/OrganizationChooser.js";
 import { adminRoutes, withCat, withDir, withVol } from "./AdminRoutes.js";
@@ -19,6 +22,23 @@ function RegistrationLayout(props: RouteSectionProps) {
 			{props.children}
 		</ClassRegistrationProvider>
 	);
+}
+
+function accountView(
+	render: (
+		slug: string,
+		app: ReturnType<typeof useFestivalShell>,
+	) => JSX.Element,
+) {
+	return () => {
+		const params = useParams();
+		const app = useFestivalShell();
+		return (
+			<Show when={params.slug} keyed>
+				{(slug) => render(slug, app)}
+			</Show>
+		);
+	};
 }
 
 function publicOrgRoutes() {
@@ -60,53 +80,45 @@ function publicOrgRoutes() {
 			/>
 			<Route
 				path="/account"
-				component={() => (
-					<Pages.LegacyCustomerAccountRedirect slug={useParams().slug ?? ""} />
-				)}
+				component={accountView((slug) => (
+					<Pages.LegacyCustomerAccountRedirect slug={slug} />
+				))}
 			/>
 			<Route
 				path="/account/memberships"
-				component={() => (
-					<Pages.CustomerAccountMembershipsPage slug={useParams().slug ?? ""} />
-				)}
+				component={accountView((slug) => (
+					<Pages.CustomerAccountMembershipsPage slug={slug} />
+				))}
 			/>
 			<Route
 				path="/account/contact"
-				component={() => (
-					<Pages.CustomerAccountContactPage slug={useParams().slug ?? ""} />
-				)}
+				component={accountView((slug) => (
+					<Pages.CustomerAccountContactPage slug={slug} />
+				))}
 			/>
 			<Route
 				path="/account/children"
-				component={() => (
-					<Pages.CustomerChildrenPage
-						slug={useParams().slug ?? ""}
-						app={useFestivalShell()}
-					/>
-				)}
+				component={accountView((slug, app) => (
+					<Pages.CustomerChildrenPage slug={slug} app={app} />
+				))}
 			/>
 			<Route
 				path="/account/orders"
-				component={() => (
-					<Pages.CustomerAccountOrdersPage
-						app={useFestivalShell()}
-						slug={useParams().slug ?? ""}
-					/>
-				)}
+				component={accountView((slug, app) => (
+					<Pages.CustomerAccountOrdersPage slug={slug} app={app} />
+				))}
 			/>
 			<Route
 				path="/account/classes"
-				component={() => (
-					<Pages.CustomerAccountClassesPage slug={useParams().slug ?? ""} />
-				)}
+				component={accountView((slug) => (
+					<Pages.CustomerAccountClassesPage slug={slug} />
+				))}
 			/>
 			<Route
 				path="/account/availability"
-				component={() => (
-					<Pages.CustomerAccountAvailabilityPage
-						slug={useParams().slug ?? ""}
-					/>
-				)}
+				component={accountView((slug) => (
+					<Pages.CustomerAccountAvailabilityPage slug={slug} />
+				))}
 			/>
 		</>
 	);
@@ -116,6 +128,9 @@ function regView(view: "workspace" | "class" | "cart") {
 	return () => {
 		const p = useParams();
 		const app = useFestivalShell();
+		const classId = createMemo(() =>
+			p.classId ? decodeRouteSegment(p.classId) : undefined,
+		);
 		const scope = createMemo(
 			() => ({ slug: p.slug ?? "", festivalSlug: p.festivalSlug ?? "" }),
 			undefined,
@@ -133,7 +148,7 @@ function regView(view: "workspace" | "class" | "cart") {
 						slug={slug}
 						festivalSlug={festivalSlug}
 						view={view}
-						classId={p.classId ? decodeURIComponent(p.classId) : undefined}
+						classId={classId()}
 					/>
 				)}
 			</Show>

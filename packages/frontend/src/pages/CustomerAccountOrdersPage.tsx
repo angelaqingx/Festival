@@ -402,8 +402,12 @@ export function CustomerAccountOrdersPage(props: {
 												<For each={order.lineItems}>
 													{(line) => (
 														<li>
-															{line.quantity} × {line.title} —{" "}
-															{line.total.amount} {line.total.currencyCode}
+															{line.quantity} × {line.title}
+															<Show when={line.total}>
+																{(total) =>
+																	` — ${total().amount} ${total().currencyCode}`
+																}
+															</Show>
 														</li>
 													)}
 												</For>
