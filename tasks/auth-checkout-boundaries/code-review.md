@@ -3,50 +3,16 @@
 - Findings status: none
 
 ## Context
-- Base branch: ee9275a7d6a7d661abf7b55a04311b3e5ebded44
+- Base branch: 23eca3a11bb7183c3ee52e5871756afd3cae45c0
 - Diff command: `git diff --cached; git diff; inspect listed untracked files`
 - Changed files:
-  - `packages/backend/src/routes/customer-checkout-recovery.routes.ts`
-  - `packages/backend/tests/admin-entitlements-ops.test.ts`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts`
-  - `packages/frontend/src/lib/api/commerce.ts`
-  - `packages/frontend/tests/admin-entitlement-ops-panel.test.ts`
-  - `packages/frontend/tests/checkout-recovery-ui.test.ts`
+  - `packages/backend/src/routes/admin-class-checkout-recovery.routes.ts`
+  - `packages/backend/tests/admin-class-checkout-recovery.test.ts`
 - Citation candidates (verify before use):
-  - `packages/backend/src/routes/customer-checkout-recovery.routes.ts:129-130`
-  - `packages/backend/src/routes/customer-checkout-recovery.routes.ts:132-138`
-  - `packages/backend/tests/admin-entitlements-ops.test.ts:22-22`
-  - `packages/backend/tests/admin-entitlements-ops.test.ts:394-417`
-  - `packages/backend/tests/admin-entitlements-ops.test.ts:52-52`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:1-1`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:104-148`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:14-14`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:150-150`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:16-16`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:182-183`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:19-22`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:25-27`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:251-306`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:354-358`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:367-371`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:384-388`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:421-425`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:446-459`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:507-511`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:520-524`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:540-544`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:553-557`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:569-573`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:581-585`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:603-607`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:623-627`
-  - `packages/backend/tests/customer-checkout-recovery.test.ts:649-653`
-  - `packages/frontend/src/lib/api/commerce.ts:488-488`
-  - `packages/frontend/src/lib/api/commerce.ts:490-492`
-  - `packages/frontend/src/lib/api/commerce.ts:89-89`
-  - `packages/frontend/tests/admin-entitlement-ops-panel.test.ts:40-71`
-  - `packages/frontend/tests/checkout-recovery-ui.test.ts:171-171`
-  - `packages/frontend/tests/checkout-recovery-ui.test.ts:210-210`
+  - `packages/backend/src/routes/admin-class-checkout-recovery.routes.ts:161-161`
+  - `packages/backend/src/routes/admin-class-checkout-recovery.routes.ts:172-172`
+  - `packages/backend/src/routes/admin-class-checkout-recovery.routes.ts:62-72`
+  - `packages/backend/tests/admin-class-checkout-recovery.test.ts:87-151`
 
 ## Findings JSON
 ```json
@@ -56,7 +22,7 @@
 ## Verdict
 - Verdict: patch is correct
 - Confidence: 0.97
-- Justification: Units #402 and #406 preserve separate authentication contracts. Admin helpers keep Firebase bearer credentials in Authorization and send a bounded custom CSRF marker. Customer membership recovery always validates the session-bound token and allowed origin before consuming a link or creating checkout effects. Real encrypted-session fixtures, denial-state assertions, valid resume/replay checks, and all shared admin helper consumers are covered. No actionable regression was found.
+- Justification: Unit #405 canonicalizes an explicitly valid HTTP or HTTPS configured origin once when constructing the admin recovery routes. The authority-only input check rejects userinfo, path, query, fragment, backslash, opaque, malformed, and missing configuration. Existing request-origin validation and required custom header remain intact for both reap and resolve. Equivalent host casing and default ports are covered without weakening cross-origin denial. No actionable regression was found.
 
 
 ## Unit #400 validation evidence
@@ -97,4 +63,12 @@
 - Backend/test TypeScript and frontend `check:types` passed. Biome passed for all six changed TypeScript files, and `git diff --check` passed.
 - Admin tests cover realistic-length bearer tokens, missing/overlong CSRF denial, separate bounded CSRF success, and all six shared client helper consumers.
 - Customer tests use actual encrypted customer sessions, deny missing/empty/wrong/other-session tokens and invalid origins or recovery ownership before mutation, preserve source/recovery/audit state and zero Storefront calls, and cover valid resume plus consumed-link replay.
+- Independently reviewed with no findings and committed/pushed as `23eca3a11bb7183c3ee52e5871756afd3cae45c0`.
+
+
+## Unit #405 validation evidence
+
+- Independent backend run passed 92 tests across admin-class-checkout-recovery, csrf-guard, nginx-security, and customer-logout-csrf suites.
+- Backend/test TypeScript, Biome for both changed files, and `git diff --check` passed.
+- Reviewed HTTP/HTTPS authority parsing, case normalization, default and explicit non-default ports, optional root slash, and rejection of path/userinfo/query/fragment/opaque/malformed/absent configuration. Both reap and resolve retain nonempty CSRF and exact request-origin checks.
 - Independently reviewed with no findings. Commit and push are authorized after these checks.
