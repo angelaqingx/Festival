@@ -13,6 +13,7 @@ import {
 	ClassCheckoutPersistenceUnavailableError,
 	ClassCheckoutRecoveryRequiredError,
 	ClassCheckoutStorefrontChangedBeforeRequestError,
+	ClassCheckoutStorefrontCredentialsUnavailableError,
 } from "./class-checkout-errors.js";
 import type {
 	CheckoutCatalogReadPort,
@@ -195,6 +196,35 @@ export async function recordRemoteCartKnownOrThrow(
 	throw new ClassCheckoutPersistenceUnavailableError();
 }
 
+async function rejectBeforeStorefrontRequest(
+	executions: NonNullable<CheckoutRepository["classExecutions"]>,
+	claim: ClassCheckoutClaim,
+	error:
+		| ClassCheckoutStorefrontChangedBeforeRequestError
+		| ClassCheckoutStorefrontCredentialsUnavailableError,
+): Promise<never> {
+	const credentialsUnavailable =
+		error instanceof ClassCheckoutStorefrontCredentialsUnavailableError;
+	const transitioned = await executions.transition({
+		claim,
+		checkpoint: "prepared",
+		state: "retryable",
+		storefrontBinding: null,
+		releaseLease: true,
+		eventType: credentialsUnavailable
+			? "pre_dispatch_storefront_credentials_unavailable"
+			: "pre_dispatch_storefront_changed",
+	});
+	if (!transitioned) throw new ClassCheckoutPersistenceUnavailableError();
+	throw new AppError(
+		credentialsUnavailable
+			? error.message
+			: "Shopify Storefront configuration changed before dispatch.",
+		503,
+		"checkout_retryable_upstream",
+	);
+}
+
 async function handleClaimedCreateCartFailure(
 	executions: NonNullable<CheckoutRepository["classExecutions"]>,
 	params: {
@@ -204,20 +234,11 @@ async function handleClaimedCreateCartFailure(
 	},
 	error: unknown,
 ): Promise<never> {
-	if (error instanceof ClassCheckoutStorefrontChangedBeforeRequestError) {
-		await executions.transition({
-			claim: params.claim,
-			checkpoint: "prepared",
-			state: "retryable",
-			storefrontBinding: null,
-			releaseLease: true,
-			eventType: "pre_dispatch_storefront_changed",
-		});
-		throw new AppError(
-			"Shopify Storefront configuration changed before dispatch.",
-			503,
-			"checkout_retryable_upstream",
-		);
+	if (
+		error instanceof ClassCheckoutStorefrontChangedBeforeRequestError ||
+		error instanceof ClassCheckoutStorefrontCredentialsUnavailableError
+	) {
+		return rejectBeforeStorefrontRequest(executions, params.claim, error);
 	}
 	if (error instanceof ClassCheckoutCartObservationError) {
 		await recordInvalidCartObservation(

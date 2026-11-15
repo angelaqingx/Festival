@@ -3,16 +3,35 @@
 - Findings status: none
 
 ## Context
-- Base branch: 23eca3a11bb7183c3ee52e5871756afd3cae45c0
+- Base branch: 4fbb68dd4f3462ef475390af4d74bdcb408e4079
 - Diff command: `git diff --cached; git diff; inspect listed untracked files`
 - Changed files:
-  - `packages/backend/src/routes/admin-class-checkout-recovery.routes.ts`
-  - `packages/backend/tests/admin-class-checkout-recovery.test.ts`
+  - `packages/backend/src/checkout/class-checkout-service.ts`
+  - `packages/backend/src/checkout/shopify-membership-checkout-client.ts`
+  - `packages/backend/src/domains/class-checkout/class-checkout-cart-recovery.ts`
+  - `packages/backend/src/domains/class-checkout/class-checkout-errors.ts`
+  - `packages/backend/tests/class-checkout-service.test.ts`
+  - `packages/backend/tests/shopify-membership-checkout-client.test.ts`
 - Citation candidates (verify before use):
-  - `packages/backend/src/routes/admin-class-checkout-recovery.routes.ts:161-161`
-  - `packages/backend/src/routes/admin-class-checkout-recovery.routes.ts:172-172`
-  - `packages/backend/src/routes/admin-class-checkout-recovery.routes.ts:62-72`
-  - `packages/backend/tests/admin-class-checkout-recovery.test.ts:87-151`
+  - `packages/backend/src/checkout/class-checkout-service.ts:15-15`
+  - `packages/backend/src/checkout/class-checkout-service.ts:33-33`
+  - `packages/backend/src/checkout/shopify-membership-checkout-client.ts:12-12`
+  - `packages/backend/src/checkout/shopify-membership-checkout-client.ts:164-164`
+  - `packages/backend/src/checkout/shopify-membership-checkout-client.ts:165-165`
+  - `packages/backend/src/checkout/shopify-membership-checkout-client.ts:167-167`
+  - `packages/backend/src/checkout/shopify-membership-checkout-client.ts:179-181`
+  - `packages/backend/src/checkout/shopify-membership-checkout-client.ts:183-207`
+  - `packages/backend/src/domains/class-checkout/class-checkout-cart-recovery.ts:16-16`
+  - `packages/backend/src/domains/class-checkout/class-checkout-cart-recovery.ts:199-227`
+  - `packages/backend/src/domains/class-checkout/class-checkout-cart-recovery.ts:237-241`
+  - `packages/backend/src/domains/class-checkout/class-checkout-errors.ts:152-163`
+  - `packages/backend/tests/class-checkout-service.test.ts:30-30`
+  - `packages/backend/tests/class-checkout-service.test.ts:32-32`
+  - `packages/backend/tests/class-checkout-service.test.ts:37-40`
+  - `packages/backend/tests/class-checkout-service.test.ts:371-435`
+  - `packages/backend/tests/class-checkout-service.test.ts:437-529`
+  - `packages/backend/tests/shopify-membership-checkout-client.test.ts:4-4`
+  - `packages/backend/tests/shopify-membership-checkout-client.test.ts:7-55`
 
 ## Findings JSON
 ```json
@@ -22,7 +41,7 @@
 ## Verdict
 - Verdict: patch is correct
 - Confidence: 0.97
-- Justification: Unit #405 canonicalizes an explicitly valid HTTP or HTTPS configured origin once when constructing the admin recovery routes. The authority-only input check rejects userinfo, path, query, fragment, backslash, opaque, malformed, and missing configuration. Existing request-origin validation and required custom header remain intact for both reap and resolve. Equivalent host casing and default ports are covered without weakening cross-origin denial. No actionable regression was found.
+- Justification: The credential-specific error is emitted only while reading or decrypting local private Storefront credentials before the HTTP call. Only that proof, or the existing pre-request configuration error, can reset a claimed creation to prepared/retryable; the claim-fenced transition must succeed before the retryable response is returned. Repair reuses the same immutable intent and idempotency key with a fresh binding. Remote dispatch failures and malformed cart results retain conservative recovery behavior. No actionable regression was found.
 
 
 ## Unit #400 validation evidence
@@ -71,4 +90,14 @@
 - Independent backend run passed 92 tests across admin-class-checkout-recovery, csrf-guard, nginx-security, and customer-logout-csrf suites.
 - Backend/test TypeScript, Biome for both changed files, and `git diff --check` passed.
 - Reviewed HTTP/HTTPS authority parsing, case normalization, default and explicit non-default ports, optional root slash, and rejection of path/userinfo/query/fragment/opaque/malformed/absent configuration. Both reap and resolve retain nonempty CSRF and exact request-origin checks.
-- Independently reviewed with no findings. Commit and push are authorized after these checks.
+- Independently reviewed with no findings and committed/pushed as `4fbb68dd4f3462ef475390af4d74bdcb408e4079`.
+
+
+## Unit #357 local Storefront credential subitem validation evidence
+
+- Independent `bun test tests/class-checkout-service.test.ts tests/shopify-membership-checkout-client.test.ts tests/class-checkout-execution.test.ts tests/architecture-boundaries.test.ts` from `packages/backend` passed 170 tests. The first invocation also listed a nonexistent `class-checkout-recovery.test.ts` path; Bun selected the four existing suites. The explicit four-suite command describes the executed coverage.
+- Independent PostgreSQL 17 run of `postgres-class-checkout-recovery.integration.test.ts` and `postgres-class-checkout-payment.integration.test.ts` passed 14 tests using the isolated checkout database. These exercise claim fencing, transactional recovery/lease release, payment races, and conservative unknown outcomes.
+- Backend/test TypeScript using `packages/backend/tsconfig.json`, Biome for all six changed TypeScript files, and `git diff --check` passed. An extra attempted `tsconfig.tests.json` check referred to a nonexistent separate config; the successful repository backend config includes all backend tests.
+- Reviewed missing and undecryptable AES credentials through the real adapter, zero HTTP dispatch on denial, the claim-fenced successful reset, rejected persistence, same-intent/key repair and replay with exactly one created cart, and unchanged recovery requirements after an upstream 503.
+- The coordinating agent reported final branch gates passed: format/lint (808 files), full build, frontend types, backend/test types, SQL checks, PostgreSQL 17 schema parity, and all tests (365 common, 1703 backend, 515 frontend, 20 confirmation extension). Evidence: `/private/tmp/festival-auth-b-final-validation.log` lines 1-3275. A later log-tail command failed after all gates had completed; it did not affect source or validation results.
+- Independent review found no findings. Commit/push authorized by the coordinating agent after the full gates. This completes only the credential failure subitem of #357; the umbrella remains open for its other work.

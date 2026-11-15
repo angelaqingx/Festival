@@ -27,11 +27,17 @@ import {
 	ClassCheckoutStorefrontChangedBeforeRequestError,
 	type StartClassCheckoutInput,
 } from "../src/checkout/class-checkout-service.js";
+import { ShopifyMembershipCheckoutClient } from "../src/checkout/shopify-membership-checkout-client.js";
 import { InMemoryMembershipCommerceRepository } from "../src/commerce/membership-commerce-repository.js";
+import { CustomerAccountTransport } from "../src/customer/customer-account-transport.js";
 import { InMemoryCustomerAccountRepository } from "../src/customer/in-memory-customer-account-repository.js";
 import { AppError } from "../src/errors/app-error.js";
 import { InMemoryRepertoireRepository } from "../src/repertoire/index.js";
 import { InMemoryOrganizationRepository } from "../src/repo/in-memory-organization-repository.js";
+import {
+	SHOPIFY_STOREFRONT_PRIVATE_TOKEN_PURPOSE,
+	ShopifySecretKeyring,
+} from "../src/shopify/encryption.js";
 
 interface FixtureOptions {
 	legacyCheckout?: boolean;
@@ -362,7 +368,165 @@ function cartEvidence(intent: CheckoutIntentRecord, customerGid: string) {
 	};
 }
 
+function wireStorefrontClient(f: Awaited<ReturnType<typeof createFixture>>) {
+	const keyring = ShopifySecretKeyring.fromEnvironment(
+		JSON.stringify({ test: Buffer.alloc(32, 7).toString("base64") }),
+		"test",
+	);
+	if (!keyring) throw new Error("keyring");
+	let requests = 0;
+	let carts = 0;
+	let unavailable = false;
+	const transport = new CustomerAccountTransport({
+		resolver: async () => [{ address: "8.8.8.8", family: 4, ttlSeconds: 60 }],
+		requester: async (_url, _answer, _agent, init) => {
+			requests++;
+			if (unavailable) return { status: 503, body: (async function* () {})() };
+			const creating = JSON.parse(String(init?.body)).query.includes(
+				"FestivalCreateCart",
+			);
+			if (creating) carts++;
+			const payload = creating
+				? {
+						data: {
+							cartCreate: {
+								cart: { id: "gid://shopify/Cart/repaired" },
+								userErrors: [],
+								warnings: [],
+							},
+						},
+					}
+				: {
+						data: {
+							cart: {
+								id: "gid://shopify/Cart/repaired",
+								checkoutUrl: `https://${f.storeDomain}/checkouts/repaired`,
+							},
+						},
+					};
+			return {
+				status: 200,
+				body: (async function* () {
+					yield Buffer.from(JSON.stringify(payload));
+				})(),
+			};
+		},
+	});
+	const client = new ShopifyMembershipCheckoutClient(
+		f.organizations,
+		keyring,
+		transport,
+	);
+	f.storefront.createCart = client.createCart.bind(client);
+	f.storefront.checkout = client.checkout.bind(client);
+	return {
+		requests: () => requests,
+		carts: () => carts,
+		failUpstream: () => {
+			unavailable = true;
+		},
+		privateToken: () =>
+			keyring.encrypt("private-token", {
+				organizationId: f.organization.id,
+				purpose: SHOPIFY_STOREFRONT_PRIVATE_TOKEN_PURPOSE,
+			}),
+	};
+}
+
 describe("ClassCheckoutService", () => {
+	for (const failure of ["missing", "undecryptable"] as const) {
+		it(`retries the same intent after ${failure} Storefront credentials are repaired without duplicate carts`, async () => {
+			const f = await createFixture();
+			const adapter = wireStorefrontClient(f);
+			await f.organizations.upsertShopifyIntegration({
+				...f.storefrontIntegration,
+				encryptedStorefrontPrivateToken:
+					failure === "missing" ? undefined : "corrupt-secret-ciphertext",
+			});
+			await expect(f.service.start(f.defaultInput)).rejects.toMatchObject({
+				status: 503,
+				code: "checkout_retryable_upstream",
+			});
+			expect(adapter.requests()).toBe(0);
+			const intent = required(await f.checkout.findIntentByKey(f.defaultInput));
+			expect(
+				await f.checkout.classExecutions.get(f.organization.id, intent.id),
+			).toMatchObject({
+				checkpoint: "prepared",
+				state: "retryable",
+				storefrontBinding: null,
+				leaseOwner: null,
+				shopifyCartId: null,
+			});
+			expect(
+				(
+					await f.checkout.classExecutions.events(f.organization.id, intent.id)
+				).some(
+					(event) =>
+						event.eventType ===
+						"pre_dispatch_storefront_credentials_unavailable",
+				),
+			).toBe(true);
+			await f.organizations.upsertShopifyIntegration({
+				...f.storefrontIntegration,
+				encryptedStorefrontPrivateToken: adapter.privateToken(),
+			});
+			const repaired = await f.service.start(f.defaultInput);
+			expect(repaired).toMatchObject({
+				intentId: intent.id,
+				checkoutUrl: `https://${f.storeDomain}/checkouts/repaired`,
+			});
+			await expect(f.service.start(f.defaultInput)).resolves.toMatchObject({
+				intentId: intent.id,
+			});
+			expect(adapter.carts()).toBe(1);
+			expect(
+				await f.checkout.classExecutions.get(f.organization.id, intent.id),
+			).toMatchObject({ checkpoint: "attached", state: "completed" });
+		});
+	}
+
+	it("requires persistence of a confirmed credential failure before claiming that checkout is retryable", async () => {
+		const f = await createFixture();
+		const adapter = wireStorefrontClient(f);
+		const executions = f.checkout.classExecutions;
+		const transition = executions.transition.bind(executions);
+		spyOn(executions, "transition").mockImplementation(async (input) =>
+			input.eventType === "pre_dispatch_storefront_credentials_unavailable"
+				? false
+				: transition(input),
+		);
+		await expect(f.service.start(f.defaultInput)).rejects.toMatchObject({
+			code: "checkout_persistence_unavailable",
+		});
+		const intent = required(await f.checkout.findIntentByKey(f.defaultInput));
+		expect(await executions.get(f.organization.id, intent.id)).toMatchObject({
+			checkpoint: "create_dispatched",
+		});
+		expect(adapter.requests()).toBe(0);
+	});
+
+	it("keeps a failed Shopify request uncertain even though local credentials are valid", async () => {
+		const f = await createFixture();
+		const adapter = wireStorefrontClient(f);
+		await f.organizations.upsertShopifyIntegration({
+			...f.storefrontIntegration,
+			encryptedStorefrontPrivateToken: adapter.privateToken(),
+		});
+		adapter.failUpstream();
+		await expect(f.service.start(f.defaultInput)).rejects.toMatchObject({
+			code: "checkout_recovery_required",
+			recovery: {
+				reasonCode: "checkout_creation_unknown",
+				retryAllowed: false,
+			},
+		});
+		await expect(
+			f.service.start({ ...f.defaultInput, idempotencyKey: "another-attempt" }),
+		).rejects.toMatchObject({ code: "checkout_recovery_required" });
+		expect(adapter.requests()).toBe(1);
+	});
+
 	for (const [accountVersion, storefrontVersion] of [
 		[1, 2],
 		[2, 1],

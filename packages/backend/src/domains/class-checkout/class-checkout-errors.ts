@@ -149,6 +149,18 @@ export class ClassCheckoutStorefrontChangedBeforeRequestError extends AppError {
 	}
 }
 
+/** The adapter could not obtain credentials, so no Shopify request was sent. */
+export class ClassCheckoutStorefrontCredentialsUnavailableError extends AppError {
+	constructor() {
+		super(
+			"Shopify Storefront credentials are unavailable.",
+			503,
+			"checkout_storefront_credentials_unavailable",
+		);
+		this.name = "ClassCheckoutStorefrontCredentialsUnavailableError";
+	}
+}
+
 export function recoveryStatusFor(
 	record: ClassCheckoutExecution,
 ): ClassCheckoutRecoveryStatus {

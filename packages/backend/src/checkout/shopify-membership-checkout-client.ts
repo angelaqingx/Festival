@@ -9,6 +9,7 @@ import type { ClassCheckoutStorefrontBinding } from "./class-checkout-execution.
 import {
 	ClassCheckoutCartObservationError,
 	ClassCheckoutStorefrontChangedBeforeRequestError,
+	ClassCheckoutStorefrontCredentialsUnavailableError,
 } from "./class-checkout-service.js";
 import type { MembershipCheckoutStorefront } from "./membership-checkout-service.js";
 
@@ -160,14 +161,10 @@ export class ShopifyMembershipCheckoutClient
 		};
 	}
 
-	private async call(
+	private async storefrontCredentials(
 		organizationId: string,
-		query: string,
-		variables: Record<string, unknown>,
 		expectedStorefrontBinding?: ClassCheckoutStorefrontBinding,
-		signal?: AbortSignal,
-	): Promise<Record<string, unknown>> {
-		signal?.throwIfAborted();
+	) {
 		const integration =
 			await this.organizations.getShopifyIntegration(organizationId);
 		if (
@@ -179,14 +176,35 @@ export class ShopifyMembershipCheckoutClient
 					expectedStorefrontBinding.integrationVersion)
 		)
 			throw new ClassCheckoutStorefrontChangedBeforeRequestError();
-		if (
-			!integration?.encryptedStorefrontPrivateToken ||
-			!DOMAIN.test(integration.storeDomain.toLowerCase())
-		)
+		if (!integration?.encryptedStorefrontPrivateToken)
+			throw new ClassCheckoutStorefrontCredentialsUnavailableError();
+		if (!DOMAIN.test(integration.storeDomain.toLowerCase()))
 			throw unavailable();
-		const token = this.keyring.decrypt(
-			integration.encryptedStorefrontPrivateToken,
-			{ organizationId, purpose: SHOPIFY_STOREFRONT_PRIVATE_TOKEN_PURPOSE },
+		try {
+			const token = this.keyring.decrypt(
+				integration.encryptedStorefrontPrivateToken,
+				{
+					organizationId,
+					purpose: SHOPIFY_STOREFRONT_PRIVATE_TOKEN_PURPOSE,
+				},
+			);
+			return { integration, token };
+		} catch {
+			throw new ClassCheckoutStorefrontCredentialsUnavailableError();
+		}
+	}
+
+	private async call(
+		organizationId: string,
+		query: string,
+		variables: Record<string, unknown>,
+		expectedStorefrontBinding?: ClassCheckoutStorefrontBinding,
+		signal?: AbortSignal,
+	): Promise<Record<string, unknown>> {
+		signal?.throwIfAborted();
+		const { integration, token } = await this.storefrontCredentials(
+			organizationId,
+			expectedStorefrontBinding,
 		);
 		try {
 			const payload = await this.transport.json(
