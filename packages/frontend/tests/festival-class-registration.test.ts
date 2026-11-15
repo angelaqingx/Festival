@@ -40,6 +40,11 @@ describe("Festival Class Registration routing & landing entry", () => {
 		expect(appRoutes).toContain('path="/festival/:festivalSlug/register"');
 		expect(appRoutes).toContain("<Pages.FestivalClassRegistrationPage");
 	});
+	it("uses the tolerant route decoder for the reactive class ID", () => {
+		expect(appRoutes).toMatch(
+			/const classId = createMemo\(\(\) =>\s*p\.classId \? decodeRouteSegment\(p\.classId\) : undefined/,
+		);
+	});
 	it("remounts the registration view when either workspace route parameter changes", () => {
 		expect(appRoutes).toMatch(
 			/previous\.slug === next\.slug &&\s*previous\.festivalSlug === next\.festivalSlug/,

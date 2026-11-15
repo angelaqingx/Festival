@@ -2,7 +2,10 @@ import { Route, type RouteSectionProps, useParams } from "@solidjs/router";
 import { createMemo, type JSX, Show } from "solid-js";
 import { AdminOrgProvider } from "../domains/admin-org/AdminOrgContext.js";
 import { ClassRegistrationProvider } from "../domains/registration/ClassRegistrationContext.js";
-import { STAFF_ORGANIZATION_CHOOSER_PATH } from "../lib/routes.js";
+import {
+	decodeRouteSegment,
+	STAFF_ORGANIZATION_CHOOSER_PATH,
+} from "../lib/routes.js";
 import { HomePage } from "../pages/HomePage.js";
 import { OrganizationChooser } from "../pages/OrganizationChooser.js";
 import { adminRoutes, withCat, withDir, withVol } from "./AdminRoutes.js";
@@ -126,7 +129,7 @@ function regView(view: "workspace" | "class" | "cart") {
 		const p = useParams();
 		const app = useFestivalShell();
 		const classId = createMemo(() =>
-			p.classId ? decodeURIComponent(p.classId) : undefined,
+			p.classId ? decodeRouteSegment(p.classId) : undefined,
 		);
 		const scope = createMemo(
 			() => ({ slug: p.slug ?? "", festivalSlug: p.festivalSlug ?? "" }),

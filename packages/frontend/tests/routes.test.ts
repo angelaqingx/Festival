@@ -28,12 +28,21 @@ import {
 	buildOrgPublicDirectoryPath,
 	buildOrgRootPath,
 	buildPrivacyPolicyPath,
+	decodeRouteSegment,
 	isOrganizationPageRoute,
 	parseRoute,
 	STAFF_ORGANIZATION_CHOOSER_PATH,
 } from "../src/lib/routes.js";
 
 describe("route helpers", () => {
+	it("decodes escaped class IDs while preserving malformed route segments", () => {
+		expect(decodeRouteSegment("solo%20class")).toBe("solo class");
+		expect(decodeRouteSegment("class%2Fone%25")).toBe("class/one%");
+		for (const segment of ["%", "%invalid", "%2", "%E2%82"]) {
+			expect(decodeRouteSegment(segment)).toBe(segment);
+		}
+	});
+
 	it("keeps class entry and cart inside the authenticated festival area", () => {
 		const classPath = buildFestivalRegistrationClassPath(
 			"pafe",
