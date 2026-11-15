@@ -40,6 +40,14 @@ describe("Festival Class Registration routing & landing entry", () => {
 		expect(appRoutes).toContain('path="/festival/:festivalSlug/register"');
 		expect(appRoutes).toContain("<Pages.FestivalClassRegistrationPage");
 	});
+	it("remounts the registration view when either workspace route parameter changes", () => {
+		expect(appRoutes).toMatch(
+			/previous\.slug === next\.slug &&\s*previous\.festivalSlug === next\.festivalSlug/,
+		);
+		expect(appRoutes).toMatch(
+			/<Show when=\{scope\(\)\} keyed>\s*\{\(\{ slug, festivalSlug \}\) => \(\s*<Pages\.FestivalClassRegistrationPage\s+app=\{app\}\s+slug=\{slug\}\s+festivalSlug=\{festivalSlug\}/,
+		);
+	});
 	it("returns a signed-out parent directly to their festival cart after sign-in", () => {
 		const path = customerFestivalRegistrationSignInPath(
 			"org",
