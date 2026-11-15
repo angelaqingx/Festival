@@ -123,8 +123,9 @@ export function resolvedCheckoutStatus(
 				: intentStatus === "rejected"
 					? "checkout_already_rejected"
 					: intentStatus === "superseded"
-						? record.resultCode === "abandoned_unknown"
-							? "abandoned_unknown"
+						? record.resultCode === "abandoned_unknown" ||
+							record.resultCode === "checkout_abandoned"
+							? record.resultCode
 							: "checkout_already_abandoned"
 						: "checkout_needs_review",
 	};
