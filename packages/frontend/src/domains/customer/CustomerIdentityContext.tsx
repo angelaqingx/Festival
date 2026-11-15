@@ -1,83 +1,93 @@
 import type { CustomerSessionResponse } from "@festival/common";
 import {
+	batch,
 	createContext,
 	createEffect,
 	createSignal,
+	on,
 	onCleanup,
 	type ParentProps,
 	useContext,
 } from "solid-js";
 import { useFestivalShell } from "../../app/FestivalShellContext.js";
+import type { FestivalAppController } from "../../app/useFestivalAppController.js";
 import { getCustomerSession } from "../../lib/api.js";
 import { isOrganizationPageRoute } from "../../lib/routes.js";
 
 export type CustomerSession = CustomerSessionResponse["session"];
 
-function createCustomerIdentityState() {
-	const shell = useFestivalShell();
-	const [customerSession, setCustomerSession] = createSignal<CustomerSession>({
-		authenticated: false,
-	});
+export function createCustomerIdentityState(
+	shell: Pick<FestivalAppController, "route" | "parentRegistration">,
+	fetchSession = getCustomerSession,
+) {
+	const unauthenticated: CustomerSession = { authenticated: false };
+	const [customerSession, setCustomerSession] =
+		createSignal<CustomerSession>(unauthenticated);
 	const [isCustomerSessionLoading, setIsCustomerSessionLoading] =
 		createSignal(false);
+	let latestRequest = 0;
+	let disposed = false;
 
 	async function refreshCustomerSession(
 		slugOverride?: string,
 	): Promise<CustomerSession> {
-		const targetSlug = slugOverride ?? shell.slug;
+		const route = shell.route();
+		const targetSlug =
+			isOrganizationPageRoute(route) && "slug" in route ? route.slug : null;
+		if (
+			disposed ||
+			(slugOverride !== undefined && slugOverride !== targetSlug)
+		) {
+			return unauthenticated;
+		}
+		const request = ++latestRequest;
 		if (!targetSlug) {
-			const unauthenticated: CustomerSession = { authenticated: false };
-			setCustomerSession(unauthenticated);
-			setIsCustomerSessionLoading(false);
+			batch(() => {
+				setCustomerSession(unauthenticated);
+				setIsCustomerSessionLoading(false);
+			});
 			return unauthenticated;
 		}
 
+		const isCurrentRequest = () =>
+			!disposed && request === latestRequest && shell.route() === route;
 		setIsCustomerSessionLoading(true);
 		try {
-			const response = await getCustomerSession(targetSlug);
-			setCustomerSession(response.session);
-			return response.session;
+			const { session } = await fetchSession(targetSlug);
+			if (!isCurrentRequest()) return unauthenticated;
+			batch(() => {
+				if (session.authenticated) {
+					shell.parentRegistration.bindSession(targetSlug, session.csrfToken);
+				} else {
+					shell.parentRegistration.clear(targetSlug);
+				}
+				setCustomerSession(session);
+			});
+			return session;
 		} catch {
-			const unauthenticated: CustomerSession = { authenticated: false };
-			setCustomerSession(unauthenticated);
+			if (isCurrentRequest()) setCustomerSession(unauthenticated);
 			return unauthenticated;
 		} finally {
-			setIsCustomerSessionLoading(false);
+			if (isCurrentRequest()) setIsCustomerSessionLoading(false);
 		}
 	}
 
-	createEffect(() => {
-		const currentRoute = shell.route();
-		if (!isOrganizationPageRoute(currentRoute)) {
-			setCustomerSession({ authenticated: false });
-			setIsCustomerSessionLoading(false);
-			return;
-		}
-
-		let active = true;
-		setCustomerSession({ authenticated: false });
-		setIsCustomerSessionLoading(true);
-		void getCustomerSession((currentRoute as { slug: string }).slug)
-			.then((response) => {
-				if (active) setCustomerSession(response.session);
-			})
-			.catch(() => {
-				if (active) setCustomerSession({ authenticated: false });
-			})
-			.finally(() => {
-				if (active) setIsCustomerSessionLoading(false);
+	createEffect(
+		on(shell.route, () => {
+			batch(() => {
+				setCustomerSession(unauthenticated);
+				void refreshCustomerSession();
 			});
-		onCleanup(() => {
-			active = false;
-		});
+		}),
+	);
+	onCleanup(() => {
+		disposed = true;
 	});
 
 	return {
 		customerSession,
 		isCustomerSessionLoading,
 		refreshCustomerSession,
-		setCustomerSession,
-		setIsCustomerSessionLoading,
 	};
 }
 
@@ -88,7 +98,7 @@ export type CustomerIdentityContextValue = ReturnType<
 const CustomerIdentityContext = createContext<CustomerIdentityContextValue>();
 
 export function CustomerIdentityProvider(props: ParentProps) {
-	const value = createCustomerIdentityState();
+	const value = createCustomerIdentityState(useFestivalShell());
 	return (
 		<CustomerIdentityContext.Provider value={value}>
 			{props.children}
