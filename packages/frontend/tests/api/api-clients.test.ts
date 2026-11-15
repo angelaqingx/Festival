@@ -198,6 +198,130 @@ describe("split Hono RPC frontend API modules and barrel", () => {
 		});
 	});
 
+	const checkoutBody = {
+		lineItems: [
+			{
+				childId: "child-1",
+				festivalClassId: "class-1",
+				teacherId: "teacher-1",
+				pieces: [{ title: "Minuet", composer: "Bach", durationSeconds: 90 }],
+			},
+		],
+	};
+	const checkoutWithHeaders = {
+		...checkoutBody,
+		csrfToken: "embedded-csrf",
+		idempotencyKey: "embedded-key",
+	};
+	const checkoutCases: Array<{
+		name: string;
+		args: Parameters<typeof startClassCheckout>;
+		csrf: string | null;
+		key?: string;
+	}> = [
+		{
+			name: "object-only arguments",
+			args: ["pafe", "spring", checkoutWithHeaders],
+			csrf: "embedded-csrf",
+			key: "embedded-key",
+		},
+		{
+			name: "object, token, and key overrides",
+			args: [
+				"pafe",
+				"spring",
+				checkoutWithHeaders,
+				"fresh-csrf",
+				"explicit-key",
+			],
+			csrf: "fresh-csrf",
+			key: "explicit-key",
+		},
+		{
+			name: "object and token override with embedded key",
+			args: ["pafe", "spring", checkoutWithHeaders, "fresh-csrf"],
+			csrf: "fresh-csrf",
+			key: "embedded-key",
+		},
+		{
+			name: "object and key override with embedded token",
+			args: ["pafe", "spring", checkoutWithHeaders, undefined, "explicit-key"],
+			csrf: "embedded-csrf",
+			key: "explicit-key",
+		},
+		{
+			name: "token, input, and key arguments",
+			args: [
+				"pafe",
+				"spring",
+				"fresh-csrf",
+				checkoutWithHeaders,
+				"explicit-key",
+			],
+			csrf: "fresh-csrf",
+			key: "explicit-key",
+		},
+		{
+			name: "token, key, and input arguments",
+			args: [
+				"pafe",
+				"spring",
+				"fresh-csrf",
+				"explicit-key",
+				checkoutWithHeaders,
+			],
+			csrf: "fresh-csrf",
+			key: "explicit-key",
+		},
+		{
+			name: "token and input arguments without a positional key",
+			args: ["pafe", "spring", "fresh-csrf", checkoutWithHeaders],
+			csrf: "fresh-csrf",
+		},
+		{
+			name: "empty positional overrides",
+			args: ["pafe", "spring", checkoutWithHeaders, "", ""],
+			csrf: null,
+		},
+	];
+	for (const scenario of checkoutCases) {
+		it(`preserves checkout headers and body for ${scenario.name}`, async () => {
+			const keys: string[] = [];
+			await withMockFetch(
+				(url, init) => {
+					const headers = new Headers(init?.headers);
+					expect(url).toBe(
+						"/api/organizations/pafe/customer/festivals/spring/registration/checkout",
+					);
+					expect(init?.method).toBe("POST");
+					expect(init?.credentials).toBe("include");
+					expect(headers.get("X-CSRF-Token")).toBe(scenario.csrf);
+					expect(headers.has("Authorization")).toBe(false);
+					expect(JSON.parse(String(init?.body))).toEqual(checkoutBody);
+					keys.push(headers.get("Idempotency-Key") ?? "");
+					return Response.json({
+						checkoutUrl: "https://shop.myshopify.com/checkouts/cart",
+						correlationId: "corr-1",
+					});
+				},
+				async () => {
+					await startClassCheckout(...scenario.args);
+					await startClassCheckout(...scenario.args);
+				},
+			);
+			expect(keys).toHaveLength(2);
+			if (scenario.key !== undefined) {
+				expect(keys).toEqual([scenario.key, scenario.key]);
+			} else {
+				for (const key of keys) {
+					expect(key).toMatch(
+						/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+					);
+				}
+			}
+		});
+	}
+
 	it("submits hidden-csrf form POST for logoutCustomer", () => {
 		const originalDocument = globalThis.document;
 		let submitted = false;

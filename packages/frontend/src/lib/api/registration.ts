@@ -107,20 +107,26 @@ function parseCheckoutArgs(
 	second?: string | C.StartClassCheckoutInput,
 	third?: string | C.StartClassCheckoutInput,
 ) {
-	const obj = typeof first === "object";
-	const raw = (
-		obj ? first : typeof second === "string" ? (third ?? {}) : (second ?? {})
-	) as CheckoutObj;
-	const csrf = obj
-		? (raw.csrfToken ?? (typeof second === "string" ? second : ""))
-		: first;
-	let idem = obj
-		? (raw.idempotencyKey ?? (typeof third === "string" ? third : ""))
-		: typeof second === "string"
-			? second
-			: (raw.idempotencyKey ?? "");
-	if (!idem.trim() && typeof crypto?.randomUUID === "function")
+	let raw: CheckoutObj;
+	let csrf: string;
+	let idem: string;
+	if (typeof first === "object") {
+		raw = first;
+		csrf = typeof second === "string" ? second : (raw.csrfToken ?? "");
+		idem = typeof third === "string" ? third : (raw.idempotencyKey ?? "");
+	} else {
+		csrf = first;
+		if (typeof second === "string") {
+			idem = second;
+			raw = typeof third === "object" ? third : {};
+		} else {
+			raw = second ?? {};
+			idem = typeof third === "string" ? third : "";
+		}
+	}
+	if (!idem && typeof crypto !== "undefined" && crypto.randomUUID) {
 		idem = crypto.randomUUID();
+	}
 	const { csrfToken: _c, idempotencyKey: _i, items, ...cleaned } = raw;
 	const hasLines = "lineItems" in cleaned;
 	return {
