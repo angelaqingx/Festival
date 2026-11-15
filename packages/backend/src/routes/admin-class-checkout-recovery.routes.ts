@@ -59,6 +59,17 @@ export interface AdminClassCheckoutRecoveryOptions {
 
 type AdminContext = Context<{ Variables: Partial<ApiVariables> }>;
 
+function normalizeConfiguredOrigin(
+	raw: string | undefined,
+): string | undefined {
+	if (!raw || !/^https?:\/\/[^/?#@\\\s]+\/?$/i.test(raw)) return undefined;
+	try {
+		return new URL(raw).origin;
+	} catch {
+		return undefined;
+	}
+}
+
 function assertOperatorCsrf(c: Context, publicOrigin: string | undefined) {
 	if (
 		!c.req.header("X-CSRF-Token")?.trim() ||
@@ -147,6 +158,7 @@ async function resolveRecoveryHandler(
 export function buildAdminClassCheckoutRecoveryRoutes(
 	options: AdminClassCheckoutRecoveryOptions,
 ) {
+	const publicOrigin = normalizeConfiguredOrigin(options.publicOrigin);
 	const auth = [
 		requireAuth(options.authVerifier),
 		requireTenant(options.repository),
@@ -157,7 +169,7 @@ export function buildAdminClassCheckoutRecoveryRoutes(
 		...auth,
 		preValidationGuard((c) => {
 			c.header("Cache-Control", "no-store");
-			assertOperatorCsrf(c, options.publicOrigin);
+			assertOperatorCsrf(c, publicOrigin);
 		}),
 	] as const;
 

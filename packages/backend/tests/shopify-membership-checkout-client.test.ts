@@ -1,8 +1,58 @@
 import { describe, expect, it, mock } from "bun:test";
 import { ShopifyMembershipCheckoutClient } from "../src/checkout/shopify-membership-checkout-client.js";
 import { CustomerAccountTransport } from "../src/customer/customer-account-transport.js";
+import { ShopifySecretKeyring } from "../src/shopify/encryption.js";
 
 describe("ShopifyMembershipCheckoutClient", () => {
+	for (const failure of ["missing", "undecryptable"] as const) {
+		it(`rejects ${failure} private credentials before sending any Shopify request`, async () => {
+			const keyring = ShopifySecretKeyring.fromEnvironment(
+				JSON.stringify({ test: Buffer.alloc(32, 7).toString("base64") }),
+				"test",
+			);
+			if (!keyring) throw new Error("keyring");
+			const requester = mock(async () => {
+				throw new Error("Unexpected Shopify request");
+			});
+			const client = new ShopifyMembershipCheckoutClient(
+				{
+					getShopifyIntegration: async () => ({
+						storeDomain: "festival.myshopify.com",
+						integrationVersion: 1,
+						encryptedStorefrontPrivateToken:
+							failure === "missing" ? undefined : "corrupt-secret-ciphertext",
+					}),
+				} as never,
+				keyring,
+				new CustomerAccountTransport({
+					resolver: async () => [
+						{ address: "8.8.8.8", family: 4, ttlSeconds: 60 },
+					],
+					requester,
+				}),
+			);
+			const error = {
+				status: 503,
+				code: "checkout_storefront_credentials_unavailable",
+				message: "Shopify Storefront credentials are unavailable.",
+			};
+			await expect(
+				client.createCart({
+					organizationId: "org",
+					buyerAccessToken: "buyer-token",
+					correlationId: "correlation",
+				}),
+			).rejects.toMatchObject(error);
+			await expect(
+				client.checkout({ organizationId: "org", shopifyCartId: "cart" }),
+			).rejects.toMatchObject(error);
+			await expect(
+				client.inspectCart({ organizationId: "org", shopifyCartId: "cart" }),
+			).rejects.toMatchObject(error);
+			expect(requester).not.toHaveBeenCalled();
+		});
+	}
+
 	it("uses the DNS-pinned transport and attaches only the opaque correlation attribute", async () => {
 		let body = "";
 		let headers: HeadersInit | undefined;

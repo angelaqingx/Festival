@@ -126,35 +126,16 @@ async function resolveRecoveryCheckoutSession(
 	},
 ): Promise<CustomerRecoveryCheckoutSession> {
 	const { slug, sessionId, customerAccountService } = params;
-	const csrf = c.req.header("X-CSRF-Token");
-	if (csrf) {
-		const access = await customerAccountService.checkoutAccess(
-			slug,
-			sessionId,
-			csrf,
-			resolveRequestOrigin(c),
-		);
-		return {
-			sessionId: access.sessionId,
-			integrationVersion: access.integrationVersion,
-			buyerAccessToken: access.shopifyCustomerAccessToken,
-		};
-	}
-	if (typeof customerAccountService.customerCheckoutSession === "function") {
-		const access = await customerAccountService.customerCheckoutSession(
-			slug,
-			sessionId,
-		);
-		return {
-			sessionId: access.sessionId,
-			integrationVersion: access.integrationVersion,
-			buyerAccessToken: access.buyerAccessToken,
-		};
-	}
-	return {
+	const access = await customerAccountService.checkoutAccess(
+		slug,
 		sessionId,
-		integrationVersion: 1,
-		buyerAccessToken: "buyer_access_token",
+		c.req.header("X-CSRF-Token"),
+		resolveRequestOrigin(c),
+	);
+	return {
+		sessionId: access.sessionId,
+		integrationVersion: access.integrationVersion,
+		buyerAccessToken: access.shopifyCustomerAccessToken,
 	};
 }
 

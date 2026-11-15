@@ -163,9 +163,11 @@ async function resolveDropTransferContext(
 	const accountService = requireCustomerAccountService(cas);
 	const dropService = requireDropTransferService(dts);
 	const registrationId = c.req.param("registrationId") ?? "";
-	const session = await accountService.validateSession(
+	const session = await accountService.customerSession(
 		requireSlug(c),
-		getCookie(c, CUSTOMER_SESSION_COOKIE) ?? "",
+		getCookie(c, CUSTOMER_SESSION_COOKIE),
+		c.req.header("X-CSRF-Token"),
+		resolveRequestOrigin(c),
 	);
 	const entitlement = await dropService.getEntitlement(
 		registrationId,
