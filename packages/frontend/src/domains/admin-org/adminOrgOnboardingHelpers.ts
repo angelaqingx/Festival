@@ -4,7 +4,6 @@ import type {
 } from "@festival/common";
 import type { Accessor, Setter } from "solid-js";
 import type { InviteDraft, InviteFeedback } from "../../app/appTypes.js";
-import { getIdToken } from "../../app/createFestivalDataLoaders.js";
 import type { FestivalAppController } from "../../app/useFestivalAppController.js";
 import {
 	acceptInvite,
@@ -12,10 +11,10 @@ import {
 	createInvite,
 	createOrganization,
 	deleteAdminMembership,
-	getAdminUsers,
 } from "../../lib/api.js";
 import { clearPendingIntent } from "../../lib/firebase-auth.js";
 import { buildOrgPath } from "../../lib/routes.js";
+import type { createAdminUsersRoster } from "./adminUsersRoster.js";
 
 export const ORGANIZATION_NAME_PATTERN = /^[A-Za-z0-9\-() ]+$/;
 export const ORGANIZATION_SHORT_NAME_PATTERN = /^[A-Za-z0-9-]+$/;
@@ -67,8 +66,7 @@ export interface AdminOrgActionDeps {
 	createdInvites: Accessor<InviteSummary[]>;
 	setCreatedInvites: Setter<InviteSummary[]>;
 	showInviteFeedback: (feedback: Omit<InviteFeedback, "id">) => void;
-	adminUsers: Accessor<OrganizationAdminUserEntry[]>;
-	setAdminUsers: Setter<OrganizationAdminUserEntry[]>;
+	adminUsersRoster: ReturnType<typeof createAdminUsersRoster>;
 	currentInviteToken: Accessor<string | null>;
 	inviteName: Accessor<string>;
 }
@@ -81,13 +79,6 @@ function reportInviteError(
 ) {
 	deps.shell.setErrorMessage(message);
 	deps.showInviteFeedback({ email, role, status: "error" });
-}
-
-async function loadAdminUsers(deps: AdminOrgActionDeps, slug: string) {
-	const token = await getIdToken(deps.shell.firebaseUser());
-	if (!token) return;
-	const response = await getAdminUsers(token, slug);
-	deps.setAdminUsers(response.users);
 }
 
 async function handleCreateOrganization(deps: AdminOrgActionDeps) {
@@ -192,47 +183,39 @@ async function handleCreateInvite(deps: AdminOrgActionDeps) {
 }
 
 async function handleCreateAdminInvite(deps: AdminOrgActionDeps) {
-	const { shell } = deps;
-	const user = shell.firebaseUser();
-	const currentRoute = shell.route();
-	if (!user || currentRoute.kind !== "org-admin-users") {
-		shell.setErrorMessage(
-			"Admin users page is required before inviting members.",
-		);
+	const roster = deps.adminUsersRoster;
+	const scope = roster.adminUsersScope();
+	if (
+		!scope ||
+		!roster.canManageAdminUsers() ||
+		roster.isAdminUsersMutationPending()
+	)
 		return;
-	}
 	const nextInvite = {
 		email: deps.inviteDraft().email.trim(),
 		role: deps.inviteDraft().role,
 	};
 	if (!nextInvite.email) {
-		shell.setErrorMessage("Email address is required.");
+		roster.reportAdminUsersMutationError(scope, "Email address is required.");
 		return;
 	}
 	const normalizedEmail = nextInvite.email.toLowerCase();
 	if (
-		deps.adminUsers().some((e) => e.email.toLowerCase() === normalizedEmail)
+		roster.adminUsers().some((e) => e.email.toLowerCase() === normalizedEmail)
 	) {
-		shell.setErrorMessage("That email has already been added.");
+		roster.reportAdminUsersMutationError(
+			scope,
+			"That email has already been added.",
+		);
 		return;
 	}
-	shell.setIsBusy(true);
-	shell.clearMessages();
-	try {
-		const token = await user.getIdToken();
-		await createInvite(token, {
-			organizationSlug: currentRoute.slug,
-			email: nextInvite.email,
-			role: nextInvite.role,
-		});
-		deps.setInviteDraft({ email: "", role: "Admin" });
-		await loadAdminUsers(deps, currentRoute.slug);
-		shell.setStatusMessage(`Invite created for ${nextInvite.email}.`);
-	} catch (error) {
-		shell.setErrorMessage((error as Error).message);
-	} finally {
-		shell.setIsBusy(false);
-	}
+	await roster.mutateAdminUsers(
+		scope,
+		(token) =>
+			createInvite(token, { organizationSlug: scope.slug, ...nextInvite }),
+		`Invite created for ${nextInvite.email}.`,
+		() => deps.setInviteDraft({ email: "", role: "Admin" }),
+	);
 }
 
 async function handleAcceptInvite(deps: AdminOrgActionDeps) {
@@ -270,30 +253,30 @@ async function handleDeleteAdminUser(
 	deps: AdminOrgActionDeps,
 	entry: OrganizationAdminUserEntry,
 ) {
-	const { shell } = deps;
-	const user = shell.firebaseUser();
-	const currentRoute = shell.route();
-	if (!user || currentRoute.kind !== "org-admin-users") return;
+	const roster = deps.adminUsersRoster;
+	const scope = roster.adminUsersScope();
+	if (
+		!scope ||
+		!roster.canManageAdminUsers() ||
+		roster.isAdminUsersMutationPending() ||
+		!roster.adminUsers().includes(entry)
+	)
+		return;
 	if (entry.isSelf) {
-		shell.setErrorMessage("Admins cannot delete their own membership.");
+		roster.reportAdminUsersMutationError(
+			scope,
+			"Admins cannot delete their own membership.",
+		);
 		return;
 	}
-	shell.setIsBusy(true);
-	shell.clearMessages();
-	try {
-		const token = await user.getIdToken();
-		if (entry.status === "accepted") {
-			await deleteAdminMembership(token, currentRoute.slug, entry.id);
-		} else {
-			await cancelAdminInvite(token, currentRoute.slug, entry.id);
-		}
-		await loadAdminUsers(deps, currentRoute.slug);
-		shell.setStatusMessage(`${entry.email} removed.`);
-	} catch (error) {
-		shell.setErrorMessage((error as Error).message);
-	} finally {
-		shell.setIsBusy(false);
-	}
+	await roster.mutateAdminUsers(
+		scope,
+		(token) =>
+			entry.status === "accepted"
+				? deleteAdminMembership(token, scope.slug, entry.id)
+				: cancelAdminInvite(token, scope.slug, entry.id),
+		`${entry.email} removed.`,
+	);
 }
 
 export function createAdminOrgActions(deps: AdminOrgActionDeps) {
@@ -304,6 +287,5 @@ export function createAdminOrgActions(deps: AdminOrgActionDeps) {
 		handleCreateOrganization: () => handleCreateOrganization(deps),
 		handleDeleteAdminUser: (entry: OrganizationAdminUserEntry) =>
 			handleDeleteAdminUser(deps, entry),
-		loadAdminUsers: (slug: string) => loadAdminUsers(deps, slug),
 	};
 }

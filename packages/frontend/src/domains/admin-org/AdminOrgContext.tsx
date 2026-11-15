@@ -1,13 +1,10 @@
-import type {
-	InviteSummary,
-	OrganizationAdminUserEntry,
-	OrganizationDivision,
-} from "@festival/common";
+import type { InviteSummary, OrganizationDivision } from "@festival/common";
 import {
 	createContext,
 	createEffect,
 	createMemo,
 	createSignal,
+	on,
 	onCleanup,
 	type ParentProps,
 	useContext,
@@ -24,9 +21,11 @@ import {
 	isOrganizationNameInvalid,
 	isOrganizationShortNameInvalid,
 } from "./adminOrgOnboardingHelpers.js";
+import { createAdminUsersRoster } from "./adminUsersRoster.js";
 
 function createAdminOrgState() {
 	const shell = useFestivalShell();
+	const adminUsersRoster = createAdminUsersRoster(shell);
 
 	const [organizationName, setOrganizationName] = createSignal("");
 	const [organizationShortName, setOrganizationShortName] = createSignal("");
@@ -45,9 +44,6 @@ function createAdminOrgState() {
 	});
 	const [inviteFeedback, setInviteFeedback] =
 		createSignal<InviteFeedback | null>(null);
-	const [adminUsers, setAdminUsers] = createSignal<
-		OrganizationAdminUserEntry[]
-	>([]);
 	const [divisions, setDivisions] = createSignal<OrganizationDivision[]>([]);
 	const [divisionNameDraft, setDivisionNameDraft] = createSignal("");
 	const [divisionRenameDrafts, setDivisionRenameDrafts] = createSignal<
@@ -152,8 +148,7 @@ function createAdminOrgState() {
 		createdInvites,
 		setCreatedInvites,
 		showInviteFeedback,
-		adminUsers,
-		setAdminUsers,
+		adminUsersRoster,
 		currentInviteToken,
 		inviteName,
 	});
@@ -172,15 +167,24 @@ function createAdminOrgState() {
 	createEffect(() => {
 		const currentRoute = shell.route();
 		if (!shell.isAdminMember()) return;
-		if (currentRoute.kind === "org-admin-users") {
-			void actions.loadAdminUsers(currentRoute.slug);
-		} else if (currentRoute.kind === "org-admin-divisions") {
+		if (currentRoute.kind === "org-admin-divisions") {
 			void divisionHelpers.loadDivisionConfiguration(currentRoute.slug);
 		}
 	});
+	createEffect(
+		on(
+			adminUsersRoster.adminUsersScope,
+			() => {
+				if (shell.route().kind === "org-admin-users") {
+					setInviteDraft({ email: "", role: "Admin" });
+				}
+			},
+			{ defer: true },
+		),
+	);
 
 	return {
-		adminUsers,
+		...adminUsersRoster,
 		createDivisionAttempted,
 		createOrganizationAttempted,
 		createdInvites,
@@ -207,7 +211,6 @@ function createAdminOrgState() {
 		organizationValidationErrors,
 		organizationValidationMessage,
 		scrollInvitePanel,
-		setAdminUsers,
 		setCreateDivisionAttempted,
 		setCreateOrganizationAttempted,
 		setCreatedInvites,
