@@ -129,6 +129,7 @@ async function fixture(
 	let jwksKid = "test";
 	let jwksCalls = 0;
 	let discoveryCalls = 0;
+	let discoveryUnavailable = false;
 	let discoveryIssuer = issuer;
 	let authorizationEndpoint = "https://accounts.shopify.com/auth";
 	let graphqlApi = "https://accounts.shopify.com/customer/api/2026-07/graphql";
@@ -138,6 +139,7 @@ async function fixture(
 		const url = new URL(input.toString());
 		if (url.pathname === "/.well-known/openid-configuration") {
 			discoveryCalls++;
+			if (discoveryUnavailable) return response({}, 503);
 			return response({
 				issuer: discoveryIssuer,
 				authorization_endpoint: authorizationEndpoint,
@@ -279,6 +281,9 @@ async function fixture(
 		},
 		setDiscoveryIssuer: (value: string) => {
 			discoveryIssuer = value;
+		},
+		setDiscoveryUnavailable: (value: boolean) => {
+			discoveryUnavailable = value;
 		},
 		setAuthorizationEndpoint: (value: string) => {
 			authorizationEndpoint = value;
@@ -1065,6 +1070,46 @@ describe("CustomerAccountService", () => {
 		expect(f.tokenCalls()).toBe(2);
 		const stored = await f.repository.getSession(auth.sessionId);
 		expect(stored?.encryptedTokens).not.toContain("refresh-2");
+	});
+	it("preserves a customer session during a discovery outage and refreshes its tokens on retry", async () => {
+		const f = await fixture();
+		const auth = await f.authenticate();
+		const original = await f.repository.getSession(auth.sessionId);
+		if (!original) throw new Error("session");
+		f.setNow(new Date(Date.now() + 6 * 60_000));
+		f.setDiscoveryUnavailable(true);
+
+		await expect(
+			f.service.orders("festival", auth.sessionId),
+		).rejects.toMatchObject({
+			status: 503,
+		});
+		expect(f.tokenCalls()).toBe(1);
+		const duringOutage = await f.repository.getSession(auth.sessionId);
+		expect(duringOutage?.revokedAtIso).toBeUndefined();
+		expect(duringOutage?.encryptedTokens).toBe(original.encryptedTokens);
+		expect(await f.service.session("festival", auth.sessionId)).toMatchObject({
+			session: { authenticated: true, csrfToken: original.csrfToken },
+		});
+
+		f.setDiscoveryUnavailable(false);
+		const orders = await f.service.orders("festival", auth.sessionId);
+		expect(orders.orders[0]?.orderNumber).toBe("1001");
+		expect(f.tokenCalls()).toBe(2);
+		const refreshed = await f.repository.getSession(auth.sessionId);
+		if (!refreshed) throw new Error("session");
+		expect(refreshed.revokedAtIso).toBeUndefined();
+		expect(refreshed.csrfToken).toBe(original.csrfToken);
+		const tokens = JSON.parse(
+			f.keyring.decrypt(refreshed.encryptedTokens, {
+				organizationId: f.org.id,
+				purpose: SHOPIFY_CUSTOMER_TOKENS_PURPOSE,
+			}),
+		);
+		expect(tokens).toMatchObject({
+			accessToken: "access-2",
+			refreshToken: "refresh-2",
+		});
 	});
 	it("cannot resurrect a session revoked while its activity touch is pending", async () => {
 		const repository = new PausedTouchRepository();
