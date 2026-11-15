@@ -198,17 +198,26 @@ export function CustomerAccountOrdersPage(props: {
 		}
 	}
 
-	async function handleConfirmDrop(reason: string, requestRefund: boolean) {
+	async function handleConfirmDrop(
+		reason: string,
+		requestRefund: boolean,
+		csrfToken: string,
+	) {
 		const target = dropTarget();
 		if (!target) return;
 		setIsSubmittingAction(true);
 		setActionError(null);
 		try {
-			await dropCustomerRegistration(props.slug, target.entitlement.id, {
-				reason: reason || undefined,
-				requestRefund,
-				issueRefund: requestRefund,
-			});
+			await dropCustomerRegistration(
+				props.slug,
+				target.entitlement.id,
+				{
+					reason: reason || undefined,
+					requestRefund,
+					issueRefund: requestRefund,
+				},
+				csrfToken,
+			);
 			setDropTarget(null);
 			await loadRegistrations();
 		} catch (err) {
@@ -221,16 +230,19 @@ export function CustomerAccountOrdersPage(props: {
 	async function handleConfirmTransfer(
 		targetFestivalClassId: string,
 		reason: string,
+		csrfToken: string,
 	) {
 		const target = transferTarget();
 		if (!target) return;
 		setIsSubmittingAction(true);
 		setActionError(null);
 		try {
-			await transferCustomerRegistration(props.slug, target.entitlement.id, {
-				targetFestivalClassId,
-				reason: reason || undefined,
-			});
+			await transferCustomerRegistration(
+				props.slug,
+				target.entitlement.id,
+				{ targetFestivalClassId, reason: reason || undefined },
+				csrfToken,
+			);
 			setTransferTarget(null);
 			await loadRegistrations();
 		} catch (err) {
@@ -468,7 +480,7 @@ export function CustomerAccountOrdersPage(props: {
 							isSubmitting={isSubmittingAction()}
 							error={actionError()}
 							onConfirm={(reason, refund) =>
-								void handleConfirmDrop(reason, refund)
+								void handleConfirmDrop(reason, refund, session.csrfToken)
 							}
 							onClose={() => setDropTarget(null)}
 						/>
@@ -490,7 +502,11 @@ export function CustomerAccountOrdersPage(props: {
 							isSubmitting={isSubmittingAction()}
 							error={actionError()}
 							onConfirm={(targetClassId, reason) =>
-								void handleConfirmTransfer(targetClassId, reason)
+								void handleConfirmTransfer(
+									targetClassId,
+									reason,
+									session.csrfToken,
+								)
 							}
 							onClose={() => setTransferTarget(null)}
 						/>

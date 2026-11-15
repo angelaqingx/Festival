@@ -352,10 +352,11 @@ export function updateRegistrationMetadata(
 export function dropCustomerRegistration(
 	slug: string,
 	registrationId: string,
-	input?: Partial<C.DropRegistrationInput>,
+	input: Partial<C.DropRegistrationInput> | undefined,
+	csrfToken: string,
 ) {
 	return rPost<C.DropRegistrationResult>(
-		cust()["class-registrations"][":registrationId"].drop,
+		cust({ csrf: csrfToken })["class-registrations"][":registrationId"].drop,
 		{ param: rp(slug, registrationId), json: input ?? {} },
 	);
 }
@@ -366,9 +367,11 @@ export function transferCustomerRegistration(
 	input:
 		| C.TransferRegistrationInput
 		| { targetFestivalClassId: string; reason?: string },
+	csrfToken: string,
 ) {
 	return rPost<C.TransferRegistrationResult>(
-		cust()["class-registrations"][":registrationId"].transfer,
+		cust({ csrf: csrfToken })["class-registrations"][":registrationId"]
+			.transfer,
 		{ param: rp(slug, registrationId), json: input },
 	);
 }
