@@ -219,9 +219,10 @@ export function searchRegistrationConcertoCatalog(
 	slug: string,
 	festivalSlug: string,
 	query: string,
+	init?: { signal?: AbortSignal },
 ) {
 	return rGet<{ works: C.CanonicalWork[] }>(
-		reg()["concerto-catalog"],
+		reg(init)["concerto-catalog"],
 		filterArgs(fp(slug, festivalSlug), { q: query || undefined }),
 	);
 }

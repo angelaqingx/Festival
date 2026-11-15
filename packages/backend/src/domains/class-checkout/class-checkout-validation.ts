@@ -3,6 +3,8 @@ import {
 	AppError,
 	type FestivalClassConfiguration,
 	type FestivalRecord,
+	getRepertoireTitleLimit,
+	isCatalogWorkClassifiedAsConcerto,
 	isFestivalRegistrationOpen,
 	type RepertoirePiece,
 } from "@festival/common";
@@ -21,7 +23,7 @@ import type {
 export const MAX_SNAPSHOT_VALIDITY_MS = 90 * 24 * 60 * 60 * 1000;
 
 export interface RepertoireValidationOptions {
-	requireConcertoCatalogWork?: boolean;
+	catalogWorkMustBeConcerto?: boolean;
 	catalogWorkReader?: CheckoutRepertoireReadPort;
 	organizationId?: string;
 	preResolvedWorksById?: ReadonlyMap<
@@ -69,12 +71,24 @@ export function validateRepertoirePiece(piece: unknown): void {
 		throw new AppError("Each repertoire piece must be an object.", 400);
 	}
 	const p = piece as Record<string, unknown>;
+	if (
+		p.catalogWorkId !== undefined &&
+		p.catalogWorkId !== null &&
+		(typeof p.catalogWorkId !== "string" || !p.catalogWorkId.trim())
+	) {
+		throw new AppError(
+			"Selected catalog work ID is invalid.",
+			400,
+			"catalog_work_invalid",
+		);
+	}
 	if (typeof p.title !== "string" || !p.title.trim()) {
 		throw new AppError("Repertoire piece title is required.", 400);
 	}
-	if (p.title.trim().length > 200) {
+	const titleLimit = getRepertoireTitleLimit(p.catalogWorkId);
+	if (p.title.trim().length > titleLimit) {
 		throw new AppError(
-			"Repertoire piece title cannot exceed 200 characters.",
+			`Repertoire piece title cannot exceed ${titleLimit} characters.`,
 			400,
 		);
 	}
@@ -120,23 +134,17 @@ function normalizeValidatedPiece(
 		typeof piece.catalogWorkId === "string" && piece.catalogWorkId.trim()
 			? piece.catalogWorkId.trim()
 			: undefined;
-	if (options?.requireConcertoCatalogWork) {
-		const work = catalogWorkId
-			? options.preResolvedWorksById?.get(catalogWorkId)
-			: undefined;
-		if (
-			!catalogWorkId ||
-			!work?.isActive ||
-			!(work.classifications ?? []).includes("concerto")
-		) {
+	if (catalogWorkId && options?.catalogWorkMustBeConcerto) {
+		const work = options.preResolvedWorksById?.get(catalogWorkId);
+		if (!work?.isActive || !isCatalogWorkClassifiedAsConcerto(work)) {
 			throw new AppError(
-				"Concerto class registrations require an active concerto catalog work.",
+				"The selected catalog work must be an active concerto.",
 				400,
 				"concerto_catalog_work_required",
 			);
 		}
-	} else if (catalogWorkId && options?.preResolvedWorksById) {
-		const work = options.preResolvedWorksById.get(catalogWorkId);
+	} else if (catalogWorkId) {
+		const work = options?.preResolvedWorksById?.get(catalogWorkId);
 		if (!work?.isActive) {
 			throw new AppError(
 				"Selected catalog work was not found or is inactive.",

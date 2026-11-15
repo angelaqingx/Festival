@@ -7,6 +7,7 @@ import {
 	doesClassRequireConcerto,
 	evaluateClassCapacityStatus,
 	type FestivalClassConfiguration,
+	type FestivalRecord,
 	normalizeClassRegistrationSnapshot,
 	type RegistrationCatalogValue,
 	type RegistrationEligibleClass,
@@ -40,6 +41,13 @@ function parseJson<T>(raw: unknown, fallback: T): T {
 interface JoinedRegistrationAcc {
 	row: JoinedRegistrationRow;
 	items: Map<string, RegistrationRepertoireItem & { seen: Set<string> }>;
+}
+
+export interface RegistrationListContext {
+	festivalsById: ReadonlyMap<string, FestivalRecord>;
+	subtypesById: ReadonlyMap<string, RegistrationCatalogValue>;
+	editCutoffs: ReadonlyMap<string, Date>;
+	nowMs: number;
 }
 
 function groupJoinedRegistrationRows(
@@ -85,6 +93,7 @@ function groupJoinedRegistrationRows(
 
 function mapJoinedFestivalClass(
 	row: JoinedRegistrationRow,
+	subtype: RegistrationCatalogValue | null,
 ): CustomerClassRegistrationItem["festivalClass"] {
 	if (row.fc_display_name === null) return undefined;
 	return {
@@ -92,6 +101,10 @@ function mapJoinedFestivalClass(
 		festivalId: row.e_festival_id,
 		displayName: row.fc_display_name ?? "",
 		classSubtypeId: row.fc_class_subtype_id ?? "",
+		requiresConcerto: doesClassRequireConcerto(
+			{ displayName: row.fc_display_name },
+			subtype,
+		),
 		divisionId: row.fc_division_id ?? "",
 		minimumAge: Number(row.fc_minimum_age ?? 0),
 		maximumAge: Number(row.fc_maximum_age ?? 0),
@@ -134,24 +147,28 @@ function mapJoinedMetadata(
 
 function toJoinedRegistrationItem(
 	acc: JoinedRegistrationAcc,
-	editCutoffs: Map<string, Date>,
-	nowMs: number,
+	ctx: RegistrationListContext,
 ): CustomerClassRegistrationItem {
 	const { row, items } = acc;
-	const editCutoff = editCutoffs.get(row.e_festival_id);
+	const editCutoff = ctx.editCutoffs.get(row.e_festival_id);
+	const festivalShortName = ctx.festivalsById.get(row.e_festival_id)?.shortName;
+	const subtype = row.fc_class_subtype_id
+		? ctx.subtypesById.get(row.fc_class_subtype_id)
+		: undefined;
 	const hasClass = row.fc_display_name !== null;
 	const hasMeta = row.m_id !== null;
 	return {
 		entitlement: {
 			id: row.e_id,
 			festivalId: row.e_festival_id,
+			...(festivalShortName ? { festivalShortName } : {}),
 			festivalClassId: row.e_festival_class_id,
 			childId: row.e_child_id,
 			status: row.e_status as ClassEntitlementStatus,
 			createdAt: iso(row.e_created_at),
 			updatedAt: iso(row.e_updated_at),
 		},
-		festivalClass: mapJoinedFestivalClass(row),
+		festivalClass: mapJoinedFestivalClass(row, subtype ?? null),
 		child:
 			row.c_display_name !== null
 				? { id: row.e_child_id, name: row.c_display_name }
@@ -160,24 +177,24 @@ function toJoinedRegistrationItem(
 		paidAtIso: row.p_fully_paid_at ? iso(row.p_fully_paid_at) : null,
 		metadataEditCutoffIso: editCutoff?.toISOString() ?? null,
 		canEditMetadata: Boolean(
-			hasMeta && hasClass && editCutoff && nowMs < editCutoff.getTime(),
+			hasMeta && hasClass && editCutoff && ctx.nowMs < editCutoff.getTime(),
 		),
 	};
 }
 
 export function buildJoinedRegistrationItems(
 	rows: JoinedRegistrationRow[],
-	editCutoffs: Map<string, Date>,
-	nowMs: number,
+	ctx: RegistrationListContext,
 ): CustomerClassRegistrationItem[] {
 	const grouped = groupJoinedRegistrationRows(rows);
 	return Array.from(grouped.values()).map((acc) =>
-		toJoinedRegistrationItem(acc, editCutoffs, nowMs),
+		toJoinedRegistrationItem(acc, ctx),
 	);
 }
 
 function mapPortFestivalClass(
 	festivalClass: FestivalClassConfiguration | undefined,
+	subtypesById: RegistrationListContext["subtypesById"],
 ): CustomerClassRegistrationItem["festivalClass"] {
 	if (!festivalClass) return undefined;
 	return {
@@ -185,6 +202,10 @@ function mapPortFestivalClass(
 		festivalId: festivalClass.festivalId,
 		displayName: festivalClass.displayName,
 		classSubtypeId: festivalClass.classSubtypeId,
+		requiresConcerto: doesClassRequireConcerto(
+			festivalClass,
+			subtypesById.get(festivalClass.classSubtypeId) ?? null,
+		),
 		divisionId: festivalClass.divisionId,
 		minimumAge: festivalClass.minimumAge,
 		maximumAge: festivalClass.maximumAge,
@@ -214,7 +235,7 @@ function mapPortMetadata(
 
 export function buildPortRegistrationItem(
 	entitlement: ClassEntitlement,
-	ctx: {
+	ctx: RegistrationListContext & {
 		childrenById: Map<string, { id: string; name: string }>;
 		classConfigsByFestival: Map<
 			string,
@@ -222,8 +243,6 @@ export function buildPortRegistrationItem(
 		>;
 		metadataByEntitlementId: Map<string, ClassRegistrationMetadata>;
 		paidAtByOrderGid: Map<string, string | null>;
-		editCutoffs: Map<string, Date>;
-		nowMs: number;
 	},
 ): CustomerClassRegistrationItem {
 	const festivalClass = ctx.classConfigsByFestival
@@ -232,17 +251,21 @@ export function buildPortRegistrationItem(
 	const child = ctx.childrenById.get(entitlement.childId);
 	const metadata = ctx.metadataByEntitlementId.get(entitlement.id) ?? null;
 	const editCutoff = ctx.editCutoffs.get(entitlement.festivalId);
+	const festivalShortName = ctx.festivalsById.get(
+		entitlement.festivalId,
+	)?.shortName;
 	return {
 		entitlement: {
 			id: entitlement.id,
 			festivalId: entitlement.festivalId,
+			...(festivalShortName ? { festivalShortName } : {}),
 			festivalClassId: entitlement.festivalClassId,
 			childId: entitlement.childId,
 			status: entitlement.status,
 			createdAt: entitlement.createdAt,
 			updatedAt: entitlement.updatedAt,
 		},
-		festivalClass: mapPortFestivalClass(festivalClass),
+		festivalClass: mapPortFestivalClass(festivalClass, ctx.subtypesById),
 		child,
 		metadata: mapPortMetadata(metadata),
 		paidAtIso: ctx.paidAtByOrderGid.get(entitlement.shopifyOrderGid) ?? null,

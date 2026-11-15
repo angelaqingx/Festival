@@ -5539,8 +5539,8 @@ describe("ClassCheckoutService", () => {
 		});
 	});
 
-	describe("Concerto catalog work requirement (#197)", () => {
-		it("rejects free-text repertoire when class requires a concerto", async () => {
+	describe("Concerto class repertoire", () => {
+		it("persists a manually entered concerto without a catalog link", async () => {
 			const f = await createFixture();
 			const concertoSubtype =
 				await f.organizations.createRegistrationCatalogValue({
@@ -5567,22 +5567,26 @@ describe("ClassCheckoutService", () => {
 					shopifyVariantGid: "gid://shopify/ProductVariant/201",
 				});
 
-			await expect(
-				f.service.start({
-					...f.defaultInput,
-					festivalClassId: concertoClass.id,
-					pieces: [
-						{
-							title: "Piano Concerto in A minor, Op. 16",
-							composer: "Edvard Grieg",
-							durationSeconds: 300,
-						},
-					],
-				}),
-			).rejects.toMatchObject({
-				status: 400,
-				code: "concerto_catalog_work_required",
+			const captured: ClassRegistrationMetadata[] = [];
+			const insert = f.checkout.insertRegistrationMetadata.bind(f.checkout);
+			f.checkout.insertRegistrationMetadata = async (params) => {
+				const metadata = await insert(params);
+				captured.push(metadata);
+				return metadata;
+			};
+			const manualPiece = {
+				title: "Piano Concerto in A minor, Op. 16",
+				composer: "Edvard Grieg",
+				durationSeconds: 300,
+			};
+			const result = await f.service.start({
+				...f.defaultInput,
+				festivalClassId: concertoClass.id,
+				pieces: [manualPiece],
 			});
+			expect(result.intentId).toBeDefined();
+			expect(captured[0]?.repertoireJson).toEqual([manualPiece]);
+			expect(captured[0]?.repertoireItems[0]?.catalogWorkId).toBeNull();
 		});
 
 		it("rejects catalog work not classified as concerto or unknown catalogWorkId", async () => {
@@ -5630,9 +5634,18 @@ describe("ClassCheckoutService", () => {
 				isActive: true,
 			});
 
+			f.repertoire.seedCanonicalWork({
+				id: "work-inactive-concerto",
+				organizationId: f.organization.id,
+				title: "Inactive Concerto",
+				classifications: ["concerto"],
+				isActive: false,
+			});
+
 			for (const catalogWorkId of [
 				"work-sonata",
 				"work-unclassified",
+				"work-inactive-concerto",
 				"unknown-work-id",
 			]) {
 				await expect(
@@ -5656,7 +5669,7 @@ describe("ClassCheckoutService", () => {
 			}
 		});
 
-		it("accepts a catalog work classified as concerto and persists catalogWorkId", async () => {
+		it("preserves a 300-character concerto title only when linked to valid catalog work", async () => {
 			const f = await createFixture();
 			const concertoSubtype =
 				await f.organizations.createRegistrationCatalogValue({
@@ -5683,10 +5696,11 @@ describe("ClassCheckoutService", () => {
 					shopifyVariantGid: "gid://shopify/ProductVariant/201",
 				});
 
+			const linkedTitle = "Piano Concerto in A minor, Op. 16".padEnd(300, "x");
 			f.repertoire.seedCanonicalWork({
 				id: "work-concerto-1",
 				organizationId: f.organization.id,
-				title: "Piano Concerto in A minor, Op. 16",
+				title: linkedTitle,
 				composerName: "Edvard Grieg",
 				classifications: ["concerto"],
 				isActive: true,
@@ -5700,18 +5714,33 @@ describe("ClassCheckoutService", () => {
 				return metadata;
 			};
 
+			const piece: RepertoirePiece = {
+				title: linkedTitle,
+				composer: "Edvard Grieg",
+				movement: "I. Allegro molto moderato",
+				durationSeconds: 300,
+				catalogWorkId: "work-concerto-1",
+			};
+			for (const [invalidPiece, limit] of [
+				[{ ...piece, catalogWorkId: null }, 200],
+				[{ ...piece, title: `${linkedTitle}x` }, 300],
+			] as const) {
+				await expect(
+					f.service.start({
+						...f.defaultInput,
+						idempotencyKey: `long-title-${limit}`,
+						festivalClassId: concertoClass.id,
+						pieces: [invalidPiece],
+					}),
+				).rejects.toMatchObject({
+					status: 400,
+					message: `Repertoire piece title cannot exceed ${limit} characters.`,
+				});
+			}
 			const result = await f.service.start({
 				...f.defaultInput,
 				festivalClassId: concertoClass.id,
-				pieces: [
-					{
-						title: "Piano Concerto in A minor, Op. 16",
-						composer: "Edvard Grieg",
-						movement: "I. Allegro molto moderato",
-						durationSeconds: 300,
-						catalogWorkId: "work-concerto-1",
-					} as RepertoirePiece,
-				],
+				pieces: [piece],
 			});
 
 			expect(result.intentId).toBeDefined();
@@ -5719,13 +5748,7 @@ describe("ClassCheckoutService", () => {
 			expect(captured[0].repertoireItems[0]?.catalogWorkId).toBe(
 				"work-concerto-1",
 			);
-			expect(
-				(
-					captured[0].repertoireJson[0] as RepertoirePiece & {
-						catalogWorkId?: string | null;
-					}
-				)?.catalogWorkId,
-			).toBe("work-concerto-1");
+			expect(captured[0].repertoireJson).toEqual([piece]);
 		});
 
 		it("continues to allow free-text repertoire without catalogWorkId on non-concerto classes", async () => {

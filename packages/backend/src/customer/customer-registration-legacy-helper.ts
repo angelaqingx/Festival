@@ -409,6 +409,8 @@ export class CustomerRegistrationLegacyHelper {
 			organizationId,
 			query,
 			concertoOnly: true,
+			typeahead: true,
+			limit: 100,
 		});
 		return { works };
 	}

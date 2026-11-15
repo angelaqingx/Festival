@@ -315,6 +315,8 @@ describe("CustomerRegistrationQueryService integration", () => {
 				"ent-3",
 			]);
 			const first = response.registrations[0];
+			expect(first?.entitlement.festivalShortName).toBe("spring");
+			expect(first?.festivalClass?.requiresConcerto).toBe(false);
 			expect(first?.paidAtIso).toBe("2027-01-15T12:00:00.000Z");
 			expect(first?.canEditMetadata).toBeTrue();
 			expect(first?.metadata?.teacherName).toBe("Ms. Clara");

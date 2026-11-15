@@ -222,23 +222,21 @@ async function fixture(
 		"test",
 	);
 	if (!keyring) throw new Error("keyring");
-	const service = new (
-		CustomerAccountService as unknown as new (
-			...args: unknown[]
-		) => CustomerAccountService
-	)(
-		repository,
-		organizations,
-		keyring,
-		{
-			publicOrigin: "https://festival.example.com",
-			transport: transportFor(fetcher, () => now),
-			now: () => now,
-		},
-		commerceRepo,
-		checkoutRepo,
-		repertoire,
-	);
+	const createService = (catalog?: InMemoryRepertoireRepository) =>
+		new CustomerAccountService(
+			repository,
+			organizations,
+			keyring,
+			{
+				publicOrigin: "https://festival.example.com",
+				transport: transportFor(fetcher, () => now),
+				now: () => now,
+			},
+			commerceRepo,
+			checkoutRepo,
+			catalog,
+		);
+	const service = createService(repertoire);
 	await service.saveAndVerify(org.id, org.slug, {
 		storefrontDomain: "store.example.com",
 		clientId: "customer-client",
@@ -256,6 +254,7 @@ async function fixture(
 	}
 	return {
 		service,
+		createService,
 		repository,
 		organizations,
 		commerce: commerceRepo,
@@ -1782,7 +1781,7 @@ describe("CustomerAccountService", () => {
 		}
 	});
 
-	it("enforces concerto catalog work requirement when updating registration metadata (#197)", async () => {
+	it("updates manual and linked concerto registration repertoire", async () => {
 		const f = await fixture();
 		await f.organizations.updateOrganizationTimezone(
 			f.org.id,
@@ -1807,19 +1806,22 @@ describe("CustomerAccountService", () => {
 				normalizedName: "concerto",
 			});
 
+		const classInput = {
+			organizationId: f.org.id,
+			festivalId: festival.id,
+			divisionId: "div_1",
+			minimumAge: 5,
+			maximumAge: 18,
+			price: "45.00",
+			maximumPerformancePieces: 1 as const,
+			performanceMinutes: 15,
+			capacity: 20,
+		};
 		const concertoClass =
 			await f.organizations.createFestivalClassConfiguration({
-				organizationId: f.org.id,
-				festivalId: festival.id,
+				...classInput,
 				displayName: "Junior Piano Concerto",
 				classSubtypeId: concertoSubtype.id,
-				divisionId: "div_1",
-				minimumAge: 5,
-				maximumAge: 18,
-				price: "45.00",
-				maximumPerformancePieces: 1,
-				performanceMinutes: 15,
-				capacity: 20,
 				shopifyProductGid: "gid://shopify/Product/4",
 				shopifyVariantGid: "gid://shopify/ProductVariant/4",
 			});
@@ -1833,39 +1835,49 @@ describe("CustomerAccountService", () => {
 		const csrfToken = session.csrfToken;
 		const origin = "https://festival.example.com";
 
-		const entitlement = await f.commerce.createClassEntitlement({
-			organizationId: f.org.id,
-			festivalId: festival.id,
-			festivalClassId: concertoClass.id,
-			parentCustomerId: customerId,
-			childId: "child-1",
-			checkoutIntentId: "intent-concerto-1",
-			shopifyOrderGid: "gid://shopify/Order/concerto-1",
-			shopifyOrderLineGid: "gid://shopify/LineItem/concerto-1",
-			paidAmountCents: 4500,
-			paidCurrencyCode: "USD",
-			status: "confirmed",
-		});
-
-		await f.checkout.insertRegistrationMetadata({
-			id: "reg-meta-concerto-1",
-			organizationId: f.org.id,
-			festivalId: festival.id,
-			checkoutIntentId: "intent-concerto-1",
-			teacherMembershipId: "teacher-1",
-			accompanistMembershipId: null,
-			repertoireJson: [
-				{
-					title: "Initial Concerto",
-					composer: "Grieg",
-					durationSeconds: 300,
-				},
-			],
-		});
-		await f.checkout.linkRegistrationMetadataToEntitlement({
-			checkoutIntentId: "intent-concerto-1",
-			classEntitlementId: entitlement.id,
-		});
+		async function createRegistration(
+			festivalClassId: string,
+			reference: string,
+		) {
+			const checkoutIntentId = `intent-${reference}`;
+			const entitlement = await f.commerce.createClassEntitlement({
+				organizationId: f.org.id,
+				festivalId: festival.id,
+				festivalClassId,
+				parentCustomerId: customerId,
+				childId: "child-1",
+				checkoutIntentId,
+				shopifyOrderGid: `gid://shopify/Order/${reference}`,
+				shopifyOrderLineGid: `gid://shopify/LineItem/${reference}`,
+				paidAmountCents: 4500,
+				paidCurrencyCode: "USD",
+				status: "confirmed",
+			});
+			await f.checkout.insertRegistrationMetadata({
+				id: `reg-meta-${reference}`,
+				organizationId: f.org.id,
+				festivalId: festival.id,
+				checkoutIntentId,
+				teacherMembershipId: "teacher-1",
+				accompanistMembershipId: null,
+				repertoireJson: [
+					{
+						title: "Initial piece",
+						composer: "Grieg",
+						durationSeconds: 300,
+					},
+				],
+			});
+			await f.checkout.linkRegistrationMetadataToEntitlement({
+				checkoutIntentId,
+				classEntitlementId: entitlement.id,
+			});
+			return entitlement;
+		}
+		const entitlement = await createRegistration(
+			concertoClass.id,
+			"concerto-1",
+		);
 
 		const cutoff = deriveFestivalMetadataCutoff(
 			"2026-05-15",
@@ -1873,26 +1885,30 @@ describe("CustomerAccountService", () => {
 		);
 		f.setNow(new Date(cutoff.getTime() - 10_000));
 
-		// 1. Free-text repertoire without catalogWorkId is rejected with 400
-		await expect(
-			f.service.updateRegistrationMetadata(
-				"festival",
-				"spring-2026",
-				entitlement.id,
-				auth.sessionId,
-				csrfToken,
-				origin,
-				{
-					pieces: [
-						{
-							title: "Piano Concerto in A minor",
-							composer: "Edvard Grieg",
-							durationSeconds: 300,
-						},
-					],
-				},
-			),
-		).rejects.toMatchObject({ status: 400 });
+		const manualPiece = {
+			title: "Piano Concerto in A minor".padEnd(200, "x"),
+			composer: "Edvard Grieg",
+			durationSeconds: 305,
+		};
+		const manualUpdate = await f.service.updateRegistrationMetadata(
+			"festival",
+			"spring-2026",
+			entitlement.id,
+			auth.sessionId,
+			csrfToken,
+			origin,
+			{ pieces: [manualPiece] },
+		);
+		expect(manualUpdate.metadata.repertoireJson).toEqual([manualPiece]);
+		expect(manualUpdate.metadata.repertoireItems[0]?.catalogWorkId).toBeNull();
+		const registrations = await f.service.listClassRegistrations(
+			"festival",
+			auth.sessionId,
+			"spring-2026",
+		);
+		expect(registrations.registrations[0]?.metadata?.repertoireJson).toEqual([
+			manualPiece,
+		]);
 
 		// 2. Catalog work not classified as concerto is rejected with 400
 		f.repertoire.seedCanonicalWork({
@@ -1930,11 +1946,18 @@ describe("CustomerAccountService", () => {
 		).rejects.toMatchObject({ status: 400 });
 
 		// 3. Catalog work classified as concerto is accepted and persists catalogWorkId
+		const linkedPiece = {
+			title: "Piano Concerto No. 2, Op. 18".padEnd(300, "x"),
+			composer: "Sergei Rachmaninoff",
+			movement: "I. Moderato",
+			durationSeconds: 420,
+			catalogWorkId: "work-concerto-valid",
+		};
 		f.repertoire.seedCanonicalWork({
-			id: "work-concerto-valid",
+			id: linkedPiece.catalogWorkId,
 			organizationId: f.org.id,
-			title: "Piano Concerto No. 2, Op. 18",
-			composerName: "Sergei Rachmaninoff",
+			title: linkedPiece.title,
+			composerName: linkedPiece.composer,
 			classifications: ["concerto"],
 			isActive: true,
 		});
@@ -1946,33 +1969,35 @@ describe("CustomerAccountService", () => {
 			auth.sessionId,
 			csrfToken,
 			origin,
-			{
-				pieces: [
-					{
-						title: "Piano Concerto No. 2, Op. 18",
-						composer: "Sergei Rachmaninoff",
-						movement: "I. Moderato",
-						durationSeconds: 420,
-						catalogWorkId: "work-concerto-valid",
-					} as unknown as {
-						title: string;
-						composer: string;
-						durationSeconds: number;
-					},
-				],
-			},
+			{ pieces: [linkedPiece] },
 		);
 
-		expect(
-			(
-				updated.metadata.repertoireJson[0] as {
-					catalogWorkId?: string | null;
-				}
-			)?.catalogWorkId,
-		).toBe("work-concerto-valid");
+		expect(updated.metadata.repertoireJson).toEqual([linkedPiece]);
 		expect(updated.metadata.repertoireItems[0]?.catalogWorkId).toBe(
-			"work-concerto-valid",
+			linkedPiece.catalogWorkId,
 		);
+		await expect(
+			f.service.updateRegistrationMetadata(
+				"festival",
+				"spring-2026",
+				entitlement.id,
+				auth.sessionId,
+				csrfToken,
+				origin,
+				{ pieces: [{ ...linkedPiece, catalogWorkId: null }] },
+			),
+		).rejects.toMatchObject({
+			status: 400,
+			message: "Repertoire piece title cannot exceed 200 characters.",
+		});
+		const linkedRegistrations = await f.service.listClassRegistrations(
+			"festival",
+			auth.sessionId,
+			"spring-2026",
+		);
+		expect(
+			linkedRegistrations.registrations[0]?.metadata?.repertoireJson,
+		).toEqual([linkedPiece]);
 
 		// 4. Cross-tenant catalogWorkId is rejected with 400
 		f.repertoire.seedCanonicalWork({
@@ -2007,6 +2032,32 @@ describe("CustomerAccountService", () => {
 				},
 			),
 		).rejects.toMatchObject({ status: 400 });
+
+		// A different class subtype still requires a verifiable link for the longer title.
+		const soloSubtype = await f.organizations.createRegistrationCatalogValue({
+			organizationId: f.org.id,
+			kind: "class_subtype",
+			displayName: "Solo",
+			normalizedName: "solo",
+		});
+		const soloClass = await f.organizations.createFestivalClassConfiguration({
+			...classInput,
+			displayName: "Junior Piano Solo",
+			classSubtypeId: soloSubtype.id,
+		});
+		const soloEntitlement = await createRegistration(soloClass.id, "solo-1");
+		const serviceWithoutRepertoire = f.createService();
+		await expect(
+			serviceWithoutRepertoire.updateRegistrationMetadata(
+				"festival",
+				"spring-2026",
+				soloEntitlement.id,
+				auth.sessionId,
+				csrfToken,
+				origin,
+				{ pieces: [linkedPiece] },
+			),
+		).rejects.toMatchObject({ status: 400, code: "catalog_work_invalid" });
 	});
 
 	it("caches organization lookup and registration age configuration in bounded caches", async () => {

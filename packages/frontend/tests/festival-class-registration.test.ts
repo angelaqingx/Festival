@@ -105,6 +105,54 @@ describe("Repertoire validation & transformation helpers", () => {
 		expect(validatePieceComposer("Claude Debussy")).toBeNull();
 	});
 
+	it("enforces linked and manual title limits in draft and signup validation", () => {
+		const work = {
+			id: "linked-concerto",
+			title: `  ${"A".repeat(300)}  `,
+			composerName: "Composer",
+			classifications: ["concerto"],
+			isActive: true,
+		};
+		const draft = applyCatalogWorkSelection(createEmptyPieceDraft(), work.id, [
+			work,
+		]);
+		const unlinked = applyCatalogWorkSelection(draft, "");
+		const options = { requiresConcerto: true, catalogWorks: [work] };
+		const canContinueSignup = (piece: typeof draft) =>
+			isRegistrationSelectionValid(
+				{ hasCurrentValidAgeSnapshot: true },
+				{ requiresConcerto: true, maximumPerformancePieces: 1 },
+				"division",
+				"teacher",
+				"class",
+				[pieceDraftToRepertoirePiece(piece)],
+				[work],
+			);
+
+		expect(validatePieceTitle(draft.title, draft.catalogWorkId)).toBeNull();
+		expect(arePiecesValid([draft], options)).toBe(true);
+		expect(canContinueSignup(draft)).toBe(true);
+		expect(
+			arePiecesValid([{ ...draft, title: "A".repeat(301) }], options),
+		).toBe(false);
+
+		expect(unlinked.title).toBe(draft.title);
+		expect(validatePieceTitle(unlinked.title, unlinked.catalogWorkId)).toBe(
+			"Title cannot exceed 200 characters.",
+		);
+		expect(arePiecesValid([unlinked], options)).toBe(false);
+		expect(canContinueSignup(unlinked)).toBe(false);
+		expect(
+			arePiecesValid(
+				[{ ...unlinked, title: `  ${"A".repeat(200)}  ` }],
+				options,
+			),
+		).toBe(true);
+		expect(
+			arePiecesValid([{ ...unlinked, title: "A".repeat(201) }], options),
+		).toBe(false);
+	});
+
 	it("enforces duration greater than 0 seconds", () => {
 		expect(validatePieceDuration(0, 0)).toBe(
 			"Duration must be greater than 0 seconds.",
@@ -188,7 +236,7 @@ describe("Repertoire validation & transformation helpers", () => {
 		).toBe("3m 15s");
 	});
 
-	it("enforces concerto catalog work requirement when class requires a concerto (#197)", () => {
+	it("accepts manual and linked concerto repertoire while rejecting an invalid known catalog link", () => {
 		const child = { hasCurrentValidAgeSnapshot: true };
 		const concertoWorks = [
 			{
@@ -217,7 +265,7 @@ describe("Repertoire validation & transformation helpers", () => {
 				classSubtypeName: "Concerto",
 			},
 		]) {
-			// Free-text repertoire (no catalogWorkId) is invalid for concerto classes
+			// Manual entries can use the same title as a catalog work.
 			expect(
 				(
 					isRegistrationSelectionValid as unknown as (
@@ -238,7 +286,7 @@ describe("Repertoire validation & transformation helpers", () => {
 					],
 					concertoWorks,
 				),
-			).toBe(false);
+			).toBe(true);
 
 			// Non-concerto catalog work is invalid for concerto classes
 			expect(
@@ -303,7 +351,7 @@ describe("Repertoire validation & transformation helpers", () => {
 				],
 				{ requiresConcerto: true, catalogWorks: concertoWorks },
 			),
-		).toBe(false);
+		).toBe(true);
 
 		expect(
 			(arePiecesValid as unknown as (...args: unknown[]) => boolean)(
@@ -403,9 +451,7 @@ describe("Repertoire validation & transformation helpers", () => {
 		];
 
 		const emptyDraft = createEmptyPieceDraft();
-		expect(validatePieceCatalogWork(emptyDraft, true, catalogWorks)).toBe(
-			"Concerto classes require selecting a concerto work from the catalog.",
-		);
+		expect(validatePieceCatalogWork(emptyDraft, true, catalogWorks)).toBeNull();
 		expect(
 			validatePieceCatalogWork(emptyDraft, false, catalogWorks),
 		).toBeNull();
@@ -444,6 +490,26 @@ describe("Repertoire validation & transformation helpers", () => {
 			catalogWorks,
 		);
 		expect(clearedDraft.catalogWorkId).toBeUndefined();
+		expect(clearedDraft.title).toBe(concertoDraft.title);
+		expect(clearedDraft.composer).toBe(concertoDraft.composer);
+		expect(pieceDraftToRepertoirePiece(clearedDraft)).not.toHaveProperty(
+			"catalogWorkId",
+		);
+
+		const saved = [pieceDraftToRepertoirePiece(concertoDraft)];
+		const next = applyCatalogWorkSelection(emptyDraft, "work-concerto-2", [
+			{
+				id: "work-concerto-2",
+				title: "Another concerto",
+				composerName: "Composer",
+			},
+		]);
+		saved.push(pieceDraftToRepertoirePiece(next));
+		expect(saved.map((piece) => piece.catalogWorkId)).toEqual([
+			"work-concerto-1",
+			"work-concerto-2",
+		]);
+		expect(validatePieceDrafts(saved, { requiresConcerto: true })).toBe(true);
 	});
 });
 
@@ -523,7 +589,8 @@ describe("Registration eligibility & multi-line checkout API", () => {
 		globalThis.fetch = originalFetch;
 	});
 
-	it("searches concertos using the customer session", async () => {
+	it("searches concertos using the customer session and forwards cancellation", async () => {
+		const controller = new AbortController();
 		globalThis.fetch = (async (
 			input: RequestInfo | URL,
 			init?: RequestInit,
@@ -534,6 +601,7 @@ describe("Registration eligibility & multi-line checkout API", () => {
 				"/api/organizations/test-org/customer/festivals/test-fest/registration/concerto-catalog",
 			);
 			expect(init?.credentials).toBe("include");
+			expect(init?.signal).toBe(controller.signal);
 			expect(new Headers(init?.headers).has("Authorization")).toBe(false);
 			return Response.json({ works: [] });
 		}) as typeof fetch;
@@ -543,6 +611,7 @@ describe("Registration eligibility & multi-line checkout API", () => {
 				"test-org",
 				"test-fest",
 				"Grieg & Ravel",
+				{ signal: controller.signal },
 			),
 		).resolves.toEqual({ works: [] });
 	});

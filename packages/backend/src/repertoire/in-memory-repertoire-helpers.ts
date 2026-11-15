@@ -346,15 +346,31 @@ export function inMemSearchCatalogWorks(
 	input: SearchCatalogWorksInput,
 ): CanonicalWork[] {
 	const q = input.query.toLowerCase().trim();
+	if (input.typeahead && !q) return [];
 	const limit = input.limit ?? 20;
+	const title = (work: CanonicalWork) =>
+		input.typeahead
+			? (work.normalizedTitle ?? work.title).toLowerCase()
+			: work.title.toLowerCase();
+	const rank = (work: CanonicalWork) => {
+		const value = title(work);
+		if (value === q) return 0;
+		return value.startsWith(q) ? 1 : 2;
+	};
 	return Array.from(state.canonicalWorks.values())
 		.filter(
 			(work) =>
 				work.organizationId === input.organizationId &&
 				(!input.concertoOnly || isCatalogWorkClassifiedAsConcerto(work)) &&
-				(work.title.toLowerCase().includes(q) ||
+				(title(work).includes(q) ||
 					Boolean(work.composerName?.toLowerCase().includes(q))),
 		)
-		.sort((a, b) => a.title.localeCompare(b.title))
+		.sort((a, b) =>
+			input.typeahead
+				? rank(a) - rank(b) ||
+					title(a).localeCompare(title(b)) ||
+					a.id.localeCompare(b.id)
+				: a.title.localeCompare(b.title),
+		)
 		.slice(0, limit);
 }
