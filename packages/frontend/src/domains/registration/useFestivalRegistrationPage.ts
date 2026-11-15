@@ -348,6 +348,7 @@ export function useFestivalRegistrationPage(
 		slug: props.slug,
 		festivalSlug: props.festivalSlug,
 		getCsrf,
+		refreshCustomerSession: customerIdentity.refreshCustomerSession,
 		cart,
 		eligibility,
 		isSubmittingCheckout: signals.isSubmittingCheckout,

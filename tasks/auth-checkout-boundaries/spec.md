@@ -19,8 +19,8 @@ The companion worktree owns customer OAuth, sessions/repositories, token transpo
 | Unit | Progress | Required evidence |
 |---|---|---|
 | #400 drop and transfer CSRF | Committed and pushed in 222e3ce | Both mutations reject missing, empty, wrong, and other-session tokens and incorrect origins. Denials leave registration, audit, promotion, and refund effects untouched. Valid callers supply the current token and retain ownership checks. |
-| #404 explicit checkout arguments | Reviewed and validated, awaiting commit | Supported overloads preserve positional token/key precedence and stable retry keys. Cover the current object-only caller. |
-| #398 pre-dispatch auth rejection | Pending | Confirmed pre-dispatch auth/CSRF denial releases the same-session cart lock and preserves its lines. Session changes cannot submit an earlier customer's draft. Uncertain dispatch retains its recovery behavior. |
+| #404 explicit checkout arguments | Committed and pushed in e2e5282 | Supported overloads preserve positional token/key precedence and stable retry keys. Cover the current object-only caller. |
+| #398 pre-dispatch auth rejection | Reviewed and validated, awaiting commit | Confirmed pre-dispatch auth/CSRF denial releases the same-session cart lock and preserves its lines. Session changes cannot submit an earlier customer's draft. Uncertain dispatch retains its recovery behavior. |
 | #402 admin CSRF header | Pending | Realistic Firebase ID tokens remain in Authorization and authorized reconciliation/approve/decline requests succeed with the intended separate CSRF value. Retain missing-CSRF, non-admin, and cross-tenant denials and shared helper consumer coverage. |
 | #406 membership recovery CSRF | Pending | Every resume POST validates session-bound CSRF and origin. Missing/empty/wrong tokens and incorrect origins leave the source and recovery request untouched and make no Storefront call. Valid same-origin resume succeeds for the matching pending link. |
 | #405 canonical admin origin | Pending | Both reap and resolve accept equivalent canonical origins. Absent, malformed, opaque, and cross-origin inputs fail closed. |
@@ -57,4 +57,4 @@ Run targeted checks for each unit. Full branch validation follows the repository
 
 Each logical unit requires an independent exact-diff review before its commit. Store the scoped review in `tasks/auth-checkout-boundaries/code-review.md` using the code-review skill helper with an explicit base. Record findings, verdict, confidence, targeted check results, commit SHA, and later CI status when available. Re-review changes made after approval. The final PR must show green checks for its current head and clean mergeability against the current base before the authorized merge pipeline.
 
-Unit #400 passed independent review and validation and was committed and pushed as `222e3cee07564d5cc6891cd2bf1b5a88bd2e93f3`. Unit #404 passed independent review and targeted validation and is awaiting its authorized commit. Evidence is recorded in `code-review.md`. Other logical units remain pending.
+Units #400 and #404 passed independent review and validation and were committed/pushed as `222e3ce` and `e2e5282`. Unit #398 passed independent review and targeted validation and is awaiting its authorized commit. Evidence is recorded in `code-review.md`. Other logical units remain pending.

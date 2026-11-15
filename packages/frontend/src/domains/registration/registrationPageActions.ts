@@ -154,6 +154,7 @@ export interface CheckoutRecoveryActionContext {
 	slug: string;
 	festivalSlug: string;
 	getCsrf: () => string;
+	refreshCustomerSession: (slug: string) => Promise<unknown>;
 	cart: RegistrationCart;
 	eligibility: ReturnType<typeof useCartEligibility>;
 	isSubmittingCheckout: () => boolean;
@@ -280,10 +281,13 @@ export function createCheckoutRecoveryHandlers(
 		if (ctx.cart.itemCount() === 0 || ctx.isSubmittingCheckout()) return;
 		const recovery = ctx.cart.checkoutRecovery();
 		if (recovery && !recovery.retryAllowed) return;
+		const previousSubmission = ctx.cart.checkoutSubmission();
+		const csrfToken = ctx.getCsrf();
+		let submission: RegistrationCheckoutSubmission | null = null;
 		ctx.setCheckoutError(null);
 		ctx.setIsSubmittingCheckout(true);
 		try {
-			if (!ctx.cart.checkoutSubmission()) {
+			if (!previousSubmission) {
 				await ctx.eligibility.recheck();
 				if (!ctx.eligibility.isCartEligible()) {
 					throw new Error(
@@ -292,10 +296,11 @@ export function createCheckoutRecoveryHandlers(
 					);
 				}
 			}
-			const submission = ctx.cart.beginCheckout();
+			if (ctx.isDisposed() || ctx.getCsrf() !== csrfToken) return;
+			submission = ctx.cart.beginCheckout();
 			const res = await startClassCheckout(ctx.slug, ctx.festivalSlug, {
 				lineItems: submission.lineItems,
-				csrfToken: ctx.getCsrf(),
+				csrfToken,
 				idempotencyKey: submission.idempotencyKey,
 			});
 			if (ctx.isDisposed() || ctx.cart.checkoutSubmission() !== submission) {
@@ -306,6 +311,24 @@ export function createCheckoutRecoveryHandlers(
 			}
 			handOffCheckout(res.checkoutUrl, submission);
 		} catch (error) {
+			if (
+				ctx.isDisposed() ||
+				(submission && ctx.cart.checkoutSubmission() !== submission)
+			) {
+				return;
+			}
+			if (
+				submission &&
+				!previousSubmission &&
+				!recovery &&
+				error instanceof ApiError &&
+				[401, 403].includes(error.status) &&
+				!error.recovery
+			) {
+				ctx.cart.releaseCheckout();
+				await ctx.refreshCustomerSession(ctx.slug);
+				if (ctx.isDisposed() || ctx.getCsrf() !== csrfToken) return;
+			}
 			handleCheckoutError(error, true);
 		} finally {
 			if (!ctx.isHandingOff()) ctx.setIsSubmittingCheckout(false);
