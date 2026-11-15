@@ -86,7 +86,7 @@ function adminRpc(
 
 function adminCsrf(idToken: string | null) {
 	return adminRpc(idToken, {
-		extraHeaders: { "X-CSRF-Token": idToken || "admin-csrf" },
+		extraHeaders: { "X-CSRF-Token": "admin-csrf" },
 	});
 }
 
@@ -485,11 +485,11 @@ export function getCustomerCheckoutRecoveryReview(
 export function resumeCustomerCheckoutRecovery(
 	slug: string,
 	token: string,
-	csrfToken?: string,
+	csrfToken: string,
 ): Promise<C.RecoveryCheckoutResult> {
-	const ep = custRpc(
-		csrfToken ? { extraHeaders: { "X-CSRF-Token": csrfToken } } : undefined,
-	)["checkout-recovery"][":token"].checkout;
+	const ep = custRpc({ extraHeaders: { "X-CSRF-Token": csrfToken } })[
+		"checkout-recovery"
+	][":token"].checkout;
 	return rpcPost<C.RecoveryCheckoutResult>()(ep, {
 		param: { slug: enc(slug), token: enc(token) },
 	});

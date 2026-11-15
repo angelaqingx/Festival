@@ -3,20 +3,50 @@
 - Findings status: none
 
 ## Context
-- Base branch: e2e5282f87076840f47c3f319001d465c7173471
+- Base branch: ee9275a7d6a7d661abf7b55a04311b3e5ebded44
 - Diff command: `git diff --cached; git diff; inspect listed untracked files`
 - Changed files:
-  - `packages/frontend/src/domains/registration/registrationPageActions.ts`
-  - `packages/frontend/src/domains/registration/useFestivalRegistrationPage.ts`
-  - `packages/frontend/tests/checkout-auth-rejection.test.ts`
+  - `packages/backend/src/routes/customer-checkout-recovery.routes.ts`
+  - `packages/backend/tests/admin-entitlements-ops.test.ts`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts`
+  - `packages/frontend/src/lib/api/commerce.ts`
+  - `packages/frontend/tests/admin-entitlement-ops-panel.test.ts`
+  - `packages/frontend/tests/checkout-recovery-ui.test.ts`
 - Citation candidates (verify before use):
-  - `packages/frontend/src/domains/registration/registrationPageActions.ts:157-157`
-  - `packages/frontend/src/domains/registration/registrationPageActions.ts:284-286`
-  - `packages/frontend/src/domains/registration/registrationPageActions.ts:290-290`
-  - `packages/frontend/src/domains/registration/registrationPageActions.ts:299-300`
-  - `packages/frontend/src/domains/registration/registrationPageActions.ts:303-303`
-  - `packages/frontend/src/domains/registration/registrationPageActions.ts:314-331`
-  - `packages/frontend/src/domains/registration/useFestivalRegistrationPage.ts:351-351`
+  - `packages/backend/src/routes/customer-checkout-recovery.routes.ts:129-130`
+  - `packages/backend/src/routes/customer-checkout-recovery.routes.ts:132-138`
+  - `packages/backend/tests/admin-entitlements-ops.test.ts:22-22`
+  - `packages/backend/tests/admin-entitlements-ops.test.ts:394-417`
+  - `packages/backend/tests/admin-entitlements-ops.test.ts:52-52`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:1-1`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:104-148`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:14-14`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:150-150`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:16-16`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:182-183`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:19-22`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:25-27`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:251-306`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:354-358`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:367-371`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:384-388`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:421-425`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:446-459`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:507-511`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:520-524`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:540-544`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:553-557`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:569-573`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:581-585`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:603-607`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:623-627`
+  - `packages/backend/tests/customer-checkout-recovery.test.ts:649-653`
+  - `packages/frontend/src/lib/api/commerce.ts:488-488`
+  - `packages/frontend/src/lib/api/commerce.ts:490-492`
+  - `packages/frontend/src/lib/api/commerce.ts:89-89`
+  - `packages/frontend/tests/admin-entitlement-ops-panel.test.ts:40-71`
+  - `packages/frontend/tests/checkout-recovery-ui.test.ts:171-171`
+  - `packages/frontend/tests/checkout-recovery-ui.test.ts:210-210`
 
 ## Findings JSON
 ```json
@@ -25,8 +55,8 @@
 
 ## Verdict
 - Verdict: patch is correct
-- Confidence: 0.96
-- Justification: Unit #398 releases only a newly created submission after an auth rejection without earlier submission or recovery evidence, then refreshes customer identity without automatically resubmitting. Same-session refresh retains the editable draft, replacement sessions clear protected selections through the existing identity boundary, and disposed or superseded work is ignored. Existing uncertain submissions and recovery stay locked. No actionable regression was found.
+- Confidence: 0.97
+- Justification: Units #402 and #406 preserve separate authentication contracts. Admin helpers keep Firebase bearer credentials in Authorization and send a bounded custom CSRF marker. Customer membership recovery always validates the session-bound token and allowed origin before consuming a link or creating checkout effects. Real encrypted-session fixtures, denial-state assertions, valid resume/replay checks, and all shared admin helper consumers are covered. No actionable regression was found.
 
 
 ## Unit #400 validation evidence
@@ -57,4 +87,14 @@
 - Frontend `check:types` passed.
 - Biome check passed for both changed source files and the new test file, and `git diff --check` passed.
 - Reviewed fresh 401/403 rejection, repeated retry, same-session draft retention, replacement-session clearing, delayed eligibility and disposal guards, no automatic checkout retry, existing uncertain submissions, retryable recovery, response recovery evidence, and rejected recovery-status requests.
+- Independently reviewed with no findings and committed/pushed as `ee9275a7d6a7d661abf7b55a04311b3e5ebded44`.
+
+
+## Units #402 and #406 validation evidence
+
+- Independent backend run passed 37 tests across admin-entitlements-ops, customer-checkout-recovery, and checkout-recovery-service suites.
+- Independent frontend run passed 38 tests across admin-entitlement-ops-panel, checkout-recovery-ui, and api/api-clients suites.
+- Backend/test TypeScript and frontend `check:types` passed. Biome passed for all six changed TypeScript files, and `git diff --check` passed.
+- Admin tests cover realistic-length bearer tokens, missing/overlong CSRF denial, separate bounded CSRF success, and all six shared client helper consumers.
+- Customer tests use actual encrypted customer sessions, deny missing/empty/wrong/other-session tokens and invalid origins or recovery ownership before mutation, preserve source/recovery/audit state and zero Storefront calls, and cover valid resume plus consumed-link replay.
 - Independently reviewed with no findings. Commit and push are authorized after these checks.

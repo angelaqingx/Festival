@@ -168,7 +168,7 @@ describe("checkout recovery API client", () => {
 			"/api/organizations/pafe/admin/checkout-intents/intent-1/invalidate",
 		);
 		expect(calls[0].method).toBe("POST");
-		expect(calls[0].csrf).toBe("id-tok-3");
+		expect(calls[0].csrf).toBe("admin-csrf");
 		expect(calls[0].body).toEqual({ reason: "Customer requested cancel" });
 	});
 
@@ -207,7 +207,7 @@ describe("checkout recovery API client", () => {
 			"/api/organizations/pafe/admin/checkout-intents/intent-1/recover",
 		);
 		expect(calls[0].method).toBe("POST");
-		expect(calls[0].csrf).toBe("id-tok-4");
+		expect(calls[0].csrf).toBe("admin-csrf");
 		expect(result.rawToken).toBe("raw-token");
 	});
 
