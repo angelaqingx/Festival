@@ -148,9 +148,9 @@ async function executeTokenRefresh(
 	ctx: SessionGuardContext,
 	latest: CustomerSessionRecord,
 	integration: CustomerAccountIntegrationRecord,
-	current: ReturnType<typeof decryptTokenBundle>,
+	current: TokenBundle,
+	oidc: Discovery,
 ): Promise<CustomerSessionRecord> {
-	const { oidc } = await ctx.discover(integration);
 	if (oidc.issuer !== current.issuer) {
 		throw new AppError("Customer session is invalid.", 401);
 	}
@@ -214,8 +214,9 @@ async function refreshSessionTokens(
 	) {
 		return latest;
 	}
+	const { oidc } = await ctx.discover(integration);
 	try {
-		return await executeTokenRefresh(ctx, latest, integration, current);
+		return await executeTokenRefresh(ctx, latest, integration, current, oidc);
 	} catch {
 		await ctx.sessions.revokeSession(latest.sessionId, ctx.now().toISOString());
 		throw new AppError("Customer session is invalid.", 401);
