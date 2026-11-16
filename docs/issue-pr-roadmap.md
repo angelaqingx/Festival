@@ -3,7 +3,7 @@
 This document outlines the architecture boundaries of the Festival monorepo, catalogs all 21 open GitHub issues by architectural layer and functional domain, establishes best practices for combining vs. separating Front End and Back End work in pull requests, and proposes a sequenced PR roadmap for team review.
 
 > [!NOTE]
-> **Active Master Ledger (`2026-11-15`)**: [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md) is the authoritative active execution ledger (`S00`–`S16`). Since this initial issue-grouping draft, `#332` (`#383`), `#327` (`#396`), `#330` (`#396`), and `S09`–`S14` modularization have merged onto `main`. Active pre-release and December QA items (`#357`, `#359`, `#340`, `#341`, and pending `#410`) are tracked in [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
+> **Active Master Ledger (`2026-11-16`)**: [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md) is the authoritative active execution ledger (`S00`–`S16`). Since this initial issue-grouping draft, `#332` (`#383`), `#327` (`#396`), `#330` (`#396`), and `S09`–`S14` modularization have merged onto `main`, `#336` has an approved open PR (`#412`), and `#410` has open PR `#413` (`#410` stays open pending live partial-payment E2E). Active pre-release and December QA items (`#357`, `#359`, `#340`, `#341`, `#412`, `#413` / `#410`) are tracked in [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
 
 ---
 
@@ -46,7 +46,7 @@ All 21 open issues have been standardized with `Front End:`, `Back End:`, or `Fr
 
 | Issue    | Title                                                                          | Layer     | Primary Affected Files                                                                                                                                                 |
 | :------- | :----------------------------------------------------------------------------- | :-------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **#336** | `Front End: Move classes popover below the top of the page`                    | Front End | `packages/frontend/src/styles.css`, `packages/frontend/src/components/FestivalClassModal.tsx`, `packages/frontend/src/pages/FestivalAdminClassesPage.tsx`              |
+| **#336 (Open PR #412 — Approved)** | `Front End: Move classes popover below the top of the page` | Front End | `packages/frontend/src/styles.css`, `packages/frontend/src/components/FestivalClassModal.tsx`, `packages/frontend/src/pages/FestivalAdminClassesPage.tsx` |
 | **#335** | `Front End: Improve membership cards with separated details and actions`       | Front End | `packages/frontend/src/pages/AdminMembershipProductsPage.tsx`, `packages/frontend/src/styles.css`                                                                      |
 | **#334** | `Front End: Display entitlement state badges in a wrapping horizontal list`    | Front End | `packages/frontend/src/pages/AdminEntitlementOperationsSection.tsx`, `packages/frontend/src/pages/AdminMembershipProductsPage.tsx`, `packages/frontend/src/styles.css` |
 | **#333** | `Front End: Fix overlapping festival dates and controls in organization admin` | Front End | `packages/frontend/src/pages/AdminFestivalsPage.tsx`, `packages/frontend/src/components/FestivalRegistrationWindowEditor.tsx`, `packages/frontend/src/styles.css`      |
@@ -72,7 +72,7 @@ All 21 open issues have been standardized with `Front End:`, `Back End:`, or `Fr
 | Issue    | Title                                                                                        | Layer                | Primary Affected Files                                                                                                                   |
 | :------- | :------------------------------------------------------------------------------------------- | :------------------- | :--------------------------------------------------------------------------------------------------------------------------------------- |
 | **#95**  | `Back End: Security - Production edge, network, and operator hardening`                      | Back End / Infra     | `cloud-setup/`, `docker/`, `nginx/`, production operator runbooks                                                                        |
-| **#216** | `Front End / Back End (FYI): Repository files exceeding 500 lines for modularization review` | Front End / Back End | `S09`–`S14` modularization complete; `packages/frontend/src/lib/api/registration.ts` (`510`L) and `packages/backend/src/checkout/in-memory-class-checkout-execution-helpers.ts` (`518`L; `503` non-blank lines) tracked in `S16` |
+| **#216** | `Front End / Back End (FYI): Repository files exceeding 500 lines for modularization review` | Front End / Back End | `S09`–`S14` modularization complete; `S15` enforces `<= 500`L on new `.ts`/`.tsx` production files (plus `domains/**`, `app.ts`, `composition/**`), grandfathers existing non-domain `.ts`/`.tsx` files at `<= 2,000`L to ratchet down over time, and grandfathers `database/**/*.sql`, `packages/backend/src/repo/postgres-schema.ts`, and existing `packages/common/src/*.ts` (`S16` performs no pre-release file splits) |
 | **#247** | `Back End (Deferred): Shopify Defense in Depth`                                              | Back End             | Future Shopify checkout validation architecture                                                                                          |
 | **#246** | `Front End / Back End (Future): Waitlist Entitlements`                                       | Front End / Back End | Future waitlist purchase-permission domain model                                                                                         |
 | **#172** | `Front End / Back End (Deferred): Teacher multi-division policy and checkout snapshots`      | Front End / Back End | `packages/common/`, `packages/backend/src/checkout/`, `packages/backend/src/commerce/`, `packages/frontend/src/pages/MembershipPage.tsx` |
@@ -103,9 +103,9 @@ Multiple issues should be combined into a single PR **only** when they meet all 
    - Both #328 and #329 are direct follow-ups to #322 in `class-checkout-validation.ts` (moved from `class-checkout-helpers.ts` during `S11`) and share `class-checkout-service.test.ts`. Running them on separate branches would conflict directly in validation ordering and test fixtures. **Recommendation**: Combine #328 + #329 into a single Back End PR.
 2. **`packages/frontend/src/pages/CustomerAccountOrdersPage.tsx` (#330 and #327 — DONE in #396)**:
    - Both `#330` (exposing `festivalShortName` and passing `entitlement.id` in `handleSaveRepertoire`) and `#327` (selecting concerto catalog works when editing existing registrations) landed together in PR `#396`.
-3. **`packages/frontend/src/styles.css` (#333, #334, #335, #336, and #332 — #332 DONE in #383)**:
-   - `#332` landed in PR `#383`, leaving the four Admin UI layout fixes (`#333`, `#334`, `#335`, `#336`) in `packages/frontend/src/styles.css`.
-   - Grouping the four Admin UI layout fixes (#333, #334, #335, #336) eliminates 4-way CSS merge conflicts.
+3. **`packages/frontend/src/styles.css` (#333, #334, #335, #336, and #332 — #332 DONE in #383; #336 Open PR #412 Approved)**:
+   - `#332` landed in PR `#383` and `#336` has an approved open PR (`#412`), leaving `#333`, `#334`, and `#335` in `packages/frontend/src/styles.css`.
+   - Grouping the remaining three Admin UI layout fixes (#333, #334, #335) avoids CSS merge conflicts.
 
 ---
 
@@ -117,14 +117,14 @@ flowchart LR
     PR1["PR 1 (Back End)<br/>#328 + #329<br/>Repertoire Catalog Validation"]
     PR2["PR 2 (FE / BE Bugfix - DONE #396)<br/>#330<br/>Fix handleSaveRepertoire 404s"]
     PR3["PR 3 (Front End - DONE #396)<br/>#327<br/>Concerto Selector in Account Editor"]
-    PR4["PR 4 (Front End Admin UI)<br/>#333 + #334 + #335 + #336<br/>Admin Layout & Popover Fixes"]
+    PR4["PR 4 (Front End Admin UI)<br/>#333 + #334 + #335 (#336 Open PR #412)<br/>Admin Layout & Card Fixes"]
     PR5["PR 5 (Front End Public UI - DONE #383)<br/>#332<br/>Front Page Org Grid Redesign"]
     PR1 --> PR2 --> PR3
     PR4 --> PR5
   end
 
   subgraph Active["Active Pre-Thanksgiving & Dec QA Ledger"]
-    S15S16["Pre-v0.4.0 Stabilization<br/>S15 + S16 + Pending #410"]
+    S15S16["Pre-v0.4.0 Stabilization<br/>S15 + S16 + PR #412 / PR #413 (#410)"]
     DecQA["December QA & Registration<br/>#357 + #359 + #340 + #341"]
     S15S16 --> DecQA
   end
@@ -142,7 +142,7 @@ flowchart LR
 
 ### Tier 1: Immediate Actionable Bugfix & UI PRs
 
-> Active follow-ups `#357`, `#359`, `#340`, `#341`, and pending `#410` are sequenced alongside `S15`–`S16` in [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
+> Active follow-ups `#357`, `#359`, `#340`, `#341`, approved open PR `#412` (`#336`), and open PR `#413` (`#410`; issue stays open pending live partial-payment E2E) are sequenced alongside `S15`–`S16` in [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
 
 #### PR 1 — Back End: Repertoire Catalog Validation Hardening
 
@@ -182,7 +182,7 @@ flowchart LR
 #### PR 4 — Front End: Admin Layout, Cards, Badges & Popover Polish
 
 - **Issues Included**:
-  - **#336**: `Front End: Move classes popover below the top of the page`
+  - **#336 (Open PR #412 — Approved by `ericpassmore`)**: `Front End: Move classes popover below the top of the page`
   - **#335**: `Front End: Improve membership cards with separated details and actions`
   - **#334**: `Front End: Display entitlement state badges in a wrapping horizontal list`
   - **#333**: `Front End: Fix overlapping festival dates and controls in organization admin`
@@ -192,13 +192,13 @@ flowchart LR
   - `packages/frontend/src/pages/AdminMembershipProductsPage.tsx` (#335, #334)
   - `packages/frontend/src/pages/AdminEntitlementOperationsSection.tsx` (#334)
   - `packages/frontend/src/pages/AdminFestivalsPage.tsx` & `packages/frontend/src/components/FestivalRegistrationWindowEditor.tsx` (#333)
-  - `packages/frontend/src/components/FestivalClassModal.tsx` & `packages/frontend/src/pages/FestivalAdminClassesPage.tsx` (#336)
+  - `packages/frontend/src/components/FestivalClassModal.tsx` & `packages/frontend/src/pages/FestivalAdminClassesPage.tsx` (#336, in approved open PR `#412`)
 - **Sub-Splitting Option (Option 4A vs. Option 4B)**:
-  - **Option 4-Unified**: Keep all four Admin UI/CSS polish issues in a single PR to avoid any `styles.css` conflicts.
+  - **Option 4-Unified**: Combine the remaining three Admin UI/CSS polish issues (`#333`, `#334`, `#335`) in a single PR after `#412` (`#336`) lands to avoid `styles.css` conflicts.
   - **Option 4A + 4B Split**:
     - **PR 4A (Admin Memberships UI)**: Combine **#334 + #335** (both on `/org/:slug/admin/memberships` touching `AdminMembershipProductsPage.tsx`, `AdminEntitlementOperationsSection.tsx`, and `styles.css`).
-    - **PR 4B (Admin Festivals & Classes UI)**: Combine **#333 + #336** (touching `/org/:slug/admin/festivals` and `/org/:slug/festival/:short-festival-name/admin/classes` plus `styles.css`).
-- **Merge Order**: Scheduled in December Week 2 QA per [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
+    - **PR 4B (Admin Festivals UI)**: **#333** (`/org/:slug/admin/festivals` plus `styles.css`; **#336** is already in approved open PR `#412`).
+- **Merge Order**: `#412` (`#336`) is open and approved; remaining `#333`–`#335` are scheduled in December Week 2 QA per [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
 
 #### PR 5 — Front End: Public Front Page Redesign (`DONE in #383`)
 
@@ -232,7 +232,7 @@ flowchart LR
 
 These issues are explicitly marked in their specifications as FYI tracking, post-MVP, or deferred future work and should **not** be bundled into active feature PRs until scheduled:
 
-- **#216** (`Front End / Back End (FYI): Repository files exceeding 500 lines for modularization review`): `S09`–`S14` modularization is complete; only `packages/frontend/src/lib/api/registration.ts` (`510`L) and `packages/backend/src/checkout/in-memory-class-checkout-execution-helpers.ts` (`518`L; `503` non-blank lines) remain tracked in `S16` ([specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md)). When actioned, each modularization effort remains scoped to a single package/module per PR.
+- **#216** (`Front End / Back End (FYI): Repository files exceeding 500 lines for modularization review`): `S09`–`S14` modularization is complete. Under the settled `4A` ratchet policy (`S15`), a `500`-line limit applies to new `.ts`/`.tsx` production files (alongside `domains/**`, `app.ts`, and `composition/**`), existing non-domain `.ts`/`.tsx` files (`packages/frontend/src/lib/api/registration.ts`, `packages/backend/src/routes/customer/customer-class-checkout.routes.ts`, `packages/frontend/src/pages/CustomerAccountOrdersPage.tsx`, `packages/backend/src/checkout/in-memory-class-checkout-execution-helpers.ts`, and peers) are grandfathered at an initial `2,000`-line ceiling to ratchet down over time, and SQL/schema files (`database/**/*.sql`, `packages/backend/src/repo/postgres-schema.ts`, and existing `packages/common/src/*.ts`) are explicitly grandfathered (`S16` no longer performs pre-release file splits). When future modularization is scheduled, keep each split scoped to a single package/module per PR.
 - **#247** (`Back End (Deferred): Shopify Defense in Depth`): Future Shopify checkout validation layer.
 - **#246** (`Front End / Back End (Future): Waitlist Entitlements`): Future waitlist purchase-permission model.
 - **#172** (`Front End / Back End (Deferred): Teacher multi-division policy and checkout snapshots`): Deferred from #166.
