@@ -1,0 +1,40 @@
+# Establish Goals
+- Task name: s15-backend-pool-cache-and-ci-hardening
+- Iteration: v0
+- State: locked
+
+## Status
+Goals locked for post-`S14` backend reliability, cookie scoping, cache invalidation, and CI hardening (`#407`, `#399`, `#383`), strictly disjoint from active Issue `#410` work.
+
+## Request
+Eliminate DB connection pool starvation during Shopify customer token refresh (`#407`), scope the OAuth browser-binding cookie to `Path=/api/customer-auth` with `https:`-gated `Secure` flag for local HTTP loopback (`#399`/`#407`), wire `TenantOrganizationService.publicOrganizationListCache` to `DomainCacheInvalidator` (`#383`), and close `pr-checks.yml` `push: [main]` and `integration.yml` Postgres 17 CI/migration gaps while keeping all `#410`-active paths untouched.
+
+## Blocking ambiguity
+None.
+
+## Assumptions
+- `S06` (`orgs.schema_migrations` ledger + `check:schema-parity`), `S07` (`DomainCacheInvalidator`), `S10` (`domains/customer-identity`), and `S14` (`packages/backend/src/composition/`) are present on `main`.
+- Issue `#410` work (`class-checkout`, `commerce-projection`, frontend registration state, `AppHeader.tsx`, `CustomerIdentityContext.tsx`, `nginx`, and `specs/pending-shopify-checkout-restoration.md`) is active concurrently and must remain untouched by `S15`.
+- Production `FESTIVAL_PUBLIC_ORIGIN` uses `https:`; local HTTP loopback (`http://localhost:8080`, `http://127.0.0.1:8080`) is the only allowed non-HTTPS exception for `Secure: false`.
+
+## Goals
+1. Eliminate DB connection pool starvation in customer token refresh (`#407`) by replacing `await sql.reserve()` + session-level `pg_try_advisory_lock` across external Shopify HTTPS calls (`discover`, `exchangeOAuthTokens`, `verifyCustomerIdToken`, up to `10_000`ms each against `DB_POOL_MAX = 80`) in `packages/backend/src/domains/customer-identity/customer-session-repository.ts` (`withSessionRefreshLock`) and `packages/backend/src/domains/customer-identity/customer-token-refresh.ts` (`refreshLockedSession`) with a non-blocking short-lived `refresh_locked_until TIMESTAMPTZ` lease on `orgs.shopify_customer_sessions` plus existing `encrypted_tokens` CAS (`replaceSessionTokens` / `revokeSession`).
+2. Scope the OAuth browser-binding cookie in `packages/backend/src/routes/customer-auth/customer-auth.routes.ts` to `Path=/api/customer-auth` (dropping `__Host-` `Path=/` so abandoned starts do not send ~145-byte cookies on page/static asset requests) and set `Secure: true` strictly when `publicOrigin` is `https:` (`Secure: false` only for explicit local HTTP loopback origins `http://localhost:8080` / `http://127.0.0.1:8080`), verified in `packages/backend/tests/customer-auth.routes.test.ts` (`#399` / `#407`).
+3. Subscribe `TenantOrganizationService.publicOrganizationListCache` (`4`h TTL) to `DomainCacheInvalidator` (`OrgUpdated` and `CachesCleared` / `clearAll`) inside `packages/backend/src/domains/tenant-org/tenant-organization-service.ts` (`bindCacheInvalidator`) per `specs/bounded-contexts-2026.md` §5 Rule 4, emit `OrgUpdated` on tenant creation and mutations, and cover invalidation in `packages/backend/tests/domains/tenant-org/tenant-org.test.ts` (`#383`).
+4. Close CI workflow gaps by adding `push: branches: [main]` to `.github/workflows/pr-checks.yml` (so concurrent merges such as `#407` + `#408` run full PostgreSQL 17 integration, `tsc`, `check:sql`, and `check:schema-parity` checks on combined `main`) and aligning `.github/workflows/integration.yml` with `postgres:17-alpine`, `POSTGRES_INTEGRATION_URL`, and pre-startup `bun run scripts/migrate.ts`.
+5. Enforce strict disjoint scope isolation from `#410`-active files and satisfy structural size guardrails (`<=500`L/file, `<=250`L/class, `<=60`L/fn).
+
+## Non-goals
+- Touching any `#410`-active path (`domains/class-checkout/**`, `domains/commerce-projection/**`, `registrationCartState.ts`, `domains/registration/**`, `AppHeader.tsx`, `CustomerIdentityContext.tsx`, `nginx/*.conf`, `docker/nginx.festival.conf`, `specs/pending-shopify-checkout-restoration.md`).
+- Touching `S16` targets (`packages/frontend/src/app/AppRoutes.tsx`, `packages/frontend/src/lib/api/registration.ts`, `packages/backend/src/checkout/in-memory-class-checkout-execution-helpers.ts`, `CHANGELOG.md`).
+- Altering Shopify OAuth PKCE/OIDC protocol semantics or customer session idle/absolute TTL policies beyond non-blocking refresh lease locking and cookie scoping.
+
+## Success criteria
+- [G1] `orgs.shopify_customer_sessions.refresh_locked_until TIMESTAMPTZ` is added via a tracked migration in `database/migrations/` in lockstep with `database/postgres17-schema.sql` and `packages/backend/src/repo/postgres-schema.ts`; `withSessionRefreshLock` and `refreshLockedSession` release pooled DB connections before Shopify HTTPS calls while preserving `encrypted_tokens` CAS (`replaceSessionTokens` / `revokeSession`), and a Postgres 17 integration test proves `>= 80` concurrent session refreshes with slow simulated upstream calls do not exhaust `DB_POOL_MAX` or block unrelated queries.
+- [G2] `packages/backend/src/routes/customer-auth/customer-auth.routes.ts` sets the per-transaction OAuth browser-binding cookie with `Path=/api/customer-auth` (without `__Host-` `Path=/`), sets `Secure: true` for `https:` `publicOrigin` and `Secure: false` only for explicit local HTTP loopback (`http://localhost:8080` / `http://127.0.0.1:8080`), and passes `packages/backend/tests/customer-auth.routes.test.ts`.
+- [G3] `TenantOrganizationService.bindCacheInvalidator` subscribes `publicOrganizationListCache` to `OrgUpdated` and `CachesCleared` (`clearAll`) on `DomainCacheInvalidator`, emits `OrgUpdated` on tenant creation and mutations, and passes `packages/backend/tests/domains/tenant-org/tenant-org.test.ts`.
+- [G4] `.github/workflows/pr-checks.yml` runs on `push` to `main` (in addition to `pull_request`), and `.github/workflows/integration.yml` runs against `postgres:17-alpine` with `POSTGRES_INTEGRATION_URL` and pre-startup `bun run scripts/migrate.ts`.
+- [G5] Zero `#410`-active files are modified, every touched file satisfies `<=500`L (`<=250`L/class, `<=60`L/fn), and full verification (`verify:toolchain`, `format:check`, `lint`, `build`, `tsc --noEmit`, `check:sql`, `check:schema-parity`, `architecture-boundaries.test.ts`, and Postgres 17 `bun run test`) passes with `0` errors and `0` warnings.
+
+## Next action
+Execute `tasks/s15-backend-pool-cache-and-ci-hardening/spec.md` on an isolated branch (`fix/s15-backend-pool-cache-and-ci-hardening`) off `origin/main`.

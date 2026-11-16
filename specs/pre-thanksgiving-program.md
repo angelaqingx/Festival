@@ -7,7 +7,7 @@ This specification is the repository-committed master execution plan and statele
 1. **`v0.3.0` Feature Baseline (`Nov 11–13`, Days 1–3)**: Merge `#354` (with logout CSRF fix, auto-closing `#353`), `#360`, and `#361` (Teacher Directory), **plus Track 1 (Real Postgres 17 + `tsc` CI gate)**. Cut `v0.3.0` immediately.
 2. **Parallel Live Infrastructure Track (`Nov 14–20`, Days 4–10)**: Provision Ubuntu 24.04, UFW (`#95`), TLS, Live Firebase, and Live Shopify against stable **`v0.3.0`**. External lead-time risks (DNS, TLS, Shopify scopes, Checkout UI Extension, Firebase domain auth) are retired **a full week before Thanksgiving**.
 3. **Parallel Full Refactor Sprint (`Nov 14–22`, Days 4–12 -> `v0.4.0` Cutover `Nov 23–25`)**: With real Postgres 17 + full `tsc` running on every PR, autonomous subagent teams execute **Tracks 2–7 + PR `#358`** in isolated git worktrees. **Hard Refactor Freeze hits Nov 23**: everything green ships in **`v0.4.0`** onto the live host by Nov 24–25; any incomplete module split hits the circuit-breaker without ever threatening the live Thanksgiving site.
-4. **December (`Dec 1–31` -> `v1.0.0`)**: **Zero structural refactoring.** 100% dedicated to class registration bug fixes (`#357`, `#362`, `#359`, `#327`–`#341`), Playwright E2E suites, adversarial failure injection, and 500-parent spike soak testing on the refactored codebase.
+4. **December (`Dec 1–31` -> `v1.0.0`)**: **Zero structural refactoring.** `#332`, `#362`, `#327`, `#330`, and two `#357` subitems (`[P2]` Storefront credentials in `#408` and `[P1]` edited-restored-cart late-payment check in `#409`) were pulled forward on Nov 14–15 (`#383`–`#409`), leaving December 100% dedicated to the remaining `#357` items (`B1`, `B2`, `[P2]` expired attached running worker), `#359`, `#328`–`#341`, Playwright E2E suites, adversarial failure injection, and 500-parent spike soak testing on the refactored codebase.
 
 ```mermaid
 flowchart TD
@@ -15,9 +15,9 @@ flowchart TD
     W1 --> OPS["Live Ops Track (Nov 14-20): Ubuntu 24.04 + UFW + Live Firebase + Live Shopify on v0.3.0"]
     W1 --> W2["Wave 2 (Nov 14-17): Track 2 DB Migrations + Track 3/PR #358 Perf + Track 4 Worker/Drain"]
     W2 --> W3["Wave 3 (Nov 18-22): Parallel Worktrees — Track 5 Repo/Service Split + Track 6 Schemas/RPC + Track 7 UI State"]
-    OPS --> W4["Wave 4 (Nov 23-25): Hard Freeze -> Cut v0.4.0 -> Migrate & Roll Out to Live Prod + E2E Smoke"]
+    OPS --> W4["Wave 4 (Nov 16-25): Post-#382 Stabilization (S15-S16 + #410) -> Hard Freeze Nov 23 -> Cut v0.4.0 -> Live Prod + E2E Smoke"]
     W3 --> W4
-    W4 --> DEC["December (Dec 1-31): Pure QA, #357/#362/#359 Fixes, E2E & 500-Parent Soak -> Cut v1.0.0"]
+    W4 --> DEC["December (Dec 1-31): Pure QA, Remaining #357/#359/#328-#341 Fixes, E2E & 500-Parent Soak -> Cut v1.0.0"]
 ```
 
 ### Open Decisions Checklist (`D1`–`D4`)
@@ -63,7 +63,7 @@ Every Antigravity session follows 4 strict context-management commitments plus t
    - `/teamwork`: For Wave 3 (`S09`–`S13`), dispatching parallel subagents across disjoint bounded contexts simultaneously.
    - `/compact`: Mid-session if test logs grow context window.
 
-### 1B.3 Master 15-Session Packet Matrix (`S00`–`S14`, Pre-Thanksgiving Stateless Ledger)
+### 1B.3 Master 17-Session Packet Matrix (`S00`–`S16`, Pre-Thanksgiving Stateless Ledger)
 
 | ID | Packet Slug | Status | Wave / Dates | Bounded Context | Owned Paths (Disjoint Lock) | Depends On | Parallel Group | Deliverable / Exit Gate |
 |---|---|---|---|---|---|---|---|---|
@@ -81,7 +81,9 @@ Every Antigravity session follows 4 strict context-management commitments plus t
 | **`S11`** | `s11-split-class-checkout-and-commerce-projection` | `DONE` | Wave 3 (`Nov 18–21`) | `class-checkout` & `commerce-projection` | `domains/class-checkout/**` (incl. `customer-registration-query-service.ts`), `domains/commerce-projection/**` (split `class-checkout-service.ts`, `admin-api-client.ts`, `shopify-order-projection-service.ts`, `postgres-membership-commerce-repository.ts`) | `S06`, `S07`, `S08` | **Group W3 (5x Parallel Worktrees)** | **Track 5A/B (Slice 3)**: Checkout, registration queries, recovery, Shopify clients, webhook projection modularized `<=500`L/file. |
 | **`S12`** | `s12-common-schemas-and-typed-hono-rpc` | `DONE` | Wave 3 (`Nov 19–22`) | `@festival/common` & API RPC | `packages/common/src/**`, `route-security.ts`, route builders, `packages/frontend/src/lib/api/**` (splitting `api.ts` `2,783`L) | `S09`–`S11` *(or incrementally per domain)* | **Group W3 / W3+** | **Track 6**: `valibot`/`zod` schemas in `common`, typed `hc<AppType>` domain clients, declarative route-security metadata. |
 | **`S13`** | `s13-frontend-route-scoped-contexts` | `DONE` | Wave 3 (`Nov 18–22`) | Frontend UI / State | `packages/frontend/src/app/**`, `lib/routes.ts`, `VolunteerRolesPage.tsx`, `MusicReviewModal.tsx`, `useFestivalRegistrationPage.ts` | `S04` *(disjoint from backend `S09`–`S11`)* | **Group W3 (5x Parallel Worktrees)** | **Track 7**: `createFestivalAppState` (`589`L) + `Actions` (`755`L) split into route-scoped SolidJS contexts; `@solidjs/router` unified. |
-| **`S14`** | `s14-release-v0-4-0-freeze-and-cutover` | `IN PROGRESS (v0.4.0 PR to main; awaiting live cutover)` | Wave 4 (`Nov 23–25`) | Release `v0.4.0` Cutover | `app.ts` final DI cleanup, 5 `package.json` (`0.4.0`), `CHANGELOG.md`, `release` PR, tag `v0.4.0`, live prod deploy & smoke | `S05`, `S09`–`S13` (**Nov 23 Freeze**) | Milestone Gate | **Release `v0.4.0` live in production before Thanksgiving**; 500-parent benchmark + live E2E smoke green. |
+| **`S14`** | `s14-release-v0-4-0-freeze-and-cutover` | `IN PROGRESS (DI + 0.4.0 bump merged #382; awaiting S05, #410, S15 & S16 before release cutover)` | Wave 4 (`Nov 23–25`) | Release `v0.4.0` Cutover | `app.ts` final DI cleanup, 5 `package.json` (`0.4.0`), `CHANGELOG.md`, `release` PR, tag `v0.4.0`, live prod deploy & smoke | `S05`, `S09`–`S13`, `#410`, `S15`, `S16` (**Nov 23 Freeze**) | Milestone Gate | **Release `v0.4.0` live in production before Thanksgiving**; 500-parent benchmark + live E2E smoke green. |
+| **`S15`** | `s15-backend-pool-cache-and-ci-hardening` | `READY` | Wave 4A (`Nov 16–18`) | `customer-identity` / `tenant-org` / CI | `customer-session-repository.ts`, `customer-token-refresh.ts`, `customer-auth.routes.ts`, `tenant-organization-service.ts`, `database/migrations/`, `.github/workflows/{pr-checks,integration}.yml` | `S09`–`S13` | Disjoint from `#410` | Eliminate `#407` `sql.reserve()` pool starvation, scope OAuth binding cookie path & local HTTP loopback, wire 4h public org cache invalidation (`#383`), add `push:[main]` CI. |
+| **`S16`** | `s16-post-410-session-scope-and-size-trim` | `BLOCKED (#410)` | Wave 4B (`Post-#410, Nov 18–21`) | `customer` UI / `api` / `checkout` | `CustomerIdentityContext.tsx`, `AppRoutes.tsx`, `lib/api/registration.ts`, `in-memory-class-checkout-execution-helpers.ts`, `CHANGELOG.md` | `#410`, `S15` | Post-`#410` Pre-Cutover | Scope `CustomerIdentityContext` refresh to org slug (`#385`/`#393`), remove unused `AppRoutes` provider, trim `>500`L crossings (`#408`/`#409`), finalize `0.4.0` `CHANGELOG`. |
 
 ---
 
@@ -114,10 +116,40 @@ Every Antigravity session follows 4 strict context-management commitments plus t
 2. **PR `#358` Cache, Size & Benchmark Defects (Fix in Wave 2 `S07`)**:
    - **5m Uninvalidated + Negative `null` Cache**: `organizationBySlugCache` & `registrationAgeConfigCache` in [customer-account-service.ts](../packages/backend/src/customer/customer-account-service.ts) never invalidate when [organization-service.ts](../packages/backend/src/services/organization-service.ts) updates `registrationAgeDate` or `timezone` (persisting wrong 90-day child ages and causing 5m `409`/`404` lockouts via cached `null`; 256 random 404 slugs evict active tenants).
    - **Size, Scenario 4 & Test Fixes**: `perf-advanced-scenarios.ts` (`602` lines > `600` ceiling); [postgres-customer-account-repository.ts](../packages/backend/src/customer/postgres-customer-account-repository.ts) (`885` lines; `85`/`73`-line methods > `60` limit); Scenario 4 Phase 2b re-joins `3251..3500` instead of `3501..3750`; `perf-advanced-scenarios.test.ts` reads live `process.env`; CTE `RETURNING` emits `Date` instances typed as ISO `string`s.
-3. **PR `#354` Checkout Recovery Edge Cases (`#357` — Fix in December QA or Wave 2 per `D2`)**:
-   - **`B1`**: Pre-dispatch rejections (`checkpoint === "prepared"`, `state === "rejected"`) other than `checkout_integration_changed`/`checkout_expired` do not map to `checkout_pre_dispatch_rejected` or retire `sessionStorage` `idempotencyKey` (`{ retireKey: true }`), locking retries on `409` for 30m.
-   - **`B2`**: In `useFestivalRegistrationPage.ts` (`handleRefreshCheckout`), resolving Festival A's blocking checkout (`reasonCode: "checkout_completed"`) fails to call `cart.releaseCheckout({ retireKey: true })` on Festival B's frozen cart.
-   - **Minor Polish**: `reap:class-checkout` omitted from runtime [backend.Dockerfile](../docker/backend.Dockerfile) (fixed in Wave 2 `S08`); partial index `(organization_id, lease_expires_at) WHERE state = 'running'` needed on `orgs.class_checkout_executions`; `orgTimezone` omitted in `PurchasedRegistrationEditor.tsx`; `admin-class-checkout-recovery.routes.ts` checks truthiness of `resolveRequestOrigin(c)` instead of `=== publicOrigin`.
+3. **PR `#354` Checkout Recovery Edge Cases (`#357` — Partially Fixed in `#397`/`#408`/`#409`; Remaining `B1`/`B2`/Worker Polish in December QA)**:
+   - **Fixed Prior to `v0.4.0`**:
+     - `[P2]` Missing/undecryptable local Storefront credentials (`#408`, `3c337fc`) — **FIXED**: `class-checkout-cart-recovery.ts` keeps local credential failures retryable instead of marking carts unrecoverable.
+     - `[P1]` Edited-restored-cart late-payment check (`#409`, `0dfc141`) — **FIXED**: ancestor-chain late-payment validation spans edited restored carts alongside self-service unpaid expired attached checkout restart.
+     - Abandoned checkout restart & null Shopify line totals (`#397`, `e96ad91`) — **FIXED**.
+     - Admin recovery origin canonicalization (`#408`, `4fbb68d`) — **FIXED**: `admin-class-checkout-recovery.routes.ts` normalizes configured origins against `resolveRequestOrigin(c)` (building on the `S01` `=== publicOrigin` fix).
+   - **Remaining Open Items**:
+     - **`B1`**: In [registrationPageActions.ts](../packages/frontend/src/domains/registration/registrationPageActions.ts#L197-L215), `error instanceof ApiError && error.recovery` takes precedence before the `409` `checkout_pre_dispatch_rejected` branch, blocking `sessionStorage` `idempotencyKey` retirement (`{ retireKey: true }`), and initial `[400, 404, 422]` validation release calls `ctx.cart.releaseCheckout()` without `{ retireKey: true }`.
+     - **`B2`**: In `handleRefreshCheckout` ([registrationPageActions.ts](../packages/frontend/src/domains/registration/registrationPageActions.ts#L224-L248)), resolving Festival A's blocking checkout (`reasonCode: "checkout_completed"`) updates recovery state without calling `ctx.cart.releaseCheckout({ retireKey: true })` on Festival B's frozen cart.
+     - **`[P2]` Expired Attached `running` Worker Admission Block & Polish**: Expired attached `running` worker execution rows still block new admission until reaped; `orgTimezone` remains omitted in [PurchasedRegistrationEditor.tsx](../packages/frontend/src/pages/PurchasedRegistrationEditor.tsx); root [package.json](../package.json#L26) `reap:class-checkout` still points to `.ts` (`bun packages/backend/scripts/reap-class-checkout-recovery.ts`) and needs compiled `.js` target verification in runtime deployments (`backend.Dockerfile` and partial index `20261115010000_idx_class_checkout_executions_running.sql` landed in `S08`).
+
+### 2.4 Post-S14 Remote Main Reconciliation (`#383`–`#409` & Active `#410`, Nov 14–15)
+Between `#382` (`464c15e`) and `49233e4`, **13 PRs (41 commits)** landed on `origin/main` ahead of schedule (`#383`–`#385`, `#391`–`#397`, `#407`–`#409`):
+
+- **Delivered Early (`#383`–`#409`)**:
+  - `#332` public front-page organization tile grid, cached organization listing, and signup copy (`#383`), plus seasonal `/org/:slug` SVG festival banners (`#384`).
+  - Fresh Docker PostgreSQL 17 volume bootstrap `#386` (`#391`).
+  - Multi-account and route isolation `#387`/`#388`/`#390` (`#385` `CustomerIdentityProvider` hoisted to app shell, `#392` `AdminUsersPage` roster scoped to active Firebase UID + org, `#393` parent registration drafts/carts isolated per customer session, `#395` registration workspace keyed by `(org, festival)`).
+  - Discovery resilience `#389` (`#394` preserving customer sessions across transient Shopify OAuth discovery `503` failures).
+  - Concerto `pg_trgm` trigram typeahead & manual entry `#362`/`#327` plus `#330` `CustomerAccountOrdersPage` repertoire save 404 fix (`#396`).
+  - Deferred eligibility until customer CSRF token loads, null Shopify line totals, and abandoned checkout restart `#403` (`#397`).
+  - Browser-bound `HttpOnly` OAuth callback cookie `#399` and advisory-locked cross-instance customer token refresh `#401` (`#407`).
+  - Auth/CSRF/recovery/credential boundary hardening `#398`/`#400`/`#402`/`#404`–`#406` plus `#357` `[P2]` retryable local Storefront credential failures (`#408`).
+  - Self-service restart for unpaid expired attached class checkouts, `CCR-*` validation, and `#357` `[P1]` edited-restored-cart ancestor-chain late-payment guard (`#409`).
+- **Active `#410` Conflict Boundary**:
+  - Local uncommitted `specs/pending-shopify-checkout-restoration.md` and the pending `#410` PR touch `domains/class-checkout`, `domains/commerce-projection`, `registrationCartState.ts`, `useFestivalRegistrationPage.ts`, `AppHeader.tsx`, and NGINX allowlists. Packet `S15` is strictly disjoint from `#410`, and `S16` is sequenced after `#410` merges.
+- **Pre-`v0.4.0` Regressions & Boundary Breaches Gated into `S15` + `S16`**:
+  - **`S15` (Disjoint Backend & CI Hardening)**: Eliminate `#407` `sql.reserve()` pool starvation + session advisory lock held across outbound Shopify HTTP in [customer-session-repository.ts](../packages/backend/src/domains/customer-identity/customer-session-repository.ts); scope `__Host-` `Path=/` OAuth binding cookie across local HTTP loopback and static paths in [customer-auth.routes.ts](../packages/backend/src/routes/customer-auth/customer-auth.routes.ts); wire cache invalidation for the 4-hour `publicOrganizationListCache` in [tenant-organization-service.ts](../packages/backend/src/domains/tenant-org/tenant-organization-service.ts) (`#383`); add `push: [main]` CI trigger in [pr-checks.yml](../.github/workflows/pr-checks.yml) and resolve drift in [integration.yml](../.github/workflows/integration.yml).
+  - **`S16` (Post-`#410` Session Scope & Size Trim)**: Scope [CustomerIdentityContext.tsx](../packages/frontend/src/domains/customer/CustomerIdentityContext.tsx) `on(shell.route)` refresh to organization slug changes instead of resetting per navigation click (`#385`/`#393`); remove the unused provider in [AppRoutes.tsx](../packages/frontend/src/app/AppRoutes.tsx); split `>500`-line crossings introduced by `#408`/`#409` in [registration.ts](../packages/frontend/src/lib/api/registration.ts) (`510`L) and [in-memory-class-checkout-execution-helpers.ts](../packages/backend/src/checkout/in-memory-class-checkout-execution-helpers.ts) (`518`L; `503` non-blank lines); finalize `0.4.0` `CHANGELOG.md`.
+- **Post-`v0.4.0` / December Architectural & UX Follow-Ups**:
+  - Wire [CustomerRegistrationQueryService](../packages/backend/src/domains/class-checkout/customer-registration-query-service.ts) at runtime to retire `CustomerRegistrationLegacyHelper`.
+  - `#396` `ConcertoTitleField` / `PurchasedRegistrationEditor` UX polish (avoiding the `"Choose a catalog work"` trap on non-concerto rows, changing linked concertos, and re-editing manual pieces).
+  - Surface a visible load-error banner on [CustomerAccountOrdersPage.tsx](../packages/frontend/src/pages/CustomerAccountOrdersPage.tsx).
+  - Migrate the `volunteers-comms` domain directory and retire remaining `InMemory*` test doubles.
 
 ---
 
@@ -204,10 +236,10 @@ Dispatch parallel subagent worktrees across disjoint module boundaries (`S09`–
 > [!TIP]
 > Because the full refactor and `v0.4.0` ship before Thanksgiving, **zero architectural churn occurs in December**. Every test written and bug fixed in December hardens the exact modular code that will serve registration opening day.
 
-1. **Week 1 (`Dec 1–7`) — Checkout Recovery & Repertoire Functional Fixes**:
-   - Close `#357` (`B1` pre-dispatch rejection key retirement, `B2` cross-festival blocker unfreeze), [#362](https://github.com/pafenorthwest/Festival/issues/362) (concerto typeahead combobox + *"Enter my own piece"* manual entry + `LIMIT 100`), [#359](https://github.com/pafenorthwest/Festival/issues/359) (admin Concerto CSV import/export), and `PurchasedRegistrationEditor` `orgTimezone` formatting.
+1. **Week 1 (`Dec 1–7`) — Checkout Recovery, Repertoire UX & Query Runtime Cutover**:
+   - Close remaining `#357` items (`B1` pre-dispatch rejection key retirement, `B2` cross-festival blocker unfreeze, `[P2]` expired attached `running` worker admission block, and `reap:class-checkout` script target verification), [#359](https://github.com/pafenorthwest/Festival/issues/359) (admin Concerto CSV import/export), `PurchasedRegistrationEditor` `orgTimezone` formatting + `#396` `ConcertoTitleField` UX polish + `CustomerAccountOrdersPage` load-error banner, and runtime `CustomerRegistrationQueryService` wiring (retiring `CustomerRegistrationLegacyHelper`).
 2. **Week 2 (`Dec 8–14`) — Registration Backlog & UX Bug Bash**:
-   - Resolve open class-registration issues (`#327`–`#330` order repertoire 404s & piece limits, `#333`–`#336` layout/badges/dates, `#340` Add-to-Cart blocker explanations, `#341` prerequisite warnings).
+   - Resolve open class-registration issues (`#328` & `#329` canonical work details & piece limits in `domains/class-checkout/class-checkout-validation.ts`, `#333`–`#336` layout/badges/dates, `#340` Add-to-Cart blocker explanations, `#341` prerequisite warnings; `#327` and `#330` delivered in `#396`).
 3. **Week 3 (`Dec 15–21`) — End-to-End Browser Matrix & Failure-Injection Testing**:
    - Build deterministic Playwright E2E suite in CI covering multi-child cart assembly, concerto + non-concerto repertoire, sold-out waitlist handoff, 42-day metadata edit cutoff, abandoned cart restart, Shopify `429`/`5xx` timeouts, and delayed/replayed `ORDERS_PAID` webhooks.
 4. **Week 4 (`Dec 22–31`) — 500-Parent Spike Soak & `v1.0.0` Registration Release**:

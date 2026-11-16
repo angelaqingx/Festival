@@ -2,6 +2,9 @@
 
 This document outlines the architecture boundaries of the Festival monorepo, catalogs all 21 open GitHub issues by architectural layer and functional domain, establishes best practices for combining vs. separating Front End and Back End work in pull requests, and proposes a sequenced PR roadmap for team review.
 
+> [!NOTE]
+> **Active Master Ledger (`2026-11-15`)**: [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md) is the authoritative active execution ledger (`S00`–`S16`). Since this initial issue-grouping draft, `#332` (`#383`), `#327` (`#396`), `#330` (`#396`), and `S09`–`S14` modularization have merged onto `main`. Active pre-release and December QA items (`#357`, `#359`, `#340`, `#341`, and pending `#410`) are tracked in [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
+
 ---
 
 ## 1. Overview & Architecture Boundaries
@@ -10,12 +13,12 @@ Festival is structured as a Bun workspace monorepo with strict separation of con
 
 - **`packages/frontend` (Front End)**:
   - **Tech Stack**: SolidJS, TypeScript, and global CSS (`packages/frontend/src/styles.css`).
-  - **Responsibilities**: Client-side routing and app state (`src/app/`), reusable UI components and modals (`src/components/`), route page views and page-specific hooks/helpers (`src/pages/`), client API wrappers and cart state (`src/lib/`), and frontend unit/integration tests (`tests/`).
+  - **Responsibilities**: Client-side routing and app shell (`src/app/`), route-scoped domain state (`src/domains/*`, `S13`), reusable UI components and modals (`src/components/`), route page views and page-specific helpers (`src/pages/`), typed Hono RPC domain API clients (`src/lib/api/*`, `S12`) and cart state (`src/lib/`), and frontend unit/integration tests (`tests/`).
   - **Related UI Extension**: `packages/shopify-confirmation` provides the Shopify checkout thank-you and order-status return UI extension.
 
 - **`packages/backend` (Back End)**:
   - **Tech Stack**: Hono HTTP server on Bun, PostgreSQL repositories, Firebase Admin authentication, and Shopify Admin/Storefront API clients.
-  - **Responsibilities**: HTTP route handlers (`src/routes/`), domain services (`src/services/`, `src/customer/`, `src/checkout/`, `src/commerce/`, `src/reconciliation/`, `src/registration/`, `src/repertoire/`, `src/rooms/`, `src/shopify/`, `src/volunteers/`, `src/waitlist/`, `src/billing/`, `src/communication/`), data persistence (`src/repo/`), authentication/security middleware (`src/auth/`, `src/security/`, `src/middleware/`), and backend tests (`tests/`).
+  - **Responsibilities**: HTTP route handlers (`src/routes/`), per-domain DI composition (`src/composition/*`, `S14`), bounded-context domain modules (`src/domains/*` across `tenant-org`, `catalog-repertoire`, `customer-identity`, `teacher-directory`, `class-checkout`, and `commerce-projection`, `S09`–`S11`) alongside legacy domain/service modules (`src/services/`, `src/volunteers/`, `src/communication/`, `src/repo/`, `src/checkout/`, `src/customer/`, etc.), authentication/security middleware (`src/auth/`, `src/security/`, `src/middleware/`), and backend tests (`tests/`).
 
 - **`packages/common` (Shared Contracts)**:
   - **Tech Stack**: Pure TypeScript domain contracts, types, and validation logic (`organization.ts`, `customer-account.ts`, `repertoire.ts`, `registration.ts`, `entitlements.ts`, `shopify.ts`, etc.).
@@ -34,10 +37,10 @@ All 21 open issues have been standardized with `Front End:`, `Back End:`, or `Fr
 
 | Issue    | Title                                                                                        | Layer                | Primary Affected Files                                                                                                                                              |
 | :------- | :------------------------------------------------------------------------------------------- | :------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **#329** | `Back End: Validate repertoire piece limits before querying the catalog`                     | Back End             | `packages/backend/src/checkout/class-checkout-helpers.ts`, backend checkout/metadata tests                                                                          |
-| **#328** | `Back End: Use canonical work details for catalog-linked registration repertoire`            | Back End             | `packages/backend/src/checkout/class-checkout-helpers.ts`, backend checkout/metadata tests                                                                          |
-| **#330** | `Front End / Back End: Resolve 404 bugs in CustomerAccountOrdersPage handleSaveRepertoire`   | Front End / Back End | `packages/frontend/src/pages/CustomerAccountOrdersPage.tsx`, `packages/common/src/customer-account.ts`, `packages/backend/src/customer/customer-account-service.ts` |
-| **#327** | `Front End: Let families select a concerto catalog work when editing existing registrations` | Front End            | `packages/frontend/src/pages/CustomerAccountOrdersPage.tsx`, `packages/frontend/src/components/FestivalRepertoireModal.tsx`, frontend customer account tests        |
+| **#329** | `Back End: Validate repertoire piece limits before querying the catalog`                     | Back End             | `packages/backend/src/domains/class-checkout/class-checkout-validation.ts`, backend checkout/metadata tests                                                         |
+| **#328** | `Back End: Use canonical work details for catalog-linked registration repertoire`            | Back End             | `packages/backend/src/domains/class-checkout/class-checkout-validation.ts`, backend checkout/metadata tests                                                         |
+| **#330 (DONE in #396)** | `Front End / Back End: Resolve 404 bugs in CustomerAccountOrdersPage handleSaveRepertoire`   | Front End / Back End | `packages/frontend/src/pages/CustomerAccountOrdersPage.tsx`, `packages/common/src/customer-account.ts`, `packages/backend/src/domains/class-checkout/` |
+| **#327 (DONE in #396)** | `Front End: Let families select a concerto catalog work when editing existing registrations` | Front End            | `packages/frontend/src/pages/CustomerAccountOrdersPage.tsx`, `packages/frontend/src/components/ConcertoTitleField.tsx`, `packages/frontend/src/components/FestivalRepertoireModal.tsx` |
 
 ### Group B: Organization & Festival Admin UI / CSS Layout Polish
 
@@ -52,7 +55,7 @@ All 21 open issues have been standardized with `Front End:`, `Back End:`, or `Fr
 
 | Issue    | Title                                                                               | Layer     | Primary Affected Files                                                                                                                                                                  |
 | :------- | :---------------------------------------------------------------------------------- | :-------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **#332** | `Front End: Redesign front page with organization grid and new organization signup` | Front End | `packages/frontend/src/pages/HomePage.tsx`, `packages/frontend/src/pages/OrganizationChooser.tsx`, `packages/frontend/src/components/AppHeader.tsx`, `packages/frontend/src/styles.css` |
+| **#332 (DONE in #383)** | `Front End: Redesign front page with organization grid and new organization signup` | Front End | `packages/frontend/src/pages/HomePage.tsx`, `packages/frontend/src/pages/OrganizationChooser.tsx`, `packages/frontend/src/components/AppHeader.tsx`, `packages/frontend/src/styles.css` |
 
 ### Group D: Phase 4 & Phase 5 Core Roadmap Deliverables
 
@@ -69,7 +72,7 @@ All 21 open issues have been standardized with `Front End:`, `Back End:`, or `Fr
 | Issue    | Title                                                                                        | Layer                | Primary Affected Files                                                                                                                   |
 | :------- | :------------------------------------------------------------------------------------------- | :------------------- | :--------------------------------------------------------------------------------------------------------------------------------------- |
 | **#95**  | `Back End: Security - Production edge, network, and operator hardening`                      | Back End / Infra     | `cloud-setup/`, `docker/`, `nginx/`, production operator runbooks                                                                        |
-| **#216** | `Front End / Back End (FYI): Repository files exceeding 500 lines for modularization review` | Front End / Back End | 33 cataloged files across `packages/backend`, `packages/frontend`, `packages/common`, and `database/`                                    |
+| **#216** | `Front End / Back End (FYI): Repository files exceeding 500 lines for modularization review` | Front End / Back End | `S09`–`S14` modularization complete; `packages/frontend/src/lib/api/registration.ts` (`510`L) and `packages/backend/src/checkout/in-memory-class-checkout-execution-helpers.ts` (`518`L; `503` non-blank lines) tracked in `S16` |
 | **#247** | `Back End (Deferred): Shopify Defense in Depth`                                              | Back End             | Future Shopify checkout validation architecture                                                                                          |
 | **#246** | `Front End / Back End (Future): Waitlist Entitlements`                                       | Front End / Back End | Future waitlist purchase-permission domain model                                                                                         |
 | **#172** | `Front End / Back End (Deferred): Teacher multi-division policy and checkout snapshots`      | Front End / Back End | `packages/common/`, `packages/backend/src/checkout/`, `packages/backend/src/commerce/`, `packages/frontend/src/pages/MembershipPage.tsx` |
@@ -96,15 +99,13 @@ Multiple issues should be combined into a single PR **only** when they meet all 
 
 ### Merge-Conflict Hotspot Analysis
 
-1. **`packages/backend/src/checkout/class-checkout-helpers.ts` (#328 and #329)**:
-   - Both #328 and #329 are direct follow-ups to #322 in `class-checkout-helpers.ts` (lines 37–45 and lines 132–133) and share `class-checkout-service.test.ts`. Running them on separate branches would conflict directly in validation ordering and test fixtures. **Recommendation**: Combine #328 + #329 into a single Back End PR.
-2. **`packages/frontend/src/pages/CustomerAccountOrdersPage.tsx` (#330 and #327)**:
-   - #330 fixes two 404 bugs in `handleSaveRepertoire` (passing `entitlement.id` instead of `metadata.id`, and exposing `festivalShortName` on the customer entitlement/class summary so the `PUT` URL resolves the festival by short name rather than UUID).
-   - #327 upgrades the repertoire editor modal invoked from `CustomerAccountOrdersPage.tsx` so families can select a concerto catalog work when editing existing registrations.
-   - Because #327 relies on saving edited repertoire from `CustomerAccountOrdersPage.tsx` without hitting a 404, **#330 is a direct prerequisite for #327**. Sequencing PR 2 (#330) before PR 3 (#327) prevents merge conflicts in `CustomerAccountOrdersPage.tsx`.
-3. **`packages/frontend/src/styles.css` (#333, #334, #335, #336, and #332)**:
-   - All five pure frontend layout issues touch `packages/frontend/src/styles.css`.
-   - Grouping the four Admin UI layout fixes (#333, #334, #335, #336) eliminates 4-way CSS merge conflicts while keeping public landing page redesign (#332) isolated in its own PR.
+1. **`packages/backend/src/domains/class-checkout/class-checkout-validation.ts` (#328 and #329)**:
+   - Both #328 and #329 are direct follow-ups to #322 in `class-checkout-validation.ts` (moved from `class-checkout-helpers.ts` during `S11`) and share `class-checkout-service.test.ts`. Running them on separate branches would conflict directly in validation ordering and test fixtures. **Recommendation**: Combine #328 + #329 into a single Back End PR.
+2. **`packages/frontend/src/pages/CustomerAccountOrdersPage.tsx` (#330 and #327 — DONE in #396)**:
+   - Both `#330` (exposing `festivalShortName` and passing `entitlement.id` in `handleSaveRepertoire`) and `#327` (selecting concerto catalog works when editing existing registrations) landed together in PR `#396`.
+3. **`packages/frontend/src/styles.css` (#333, #334, #335, #336, and #332 — #332 DONE in #383)**:
+   - `#332` landed in PR `#383`, leaving the four Admin UI layout fixes (`#333`, `#334`, `#335`, `#336`) in `packages/frontend/src/styles.css`.
+   - Grouping the four Admin UI layout fixes (#333, #334, #335, #336) eliminates 4-way CSS merge conflicts.
 
 ---
 
@@ -114,12 +115,18 @@ Multiple issues should be combined into a single PR **only** when they meet all 
 flowchart LR
   subgraph Tier1["Tier 1: Immediate Actionable Bugfix & UI PRs"]
     PR1["PR 1 (Back End)<br/>#328 + #329<br/>Repertoire Catalog Validation"]
-    PR2["PR 2 (FE / BE Bugfix)<br/>#330<br/>Fix handleSaveRepertoire 404s"]
-    PR3["PR 3 (Front End)<br/>#327<br/>Concerto Selector in Account Editor"]
+    PR2["PR 2 (FE / BE Bugfix - DONE #396)<br/>#330<br/>Fix handleSaveRepertoire 404s"]
+    PR3["PR 3 (Front End - DONE #396)<br/>#327<br/>Concerto Selector in Account Editor"]
     PR4["PR 4 (Front End Admin UI)<br/>#333 + #334 + #335 + #336<br/>Admin Layout & Popover Fixes"]
-    PR5["PR 5 (Front End Public UI)<br/>#332<br/>Front Page Org Grid Redesign"]
+    PR5["PR 5 (Front End Public UI - DONE #383)<br/>#332<br/>Front Page Org Grid Redesign"]
     PR1 --> PR2 --> PR3
     PR4 --> PR5
+  end
+
+  subgraph Active["Active Pre-Thanksgiving & Dec QA Ledger"]
+    S15S16["Pre-v0.4.0 Stabilization<br/>S15 + S16 + Pending #410"]
+    DecQA["December QA & Registration<br/>#357 + #359 + #340 + #341"]
+    S15S16 --> DecQA
   end
 
   subgraph Tier2["Tier 2: Phase 4 & Phase 5 Deliverables"]
@@ -135,6 +142,8 @@ flowchart LR
 
 ### Tier 1: Immediate Actionable Bugfix & UI PRs
 
+> Active follow-ups `#357`, `#359`, `#340`, `#341`, and pending `#410` are sequenced alongside `S15`–`S16` in [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
+
 #### PR 1 — Back End: Repertoire Catalog Validation Hardening
 
 - **Issues Included**:
@@ -142,35 +151,33 @@ flowchart LR
   - **#328**: `Back End: Use canonical work details for catalog-linked registration repertoire`
 - **Layer**: Pure Back End (`packages/backend`)
 - **Scope & Files**:
-  - `packages/backend/src/checkout/class-checkout-helpers.ts`
+  - `packages/backend/src/domains/class-checkout/class-checkout-validation.ts`
   - `packages/backend/tests/class-checkout-service.test.ts` and customer metadata edit tests
-- **Rationale**: Both issues modify the exact same validation helper function in `class-checkout-helpers.ts`. Validating array shape, piece count limits, and basic fields before issuing catalog DB lookups (#329) naturally precedes enforcing canonical work title/composer on resolved catalog works (#328).
-- **Merge Order**: Independent; can merge immediately (recommended before PR 3 so backend concerto catalog semantics are locked first).
+- **Rationale**: Both issues modify the exact same validation helper function in `class-checkout-validation.ts`. Validating array shape, piece count limits, and basic fields before issuing catalog DB lookups (#329) naturally precedes enforcing canonical work title/composer on resolved catalog works (#328).
+- **Merge Order**: Independent; scheduled in December Week 2 QA per [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
 
-#### PR 2 — Front End / Back End: Customer Account Repertoire Save 404 Fixes
+#### PR 2 — Front End / Back End: Customer Account Repertoire Save 404 Fixes (`DONE in #396`)
 
 - **Issues Included**:
-  - **#330**: `Front End / Back End: Resolve 404 bugs in CustomerAccountOrdersPage handleSaveRepertoire`
+  - **#330**: `Front End / Back End: Resolve 404 bugs in CustomerAccountOrdersPage handleSaveRepertoire` (**DONE in `#396`**)
 - **Layer**: Shared Contract + Back End Summary + Front End Bugfix (`packages/common`, `packages/backend`, `packages/frontend`)
 - **Scope & Files**:
   - `packages/common/src/customer-account.ts` (include `festivalShortName` on `CustomerClassEntitlementSummary` or `CustomerFestivalClassSummary`)
-  - `packages/backend/src/customer/customer-account-service.ts` (populate `festivalShortName` in customer account summary projection)
+  - `packages/backend/src/domains/class-checkout/` (populate `festivalShortName` in customer account summary projection)
   - `packages/frontend/src/pages/CustomerAccountOrdersPage.tsx` (pass `target.entitlement.id` instead of `target.metadata.id` and use `festivalShortName` in `handleSaveRepertoire`)
-  - Unit tests in `packages/backend/tests/customer-account-service.test.ts` and `packages/frontend/tests/customer-account.test.ts`
-- **Rationale**: Tightly scoped cross-layer bugfix that restores `PUT .../class-registrations/:registrationId/metadata` functionality.
-- **Merge Order**: Must merge **before PR 3 (#327)**.
+  - Unit tests in `packages/backend/tests/customer-account-service.test.ts` and `packages/frontend/tests/festival-class-registration.test.ts`
+- **Status**: Merged in PR `#396` alongside `#327` and `#362`.
 
-#### PR 3 — Front End: Concerto Catalog Work Selector in Customer Account Repertoire Editor
+#### PR 3 — Front End: Concerto Catalog Work Selector in Customer Account Repertoire Editor (`DONE in #396`)
 
 - **Issues Included**:
-  - **#327**: `Front End: Let families select a concerto catalog work when editing existing registrations`
+  - **#327**: `Front End: Let families select a concerto catalog work when editing existing registrations` (**DONE in `#396`**)
 - **Layer**: Pure Front End (`packages/frontend`)
 - **Scope & Files**:
   - `packages/frontend/src/pages/CustomerAccountOrdersPage.tsx`
-  - `packages/frontend/src/components/FestivalRepertoireModal.tsx`
-  - `packages/frontend/tests/customer-account.test.ts`
-- **Rationale**: Builds directly on top of the working repertoire save flow fixed in PR 2 (#330) and the backend catalog validation rules from PR 1 (#328/#329).
-- **Merge Order**: Merges **after PR 1 and PR 2**.
+  - `packages/frontend/src/components/ConcertoTitleField.tsx` and `packages/frontend/src/components/FestivalRepertoireModal.tsx`
+  - `packages/frontend/tests/browser/order-repertoire.tsx` and `packages/frontend/tests/useConcertoCatalogSearch.test.ts`
+- **Status**: Merged in PR `#396` (`pg_trgm` trigram typeahead + manual concerto entry + Orders concerto selector).
 
 #### PR 4 — Front End: Admin Layout, Cards, Badges & Popover Polish
 
@@ -191,21 +198,20 @@ flowchart LR
   - **Option 4A + 4B Split**:
     - **PR 4A (Admin Memberships UI)**: Combine **#334 + #335** (both on `/org/:slug/admin/memberships` touching `AdminMembershipProductsPage.tsx`, `AdminEntitlementOperationsSection.tsx`, and `styles.css`).
     - **PR 4B (Admin Festivals & Classes UI)**: Combine **#333 + #336** (touching `/org/:slug/admin/festivals` and `/org/:slug/festival/:short-festival-name/admin/classes` plus `styles.css`).
-- **Merge Order**: Independent of PRs 1–3; coordinate merge before or after PR 5 to cleanly sequence `styles.css` additions.
+- **Merge Order**: Scheduled in December Week 2 QA per [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
 
-#### PR 5 — Front End: Public Front Page Redesign
+#### PR 5 — Front End: Public Front Page Redesign (`DONE in #383`)
 
 - **Issues Included**:
-  - **#332**: `Front End: Redesign front page with organization grid and new organization signup`
+  - **#332**: `Front End: Redesign front page with organization grid and new organization signup` (**DONE in `#383`**)
 - **Layer**: Pure Front End (`packages/frontend`)
 - **Scope & Files**:
   - `packages/frontend/src/pages/HomePage.tsx`
   - `packages/frontend/src/pages/OrganizationChooser.tsx`
   - `packages/frontend/src/components/AppHeader.tsx`
   - `packages/frontend/src/styles.css`
-  - `packages/frontend/tests/onboarding-integration.test.ts` / `organization-landing.test.ts`
-- **Rationale**: Standalone functional and visual redesign of the `/` route with specific acceptance criteria for tile dimensions, uppercase short names, conditional divider rendering, and signup copy changes.
-- **Merge Order**: Sequence after PR 4 to avoid `styles.css` conflicts.
+  - `packages/frontend/tests/onboarding-integration.test.ts`
+- **Status**: Merged in PR `#383` (followed by seasonal banners in `#384`).
 
 ---
 
@@ -226,7 +232,7 @@ flowchart LR
 
 These issues are explicitly marked in their specifications as FYI tracking, post-MVP, or deferred future work and should **not** be bundled into active feature PRs until scheduled:
 
-- **#216** (`Front End / Back End (FYI): Repository files exceeding 500 lines for modularization review`): Tracking catalog of 33 files > 500 lines. When actioned, each modularization effort should be scoped to a single package/module per PR (never mixing backend repository splits with frontend CSS/state splits).
+- **#216** (`Front End / Back End (FYI): Repository files exceeding 500 lines for modularization review`): `S09`–`S14` modularization is complete; only `packages/frontend/src/lib/api/registration.ts` (`510`L) and `packages/backend/src/checkout/in-memory-class-checkout-execution-helpers.ts` (`518`L; `503` non-blank lines) remain tracked in `S16` ([specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md)). When actioned, each modularization effort remains scoped to a single package/module per PR.
 - **#247** (`Back End (Deferred): Shopify Defense in Depth`): Future Shopify checkout validation layer.
 - **#246** (`Front End / Back End (Future): Waitlist Entitlements`): Future waitlist purchase-permission model.
 - **#172** (`Front End / Back End (Deferred): Teacher multi-division policy and checkout snapshots`): Deferred from #166.
