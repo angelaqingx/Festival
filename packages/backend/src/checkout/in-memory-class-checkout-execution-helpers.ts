@@ -217,7 +217,6 @@ export function restartDecisionInMemory(
 		!value ||
 		value.customerId !== input.customerId ||
 		!intent ||
-		intent.cartReference ||
 		intent.paymentObserved
 	) {
 		return null;
@@ -231,16 +230,44 @@ export function restartDecisionInMemory(
 		value,
 		intent.status,
 		events,
+		{ expiresAtIso: intent.expiresAtIso, nowIso: store.now().toISOString() },
 	);
-	return decision ? { value, decision } : null;
+	return decision &&
+		(value.checkpoint === "attached"
+			? Boolean(intent.cartReference)
+			: !intent.cartReference)
+		? { value, decision }
+		: null;
 }
 
-export function applyUnissuedRestartInMemory(
+export async function applyUnissuedRestartInMemory(
 	store: InMemoryExecutionStore,
 	input: RestartUnissuedInvalidCartInput,
-): { replacementKey: string } | null {
+): Promise<{ replacementKey: string } | null> {
 	const candidate = restartDecisionInMemory(store, input);
 	if (!candidate) return null;
+	const snapshot = candidate.value.requestSnapshot as {
+		festivalShortName?: string;
+	};
+	if (
+		snapshot?.festivalShortName &&
+		(await store.restartLookup?.hasNewerCheckout(
+			{ ...input, festivalShortName: snapshot.festivalShortName },
+			candidate.decision === "restartable"
+				? ""
+				: candidate.decision.replacementKey,
+		))
+	)
+		return null;
+	const originalKey = store.restartLookup?.intent(input)?.idempotencyKey;
+	if (
+		originalKey &&
+		isUnissuedReplacementBlockedInMemory(store, {
+			...input,
+			replacementKey: originalKey,
+		})
+	)
+		return null;
 	if (candidate.decision !== "restartable") {
 		return store.restartLookup?.replacementClosed(
 			input,
@@ -254,7 +281,10 @@ export function applyUnissuedRestartInMemory(
 	store.abandonIntent(input.organizationId, input.intentId);
 	value.generation++;
 	value.state = "rejected";
-	value.resultCode = "checkout_restarted_unissued";
+	value.resultCode =
+		value.checkpoint === "attached"
+			? "checkout_restarted_expired"
+			: "checkout_restarted_unissued";
 	value.leaseOwner = null;
 	value.leaseExpiresAtIso = null;
 	value.updatedAtIso = store.now().toISOString();
@@ -283,6 +313,16 @@ export async function findUnissuedRestartInMemory(
 		}
 		const candidateInput = { ...input, intentId: value.intentId };
 		const candidate = restartDecisionInMemory(store, candidateInput);
+		const originalKey =
+			store.restartLookup?.intent(candidateInput)?.idempotencyKey;
+		if (
+			originalKey &&
+			isUnissuedReplacementBlockedInMemory(store, {
+				...input,
+				replacementKey: originalKey,
+			})
+		)
+			continue;
 		if (
 			candidate &&
 			(candidate.decision === "restartable" ||
@@ -305,26 +345,39 @@ export function isUnissuedReplacementBlockedInMemory(
 	store: InMemoryExecutionStore,
 	input: UnissuedCartReplacementInput,
 ): boolean {
-	const event = store.history.find(
-		(e) =>
-			e.organizationId === input.organizationId &&
-			e.id === input.replacementKey &&
-			e.eventType === "customer_restarted_unissued",
-	);
-	if (!event) return false;
-	const value = store.records.get(
-		execKey(input.organizationId, event.intentId),
-	);
-	if (!value || value.customerId !== input.customerId) return false;
-	const candidate = restartDecisionInMemory(store, {
-		...input,
-		intentId: event.intentId,
-	});
-	return (
-		!candidate ||
-		candidate.decision === "restartable" ||
-		candidate.decision.replacementKey !== input.replacementKey
-	);
+	let key = input.replacementKey;
+	const visited = new Set<string>();
+	while (!visited.has(key)) {
+		visited.add(key);
+		const event = store.history.find(
+			(e) =>
+				e.organizationId === input.organizationId &&
+				e.id === key &&
+				e.eventType === "customer_restarted_unissued",
+		);
+		if (!event) return false;
+		const value = store.records.get(
+			execKey(input.organizationId, event.intentId),
+		);
+		if (!value || value.customerId !== input.customerId) return true;
+		const intent = store.restartLookup?.intent({
+			...input,
+			intentId: event.intentId,
+		});
+		const candidate = restartDecisionInMemory(store, {
+			...input,
+			intentId: event.intentId,
+		});
+		if (
+			!intent ||
+			!candidate ||
+			candidate.decision === "restartable" ||
+			candidate.decision.replacementKey !== key
+		)
+			return true;
+		key = intent.idempotencyKey;
+	}
+	return true;
 }
 
 export function recordApplicationExpiryInMemory(

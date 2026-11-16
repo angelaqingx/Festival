@@ -250,6 +250,20 @@ export class InMemoryClassCheckoutExecutionRepository
 		return findUnissuedRestartInMemory(this.store(), input);
 	}
 
+	async findReplacementIntentId(input: UnissuedCartReplacementInput) {
+		const linked = this.history.some(
+			(event) =>
+				event.organizationId === input.organizationId &&
+				event.id === input.replacementKey &&
+				event.eventType === "customer_restarted_unissued" &&
+				this.records.get(execKey(input.organizationId, event.intentId))
+					?.customerId === input.customerId,
+		);
+		return linked
+			? (this.restartLookup?.replacementIntentId(input) ?? null)
+			: null;
+	}
+
 	async isUnissuedCartReplacementBlocked(input: UnissuedCartReplacementInput) {
 		return isUnissuedReplacementBlockedInMemory(this.store(), input);
 	}

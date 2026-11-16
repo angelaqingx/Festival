@@ -36,6 +36,7 @@ import {
 	releasePreparedRetryable,
 	validateSessionAndCustomer,
 } from "./class-checkout-metadata-guard.js";
+import { resolveReplacementCheckoutInput } from "./class-checkout-recovery-preflight.js";
 import { verifyLegacyCartEvidence } from "./class-checkout-replay-helpers.js";
 import {
 	type ClassCheckoutResult,
@@ -417,6 +418,7 @@ export async function startClassCheckout(
 	preflightRecovery: (input: StartClassCheckoutInput) => Promise<void>,
 ): Promise<ClassCheckoutResult> {
 	const customer = await validateSessionAndCustomer(ctx, input);
+	input = await resolveReplacementCheckoutInput(ctx.deps.checkout, input);
 	await preflightRecovery(input);
 	const early = await checkExistingStartOutcome(
 		ctx,

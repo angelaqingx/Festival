@@ -75,9 +75,19 @@ export function buildInMemoryRestartLookup(
 						status: intent.status,
 						cartReference: intent.cartReference,
 						paymentObserved: store.hasPaymentEvidence(intent),
+						expiresAtIso: intent.expiresAtIso,
+						idempotencyKey: intent.idempotencyKey,
 					}
 				: null;
 		},
+		replacementIntentId: (input) =>
+			[...store.intents.values()].find(
+				(intent) =>
+					intent.organizationId === input.organizationId &&
+					intent.customerId === input.customerId &&
+					intent.intentType === "class_entry" &&
+					intent.idempotencyKey === input.replacementKey,
+			)?.id ?? null,
 		replacementClosed: (input, replacementKey) =>
 			[...store.intents.values()].some(
 				(intent) =>

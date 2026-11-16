@@ -120,12 +120,15 @@ export interface InMemoryClassCheckoutRestartLookup {
 		status: string;
 		cartReference?: string | null;
 		paymentObserved: boolean;
+		expiresAtIso: string;
+		idempotencyKey: string;
 	} | null;
 	hasNewerCheckout(
 		input: RestartUnissuedInvalidCartInput &
 			FindUnissuedInvalidCartRestartInput,
 		replacementKey: string,
 	): Promise<boolean>;
+	replacementIntentId(input: UnissuedCartReplacementInput): string | null;
 	replacementClosed(
 		input: RestartUnissuedInvalidCartInput,
 		key: string,
@@ -186,6 +189,9 @@ export interface ClassCheckoutExecutionRepository {
 	findUnissuedInvalidCartRestart(
 		input: FindUnissuedInvalidCartRestartInput,
 	): Promise<ClassCheckoutExecution | null>;
+	findReplacementIntentId(
+		input: UnissuedCartReplacementInput,
+	): Promise<string | null>;
 	isUnissuedCartReplacementBlocked(
 		input: UnissuedCartReplacementInput,
 	): Promise<boolean>;

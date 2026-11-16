@@ -1,5 +1,6 @@
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
+import type { ClassCheckoutRestartRegistration } from "@festival/common";
 
 const solid = await import("solid-js/dist/solid.js");
 mock.module("solid-js", () => solid);
@@ -41,6 +42,7 @@ const replacementKey = "restored-checkout-key";
 const requests: { key: string | null; payload: unknown }[] = [];
 let unavailable = false;
 let mode = process.argv[2];
+const expiredRestart = mode.startsWith("expired-");
 const checkoutFestival =
 	mode === "cross-festival-recovery" ? "festival-b" : "festival";
 const crossFestivalRecovery = {
@@ -62,6 +64,7 @@ let discoverableRestart =
 let eligibilityCalls = 0;
 let statusCalls = 0;
 let restartCalls = 0;
+let restartRegistrations: ClassCheckoutRestartRegistration[] | null = null;
 const waitlistEntries = [
 	{
 		id: "wrong-child",
@@ -98,21 +101,29 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
 		restartCalls++;
 		assert.equal(headers.get("X-CSRF-Token"), "csrf");
 		assert.deepEqual(JSON.parse(String(init.body)), { recoveryReference });
-		if (mode === "restart-blocked")
+		if (["restart-blocked", "restart-unknown-blocked"].includes(mode))
 			return json(
 				{
 					error: "The original checkout still needs review.",
 					recovery: {
 						status: "recovery_required",
 						recoveryReference,
-						reasonCode: "paid_order_requires_review",
+						reasonCode:
+							mode === "restart-blocked"
+								? "paid_order_requires_review"
+								: "shopify_outcome_unknown",
 						retryAllowed: false,
 						restartAllowed: false,
 					},
 				},
 				409,
 			);
-		return json({ replacementKey, registrations: [restoredLine] });
+		return json({
+			replacementKey,
+			registrations:
+				restartRegistrations ??
+				(expiredRestart ? [restoredLine, restoredSecondLine] : [restoredLine]),
+		});
 	}
 	if (path.endsWith("/checkout/status")) {
 		statusCalls++;
@@ -155,6 +166,19 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
 			key: new Headers(init?.headers).get("Idempotency-Key"),
 			payload: JSON.parse(String(init?.body)),
 		});
+		if (
+			["expired-current", "expired-merged"].includes(mode) &&
+			requests.length === 1
+		) {
+			return json(
+				{
+					error: "The previous checkout expired.",
+					code: "checkout_recovery_required",
+					recovery: { ...recoveryAfterExpiry, restartAllowed: true },
+				},
+				409,
+			);
+		}
 		if (mode === "cross-festival-recovery") {
 			assert.equal(
 				path,
@@ -177,6 +201,7 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
 				"recovery-expiry",
 				"abandonment",
 				"restart-blocked",
+				"restart-unknown-blocked",
 			].includes(mode)
 		)
 			return json(
@@ -191,7 +216,10 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
 									recoveryReference,
 									reasonCode: "shopify_outcome_unknown",
 									retryAllowed: false,
-									restartAllowed: mode === "restart-blocked",
+									restartAllowed: [
+										"restart-blocked",
+										"restart-unknown-blocked",
+									].includes(mode),
 								},
 				},
 				409,
@@ -316,6 +344,12 @@ const restoredLine = {
 		{ title: "Restored piece", composer: "Composer", durationSeconds: 90 },
 	],
 };
+const restoredSecondLine = {
+	...restoredLine,
+	classId: "second-class",
+	className: "Second class",
+	lineId: "durable-second-line",
+};
 if (mode === "sold-out-cart-waitlist") {
 	workspace.setChildId("sibling");
 	cart.addItem(line);
@@ -328,6 +362,17 @@ if (mode === "sold-out-cart-waitlist") {
 	cart.addItem({ ...line, classId: "cart-shortage" });
 	cart.addItem({ ...line, classId: "prerequisite" });
 	cart.addItem({ ...line, classId: "unconfirmed" });
+} else if (expiredRestart) {
+	cart.addItem({
+		...line,
+		pieces: [
+			{ title: "Current edit", composer: "Composer", durationSeconds: 75 },
+		],
+	});
+	cart.addItem({
+		...line,
+		classId: mode === "expired-merged" ? "unrelated-class" : "second-class",
+	});
 } else if (mode !== "restore-checkout") cart.addItem(line);
 let dispose: (() => void) | undefined;
 const state = solid.createRoot((cleanup) => {
@@ -382,6 +427,149 @@ if (mode === "sold-out-cart-waitlist") {
 	process.exit(0);
 }
 await new Promise((resolve) => setTimeout(resolve, 0));
+if (expiredRestart) {
+	const originalItems = structuredClone(cart.items());
+	await state.handleCartCheckout();
+	assert.equal(requests.length, 1);
+	if (["expired-reload", "expired-submitted-reload"].includes(mode)) {
+		assert.deepEqual(assigned, ["https://shop.example/checkout"]);
+		events.dispatchEvent(new Event("pagehide"));
+		assert.equal(cart.itemCount(), 0);
+		assert.equal(storedCheckoutKeys.size, 0);
+		dispose?.();
+		assigned.length = 0;
+		discoverableRestart = recoveryReference;
+		// A new application instance starts with no cart or in-memory recovery.
+		const reloadedRegistration = createParentRegistrationState();
+		const reloadedCart = reloadedRegistration.workspace(
+			"org",
+			checkoutFestival,
+		).cart;
+		const reloaded = solid.createRoot((cleanup) => {
+			dispose = cleanup;
+			return useFestivalRegistrationPage({
+				slug: "org",
+				festivalSlug: checkoutFestival,
+				view: "cart",
+				app: {
+					parentRegistration: reloadedRegistration,
+					navigate: () => {},
+				} as Parameters<typeof useFestivalRegistrationPage>[0]["app"],
+			});
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(reloadedCart.itemCount(), 0);
+		assert.equal(reloaded.checkoutRestartReference(), recoveryReference);
+		assert.equal(restartCalls, 0, "discovery does not replace a checkout");
+		assert.equal(requests.length, 1);
+		await reloaded.handleRestoreCheckout();
+		assert.deepEqual(reloadedCart.items(), [restoredLine, restoredSecondLine]);
+		assert.deepEqual(assigned, [], "restore waits for registration review");
+		assert.equal(reloadedCart.getCheckoutIdempotencyKey(), replacementKey);
+		// Back navigation from Shopify refreshes discovery as well as a reload.
+		events.dispatchEvent(
+			Object.assign(new Event("pageshow"), { persisted: true }),
+		);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(reloaded.checkoutRestartReference(), null);
+		if (mode === "expired-submitted-reload") {
+			const changed = {
+				...reloadedCart.items()[0],
+				teacherId: "new-teacher",
+				pieces: [
+					{
+						title: "Edited repertoire",
+						composer: "Composer",
+						durationSeconds: 85,
+					},
+				],
+			};
+			reloadedCart.removeItem(changed.lineId);
+			reloadedCart.addItem(changed);
+			reloadedCart.addItem({ ...line, classId: "unrelated-class" });
+			restartRegistrations = structuredClone(reloadedCart.items());
+		}
+		const checked = eligibilityCalls;
+		await reloaded.handleCartCheckout();
+		assert.ok(eligibilityCalls > checked);
+		assert.equal(requests[1].key, replacementKey);
+		if (mode === "expired-submitted-reload") {
+			events.dispatchEvent(new Event("pagehide"));
+			dispose?.();
+			assigned.length = 0;
+			const anotherApplication = createParentRegistrationState();
+			const anotherCart = anotherApplication.workspace(
+				"org",
+				checkoutFestival,
+			).cart;
+			const anotherPage = solid.createRoot((cleanup) => {
+				dispose = cleanup;
+				return useFestivalRegistrationPage({
+					slug: "org",
+					festivalSlug: checkoutFestival,
+					view: "cart",
+					app: {
+						parentRegistration: anotherApplication,
+						navigate: () => {},
+					} as Parameters<typeof useFestivalRegistrationPage>[0]["app"],
+				});
+			});
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			assert.equal(anotherCart.itemCount(), 0);
+			assert.equal(anotherPage.checkoutRestartReference(), recoveryReference);
+			assert.equal(requests.length, 2);
+			await anotherPage.handleRestoreCheckout();
+			assert.deepEqual(anotherCart.items(), restartRegistrations);
+			assert.equal(anotherCart.itemCount(), 3);
+			assert.equal(anotherCart.getCheckoutIdempotencyKey(), replacementKey);
+			assert.deepEqual(
+				assigned,
+				[],
+				"reloading a submitted replacement does not hand off automatically",
+			);
+			assert.equal(requests.length, 2);
+			await anotherPage.handleCartCheckout();
+			assert.equal(requests[2].key, requests[1].key);
+			assert.deepEqual(
+				requests[2].payload,
+				requests[1].payload,
+				"reload restores the submitted replacement payload, including edits and unrelated lines",
+			);
+		}
+	} else {
+		assert.equal(cart.checkoutRecovery()?.reasonCode, "checkout_expired");
+		assert.equal(state.checkoutRestartReference(), recoveryReference);
+		assert.deepEqual(assigned, []);
+		await state.handleRestoreCheckout();
+		assert.deepEqual(cart.items().slice(0, 2), originalItems);
+		assert.equal(cart.itemCount(), mode === "expired-merged" ? 3 : 2);
+		if (mode === "expired-merged")
+			assert.deepEqual(cart.items()[2], restoredSecondLine);
+		assert.equal(cart.checkoutSubmission(), null);
+		assert.equal(cart.getCheckoutIdempotencyKey(), replacementKey);
+		assert.equal(state.checkoutRestartReference(), null);
+		await state.handleRestoreCheckout();
+		assert.equal(restartCalls, 1, "restored state does not repeat restart");
+		assert.equal(requests.length, 1, "restoration waits for review");
+		const edited = {
+			...cart.items()[0],
+			teacherId: "edited-after-restoration",
+		};
+		cart.removeItem(edited.lineId);
+		cart.addItem(edited);
+		assert.equal(cart.getCheckoutIdempotencyKey(), replacementKey);
+		const checked = eligibilityCalls;
+		await state.handleCartCheckout();
+		assert.ok(eligibilityCalls > checked, "restart runs current eligibility");
+		assert.equal(requests[1].key, replacementKey);
+		assert.notEqual(requests[0].key, requests[1].key);
+	}
+	assert.equal(requests.length, mode === "expired-submitted-reload" ? 3 : 2);
+	assert.deepEqual(assigned, ["https://shop.example/checkout"]);
+	dispose?.();
+	console.log("CHECKOUT_HOOK_OK");
+	process.exit(0);
+}
 if (mode === "restore-checkout") {
 	assert.equal(cart.itemCount(), 0);
 	assert.equal(state.checkoutRestartReference(), recoveryReference);
@@ -424,7 +612,7 @@ if (mode === "restore-checkout") {
 	dispose?.();
 	console.log("CHECKOUT_HOOK_OK");
 	process.exit(0);
-} else if (mode === "restart-blocked") {
+} else if (["restart-blocked", "restart-unknown-blocked"].includes(mode)) {
 	const frozenSubmission = cart.checkoutSubmission();
 	const originalLine = cart.items()[0];
 	assert.equal(state.checkoutRestartReference(), recoveryReference);
@@ -435,7 +623,9 @@ if (mode === "restore-checkout") {
 	assert.equal(state.checkoutRestartReference(), null);
 	assert.equal(
 		cart.checkoutRecovery()?.reasonCode,
-		"paid_order_requires_review",
+		mode === "restart-blocked"
+			? "paid_order_requires_review"
+			: "shopify_outcome_unknown",
 	);
 	assert.match(state.checkoutError() ?? "", /still needs review/);
 	assert.throws(() => cart.removeItem(originalLine.lineId));

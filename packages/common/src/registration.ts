@@ -434,7 +434,10 @@ export type UpdateRegistrationMetadataInput = v.InferOutput<
 export const ClassCheckoutRecoveryReferenceInputSchema = v.strictObject({
 	recoveryReference: v.pipe(
 		v.string("Checkout reference is required."),
-		v.uuid("Checkout reference must be a valid UUID."),
+		v.regex(
+			/^(?:CCR-[0-9A-F]{12}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i,
+			"Checkout reference is invalid.",
+		),
 	),
 });
 

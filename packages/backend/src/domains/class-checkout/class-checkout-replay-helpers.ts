@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { AppError } from "@festival/common";
-import { unissuedInvalidCartRestartDecision } from "./checkout-execution-helpers.js";
 import type {
 	ClassCheckoutClaim,
 	ClassCheckoutExecution,
@@ -380,6 +379,18 @@ export async function evaluatePostLookupReplayState(
 		initialExecution: ClassCheckoutExecution | null;
 	},
 ): Promise<{ withheldReason: ClassCheckoutRecoveryStatus } | null> {
+	if (
+		await deps.checkout.classExecutions?.isUnissuedCartReplacementBlocked({
+			organizationId: params.intent.organizationId,
+			customerId: params.intent.customerId,
+			replacementKey: params.intent.idempotencyKey,
+		})
+	)
+		throw new AppError(
+			"A payment has already been observed for the replaced checkout attempt.",
+			409,
+			"checkout_restart_payment_uncertain",
+		);
 	const state: ClassCheckoutReplayState | null =
 		await deps.checkout.getClassCheckoutReplayState(
 			params.intent.organizationId,
@@ -422,6 +433,27 @@ export async function evaluatePostLookupReplayState(
 	return null;
 }
 
+/** Read-only discovery applies the repository's payment and expiry evidence checks. */
+export async function isCustomerCheckoutRestartable(
+	executions: ClassCheckoutExecutionRepository,
+	record: ClassCheckoutExecution,
+): Promise<boolean> {
+	const snapshot = record.requestSnapshot as {
+		festivalShortName?: unknown;
+	} | null;
+	if (
+		typeof snapshot?.festivalShortName !== "string" ||
+		!snapshot.festivalShortName
+	)
+		return false;
+	const candidate = await executions.findUnissuedInvalidCartRestart({
+		organizationId: record.organizationId,
+		customerId: record.customerId,
+		festivalShortName: snapshot.festivalShortName,
+	});
+	return candidate?.intentId === record.intentId;
+}
+
 export async function throwManagedExecutionGuard(
 	executions: ClassCheckoutExecutionRepository,
 	intent: CheckoutIntentRecord,
@@ -447,16 +479,12 @@ export async function throwManagedExecutionGuard(
 		);
 	}
 	if (record.state === "recovery_required") {
-		const events = await executions.events(intent.organizationId, intent.id);
-		const decision = unissuedInvalidCartRestartDecision(
-			record,
-			intent.status,
-			events,
-		);
 		throw new ClassCheckoutRecoveryRequiredError(
 			record,
 			true,
-			decision === "restartable" ? { restartAllowed: true } : undefined,
+			(await isCustomerCheckoutRestartable(executions, record))
+				? { restartAllowed: true }
+				: undefined,
 		);
 	}
 	throw new ClassCheckoutRecoveryRequiredError(record, true);
