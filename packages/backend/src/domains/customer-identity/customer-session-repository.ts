@@ -16,6 +16,7 @@ import {
 	sessionRowToRecord,
 	stateRowToRecord,
 } from "./mappers.js";
+import { RefreshConcurrencyLimiter } from "./refresh-concurrency-limiter.js";
 import type {
 	CustomerOAuthStateRecord,
 	CustomerSessionRecord,
@@ -25,6 +26,35 @@ import type {
 	FestivalCustomerRecord,
 	JoinedSessionCustomerIntegration,
 } from "./types.js";
+
+const DEFAULT_REFRESH_TIMEOUT_MS = 10_000;
+const defaultRefreshLimiters = new Map<number, RefreshConcurrencyLimiter>();
+
+/** Computes the default refresh concurrency cap from the active SQL pool limit. */
+export function resolveDefaultRefreshConcurrency(): number {
+	return Math.max(
+		2,
+		Math.min(16, Math.floor((Number(sql.options?.max) || 80) / 8)),
+	);
+}
+
+function getDefaultRefreshLimiter(): RefreshConcurrencyLimiter {
+	const maxConcurrent = resolveDefaultRefreshConcurrency();
+	let limiter = defaultRefreshLimiters.get(maxConcurrent);
+	if (!limiter) {
+		limiter = new RefreshConcurrencyLimiter({
+			maxConcurrent,
+			acquireTimeoutMs: DEFAULT_REFRESH_TIMEOUT_MS,
+		});
+		defaultRefreshLimiters.set(maxConcurrent, limiter);
+	}
+	return limiter;
+}
+
+export interface PostgresCustomerSessionRepositoryOptions {
+	refreshLimiter?: RefreshConcurrencyLimiter;
+	refreshTimeoutMs?: number;
+}
 
 async function queryJoinedSession(
 	schema: string,
@@ -83,17 +113,50 @@ async function releaseRefreshConnection(
 	connection.release();
 }
 
+async function acquireSessionAdvisoryLock(
+	connection: Awaited<ReturnType<typeof sql.reserve>>,
+	key: string,
+	deadline: number,
+): Promise<void> {
+	let acquired = false;
+	while (!acquired) {
+		const rows = await connection.unsafe(
+			"SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS acquired",
+			[key],
+		);
+		acquired = rows[0]?.acquired === true;
+		if (!acquired) {
+			if (Date.now() >= deadline) {
+				throw new AppError(
+					"Customer Account authentication is unavailable.",
+					503,
+				);
+			}
+			await new Promise((resolve) => setTimeout(resolve, 50));
+		}
+	}
+}
+
 /** Postgres repository for Shopify OAuth states and customer sessions. */
 export class PostgresCustomerSessionRepository
 	implements CustomerSessionRepository
 {
 	private readonly schema: string;
+	private readonly customRefreshLimiter?: RefreshConcurrencyLimiter;
+	private readonly refreshTimeoutMs: number;
 
 	constructor(
 		schema: string,
 		private readonly runner: Pick<typeof sql, "unsafe"> = sql,
+		options: PostgresCustomerSessionRepositoryOptions = {},
 	) {
 		this.schema = postgresSchemaName(schema);
+		this.customRefreshLimiter = options.refreshLimiter;
+		this.refreshTimeoutMs =
+			options.refreshTimeoutMs ?? DEFAULT_REFRESH_TIMEOUT_MS;
+		if (!Number.isFinite(this.refreshTimeoutMs) || this.refreshTimeoutMs <= 0) {
+			throw new Error("refreshTimeoutMs must be a positive finite number.");
+		}
 	}
 
 	async ensureReady(): Promise<void> {
@@ -246,32 +309,23 @@ export class PostgresCustomerSessionRepository
 		operation: (sessions: CustomerSessionRepository) => Promise<T>,
 	): Promise<T> {
 		await this.ensureReady();
-		const connection = await sql.reserve();
+		const deadline = Date.now() + this.refreshTimeoutMs;
 		const key = `${this.schema}:customer-refresh:${sessionId}`;
-		let acquired = false;
-		try {
-			const deadline = Date.now() + 10_000;
-			while (!acquired) {
-				const rows = await connection.unsafe(
-					"SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS acquired",
-					[key],
+		const limiter = this.customRefreshLimiter ?? getDefaultRefreshLimiter();
+		return limiter.run(async () => {
+			const connection = await sql.reserve();
+			try {
+				await acquireSessionAdvisoryLock(connection, key, deadline);
+				return await operation(
+					new PostgresCustomerSessionRepository(this.schema, connection, {
+						refreshLimiter: limiter,
+						refreshTimeoutMs: this.refreshTimeoutMs,
+					}),
 				);
-				acquired = rows[0]?.acquired === true;
-				if (!acquired) {
-					if (Date.now() >= deadline)
-						throw new AppError(
-							"Customer Account authentication is unavailable.",
-							503,
-						);
-					await new Promise((resolve) => setTimeout(resolve, 50));
-				}
+			} finally {
+				await releaseRefreshConnection(connection, key);
 			}
-			return await operation(
-				new PostgresCustomerSessionRepository(this.schema, connection),
-			);
-		} finally {
-			await releaseRefreshConnection(connection, key);
-		}
+		}, this.refreshTimeoutMs);
 	}
 
 	async revokeSession(
