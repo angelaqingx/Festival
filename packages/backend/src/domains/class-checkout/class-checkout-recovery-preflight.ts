@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { AppError } from "@festival/common";
-import { unissuedInvalidCartRestartDecision } from "./checkout-execution-helpers.js";
 import type { ClassCheckoutExecution } from "./checkout-execution-types.js";
 import {
 	assertCheckoutIntentType,
@@ -22,6 +21,7 @@ import {
 } from "./class-checkout-errors.js";
 import {
 	evaluatePostLookupReplayState,
+	isCustomerCheckoutRestartable,
 	runReplayCheckoutWithTimeout,
 	throwManagedExecutionGuard,
 	verifyLegacyCartEvidence,
@@ -154,11 +154,7 @@ async function preflightExistingIntent(
 	) {
 		await throwManagedExecutionGuard(executions, intent, record, fingerprint);
 	}
-	const events = await executions.events(input.organizationId, intent.id);
-	if (
-		unissuedInvalidCartRestartDecision(record, intent.status, events) ===
-		"restartable"
-	) {
+	if (await isCustomerCheckoutRestartable(executions, record)) {
 		throw new ClassCheckoutRecoveryRequiredError(record, true, {
 			restartAllowed: true,
 		});
@@ -202,28 +198,40 @@ async function preflightBlockingExecution(
 			)
 		: null;
 	const refreshed = await expireIntentIfNeeded(deps, blockingIntent, blocking);
-	const events = await executions.events(
-		input.organizationId,
-		blocking.intentId,
+	const restartable = await isCustomerCheckoutRestartable(
+		executions,
+		refreshed,
 	);
-	const decision = blockingIntent
-		? unissuedInvalidCartRestartDecision(
-				refreshed,
-				blockingIntent.status,
-				events,
-			)
-		: null;
 	throw new ClassCheckoutRecoveryRequiredError(
 		refreshed,
 		refreshed.fingerprint === fingerprint,
-		decision === "restartable" ? { restartAllowed: true } : undefined,
+		restartable ? { restartAllowed: true } : undefined,
 	);
+}
+
+/** A server-issued replacement belongs to the owner across session renewal. */
+export async function resolveReplacementCheckoutInput(
+	checkout: CheckoutRepository,
+	input: StartClassCheckoutInput,
+): Promise<StartClassCheckoutInput> {
+	const id = await checkout.classExecutions?.findReplacementIntentId({
+		...input,
+		replacementKey: input.idempotencyKey,
+	});
+	const intent =
+		id && checkout.findIntentById
+			? await checkout.findIntentById(input.organizationId, id)
+			: null;
+	return intent?.customerId === input.customerId
+		? { ...input, sessionId: intent.sessionId }
+		: input;
 }
 
 export async function preflightRecoveryOp(
 	deps: RecoveryOpsDeps,
 	input: StartClassCheckoutInput,
 ): Promise<void> {
+	input = await resolveReplacementCheckoutInput(deps.checkout, input);
 	const executions = deps.checkout.classExecutions;
 	if (!executions || !deps.checkout.findIntentByKey) return;
 	if (

@@ -1,23 +1,11 @@
-import {
-	AppError,
-	type ClassCheckoutRestartDto,
-	type ClassCheckoutRestartRegistration,
-	type ClassRegistrationSnapshot,
-	type FestivalClassConfiguration,
-} from "@festival/common";
-import {
-	isLegacyInvalidCartObservation,
-	unissuedInvalidCartRestartDecision,
-} from "./checkout-execution-helpers.js";
+import { AppError, type ClassCheckoutRestartDto } from "@festival/common";
+import { isLegacyInvalidCartObservation } from "./checkout-execution-helpers.js";
 import type {
 	ClassCheckoutExecution,
 	ClassCheckoutExecutionEvent,
 	ClassCheckoutStorefrontBinding,
 } from "./checkout-execution-types.js";
-import type {
-	CheckoutIntentLineItemRecord,
-	CheckoutRepository,
-} from "./checkout-types.js";
+import type { CheckoutRepository } from "./checkout-types.js";
 import { resolveStorefrontBinding } from "./class-checkout-cart-handoff.js";
 import {
 	type ClassCheckoutRecoveryStatus,
@@ -30,8 +18,18 @@ import {
 	type RecoveryOpsDeps,
 	resolveReadyRecoveryStatus,
 } from "./class-checkout-recovery-preflight.js";
-import { matchesInspectedCartEvidence } from "./class-checkout-replay-helpers.js";
-import type { CheckoutChildRecord } from "./ports.js";
+import {
+	isCustomerCheckoutRestartable,
+	matchesInspectedCartEvidence,
+} from "./class-checkout-replay-helpers.js";
+import {
+	loadRestartResources,
+	mapRestartRegistration,
+	type RestartUnissuedCartInput,
+	restoreReplacementSelections,
+} from "./class-checkout-restart-selections.js";
+
+export type { RestartUnissuedCartInput } from "./class-checkout-restart-selections.js";
 
 export {
 	preflightRecoveryOp,
@@ -81,24 +79,25 @@ export async function recoveryStatusOp(
 		? await deps.checkout.findIntentById(input.organizationId, initial.intentId)
 		: null;
 	const record = await expireIntentIfNeeded(deps, intent, initial);
-	if (intent) {
-		const resolved = resolvedCheckoutStatus(intent.status, record);
-		if (resolved) return resolved;
-	}
-	const events = await executions.events(input.organizationId, record.intentId);
-	const decision = intent
-		? unissuedInvalidCartRestartDecision(record, intent.status, events)
-		: null;
+	const restartable = await isCustomerCheckoutRestartable(executions, record);
 	const base = recoveryStatusFor(record);
-	if (decision === "restartable") {
+	if (restartable) {
 		return {
 			...base,
 			status: "recovery_required",
-			reasonCode: "checkout_legacy_invalid_cart",
+			reasonCode:
+				record.checkpoint === "attached"
+					? "checkout_expired"
+					: "checkout_legacy_invalid_cart",
 			retryAllowed: false,
 			restartAllowed: true,
 		};
 	}
+	if (intent) {
+		const resolved = resolvedCheckoutStatus(intent.status, record);
+		if (resolved) return resolved;
+	}
+
 	if (record.state === "completed" || record.state === "ready") {
 		return resolveReadyRecoveryStatus(deps, input, { intent, record, base });
 	}
@@ -122,95 +121,6 @@ export async function findUnissuedCartRestartOp(
 	return { recoveryReference: record?.recoveryReference ?? null };
 }
 
-function mapRestartRegistration(
-	entry: {
-		checkoutIntentLineId: string;
-		registrationSnapshot: ClassRegistrationSnapshot;
-	},
-	lookups: {
-		intentLinesById: Map<string, CheckoutIntentLineItemRecord>;
-		childById: Map<string, CheckoutChildRecord>;
-		classById: Map<string, FestivalClassConfiguration>;
-	},
-): ClassCheckoutRestartRegistration {
-	const { checkoutIntentLineId, registrationSnapshot } = entry;
-	const line = lookups.intentLinesById.get(checkoutIntentLineId);
-	const child = line?.childId ? lookups.childById.get(line.childId) : undefined;
-	const fc = line?.festivalClassId
-		? lookups.classById.get(line.festivalClassId)
-		: undefined;
-	return {
-		lineId: checkoutIntentLineId,
-		childId: line?.childId ?? "",
-		childName: child?.displayName ?? "",
-		divisionId: registrationSnapshot.division.id,
-		divisionName: registrationSnapshot.division.name ?? "",
-		teacherId: registrationSnapshot.teacher.customerId,
-		teacherName: registrationSnapshot.teacher.name ?? "",
-		classId: registrationSnapshot.class.id,
-		className: fc?.displayName ?? registrationSnapshot.class.displayName,
-		classSubtypeId: registrationSnapshot.class.classSubtypeId,
-		classSubtypeName: registrationSnapshot.class.classSubtypeName,
-		minimumAge: registrationSnapshot.class.minimumAge,
-		maximumAge: registrationSnapshot.class.maximumAge,
-		priceCents: Math.round(
-			Number.parseFloat(registrationSnapshot.class.price) * 100,
-		),
-		accompanistId: registrationSnapshot.accompanist?.customerId ?? null,
-		accompanistName: registrationSnapshot.accompanist?.name ?? null,
-		instrumentId:
-			registrationSnapshot.instrument === "unknown"
-				? undefined
-				: registrationSnapshot.instrument.id,
-		instrumentName:
-			registrationSnapshot.instrument === "unknown"
-				? undefined
-				: registrationSnapshot.instrument.name,
-		pieces: registrationSnapshot.repertoire,
-	};
-}
-
-export interface RestartUnissuedCartInput {
-	organizationId: string;
-	customerId: string;
-	festivalShortName: string;
-	recoveryReference: string;
-}
-
-async function loadRestartResources(
-	deps: RecoveryOpsDeps,
-	input: RestartUnissuedCartInput,
-	intentId: string,
-	intentLines: CheckoutIntentLineItemRecord[],
-) {
-	const festival = await deps.catalog.findFestivalByShortName(
-		input.organizationId,
-		input.festivalShortName.trim(),
-	);
-	const [snapshots, children, classes] = await Promise.all([
-		deps.checkout.listCheckoutRegistrationSnapshots?.(
-			input.organizationId,
-			intentId,
-		) ?? Promise.resolve([]),
-		deps.customers.listChildren(input.organizationId, input.customerId),
-		festival
-			? deps.catalog.listFestivalClassConfigurations(
-					input.organizationId,
-					festival.id,
-					false,
-				)
-			: Promise.resolve([]),
-	]);
-	return {
-		snapshots,
-		lookups: {
-			intentLinesById: new Map(intentLines.map((line) => [line.id, line])),
-			childById: new Map(children.map((c) => [c.id, c])),
-			classById: new Map(classes.map((c) => [c.id, c])),
-		},
-	};
-}
-
 export async function restartUnissuedCartOp(
 	deps: RecoveryOpsDeps,
 	input: RestartUnissuedCartInput,
@@ -226,6 +136,7 @@ export async function restartUnissuedCartOp(
 	if (!record || record.customerId !== input.customerId) {
 		throw new AppError("Checkout recovery record not found.", 404);
 	}
+	assertMatchingFestivalFilter(record, input.festivalShortName);
 	const intent = deps.checkout.findIntentById
 		? await deps.checkout.findIntentById(input.organizationId, record.intentId)
 		: null;
@@ -236,6 +147,20 @@ export async function restartUnissuedCartOp(
 		record.intentId,
 		intent.lines ?? [],
 	);
+	const festival = await deps.catalog.findFestivalByShortName(
+		input.organizationId,
+		input.festivalShortName.trim(),
+	);
+	if (
+		!festival ||
+		snapshots.length !== intent.lines?.length ||
+		snapshots.length === 0 ||
+		snapshots.some(
+			(entry) => entry.registrationSnapshot.class.festivalId !== festival.id,
+		)
+	) {
+		throw new AppError("Checkout recovery record not found.", 404);
+	}
 	const restarted = await executions.restartUnissuedInvalidCart({
 		organizationId: input.organizationId,
 		customerId: input.customerId,
@@ -247,6 +172,34 @@ export async function restartUnissuedCartOp(
 			409,
 			"checkout_restart_unavailable",
 		);
+	}
+	const replacementIntentId = await executions.findReplacementIntentId({
+		...input,
+		replacementKey: restarted.replacementKey,
+	});
+	if (replacementIntentId && deps.checkout.findIntentById) {
+		const replacementIntent = await deps.checkout.findIntentById(
+			input.organizationId,
+			replacementIntentId,
+		);
+		const replacementExecution = await executions.get(
+			input.organizationId,
+			replacementIntentId,
+		);
+		if (
+			!replacementIntent ||
+			replacementIntent.customerId !== input.customerId ||
+			!replacementExecution
+		)
+			throw new AppError("Checkout restart is unavailable.", 409);
+		const registrations = await restoreReplacementSelections(
+			deps,
+			input,
+			replacementIntent,
+			replacementExecution,
+			{ snapshots, lookups },
+		);
+		return { replacementKey: restarted.replacementKey, registrations };
 	}
 	return {
 		replacementKey: restarted.replacementKey,

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
 	resolvedExecution,
 	rowToExecution,
@@ -8,6 +8,7 @@ import {
 import {
 	advisoryLockExecutionTx,
 	appendExecutionEventTx,
+	dbClockNowIso,
 	selectExecutionRow,
 } from "./checkout-execution-queries.js";
 import type {
@@ -107,10 +108,12 @@ async function evaluateRestartCandidateTx(
 	lock: boolean,
 ): Promise<{
 	createdAt: string;
+	idempotencyKey: string;
 	decision: { replacementKey: string } | "restartable";
 } | null> {
 	const rows = (await runner.unsafe(
 		`SELECT intent.status, intent.cart_reference, intent.created_at::text,
+			intent.expires_at::text, intent.idempotency_key,
 			EXISTS (
 				SELECT 1 FROM ${schema}.membership_validation_decisions decision
 				WHERE decision.organization_id = intent.organization_id
@@ -137,9 +140,17 @@ async function evaluateRestartCandidateTx(
 		cart_reference: string | null;
 		created_at: string;
 		payment_observed: boolean;
+		expires_at: string;
+		idempotency_key: string;
 	}>;
 	const intent = rows[0];
-	if (!intent || intent.cart_reference || intent.payment_observed) {
+	if (
+		!intent ||
+		intent.payment_observed ||
+		(value.checkpoint === "attached"
+			? !intent.cart_reference
+			: Boolean(intent.cart_reference))
+	) {
 		return null;
 	}
 	const eventRows = (await runner.unsafe(
@@ -153,8 +164,15 @@ async function evaluateRestartCandidateTx(
 		value,
 		intent.status,
 		eventRows.map(rowToExecutionEvent),
+		{ expiresAtIso: intent.expires_at, nowIso: await dbClockNowIso(runner) },
 	);
-	return decision ? { createdAt: intent.created_at, decision } : null;
+	return decision
+		? {
+				createdAt: intent.created_at,
+				idempotencyKey: intent.idempotency_key,
+				decision,
+			}
+		: null;
 }
 
 async function isReplacementIntentClosedQuery(
@@ -199,10 +217,7 @@ async function applyUnissuedRestartUpdatesTx(
 	input: RestartUnissuedInvalidCartInput,
 	exec: ClassCheckoutExecution,
 ): Promise<{ replacementKey: string }> {
-	const replacementKey = `restart_${createHash("sha256")
-		.update(`${input.organizationId}:${input.intentId}:${exec.generation}`)
-		.digest("hex")
-		.slice(0, 16)}`;
+	const replacementKey = randomUUID();
 	const nextGen = exec.generation + 1;
 	await tx.unsafe(
 		`UPDATE ${schema}.class_checkout_executions
@@ -210,10 +225,17 @@ async function applyUnissuedRestartUpdatesTx(
 			generation = $3,
 			lease_owner = NULL,
 			lease_expires_at = NULL,
-			result_code = 'checkout_restarted_unissued',
+			result_code = $4,
 			updated_at = clock_timestamp()
 		WHERE organization_id = $1 AND intent_id = $2`,
-		[input.organizationId, input.intentId, nextGen],
+		[
+			input.organizationId,
+			input.intentId,
+			nextGen,
+			exec.checkpoint === "attached"
+				? "checkout_restarted_expired"
+				: "checkout_restarted_unissued",
+		],
 	);
 	await tx.unsafe(
 		`UPDATE ${schema}.checkout_intents
@@ -257,6 +279,28 @@ export async function restartUnissuedInvalidCartTx(
 	if (exec.customerId !== input.customerId) return null;
 	const candidate = await evaluateRestartCandidateTx(tx, schema, exec, true);
 	if (!candidate) return null;
+	const snapshot = exec.requestSnapshot as { festivalShortName?: string };
+	if (
+		snapshot?.festivalShortName &&
+		(await hasNewerFestivalCheckoutQuery(
+			tx,
+			schema,
+			{ ...input, festivalShortName: snapshot.festivalShortName },
+			input.intentId,
+			candidate.createdAt,
+			candidate.decision === "restartable"
+				? ""
+				: candidate.decision.replacementKey,
+		))
+	)
+		return null;
+	if (
+		await isUnissuedCartReplacementBlockedQuery(tx, schema, {
+			...input,
+			replacementKey: candidate.idempotencyKey,
+		})
+	)
+		return null;
 	if (candidate.decision !== "restartable") {
 		const closed = await isReplacementIntentClosedQuery(
 			tx,
@@ -299,7 +343,7 @@ async function queryRestartCandidateExecutions(
 						AND lower(festival.short_name) = lower($3)
 				)
 			)
-		ORDER BY (i.status = 'creating') DESC, i.created_at DESC, i.id`,
+		ORDER BY i.created_at DESC, i.id`,
 		[input.organizationId, input.customerId, input.festivalShortName],
 	)) as Record<string, unknown>[];
 }
@@ -365,7 +409,14 @@ export async function findUnissuedInvalidCartRestartQuery(
 			value,
 			false,
 		);
-		if (!candidate) continue;
+		if (
+			!candidate ||
+			(await isUnissuedCartReplacementBlockedQuery(runner, schema, {
+				...input,
+				replacementKey: candidate.idempotencyKey,
+			}))
+		)
+			continue;
 		if (candidate.decision === "restartable") return value;
 		if (
 			await isReplacementIntentClosedQuery(
@@ -398,28 +449,34 @@ export async function isUnissuedCartReplacementBlockedQuery(
 	schema: string,
 	input: UnissuedCartReplacementInput,
 ): Promise<boolean> {
-	const rows = (await runner.unsafe(
-		`SELECT e.*, e.lease_expires_at::text, e.recovery_recorded_at::text,
-			e.created_at::text, e.updated_at::text
-		FROM ${schema}.class_checkout_execution_events ev
-		JOIN ${schema}.class_checkout_executions e
-			ON e.intent_id = ev.intent_id AND e.organization_id = ev.organization_id
-		WHERE ev.id = $1
-			AND ev.event_type = 'customer_restarted_unissued'
-			AND e.organization_id = $2
-			AND e.customer_id = $3`,
-		[input.replacementKey, input.organizationId, input.customerId],
-	)) as Record<string, unknown>[];
-	if (!rows[0]) return false;
-	const candidate = await evaluateRestartCandidateTx(
-		runner,
-		schema,
-		rowToExecution(rows[0]),
-		false,
-	);
-	return (
-		!candidate ||
-		candidate.decision === "restartable" ||
-		candidate.decision.replacementKey !== input.replacementKey
-	);
+	let key = input.replacementKey;
+	const visited = new Set<string>();
+	while (!visited.has(key)) {
+		visited.add(key);
+		const rows = (await runner.unsafe(
+			`SELECT e.*, e.lease_expires_at::text, e.recovery_recorded_at::text,
+				e.created_at::text, e.updated_at::text
+			FROM ${schema}.class_checkout_execution_events ev
+			JOIN ${schema}.class_checkout_executions e
+				ON e.intent_id = ev.intent_id AND e.organization_id = ev.organization_id
+			WHERE ev.id = $1 AND ev.event_type = 'customer_restarted_unissued'
+				AND e.organization_id = $2 AND e.customer_id = $3`,
+			[key, input.organizationId, input.customerId],
+		)) as Record<string, unknown>[];
+		if (!rows[0]) return false;
+		const candidate = await evaluateRestartCandidateTx(
+			runner,
+			schema,
+			rowToExecution(rows[0]),
+			false,
+		);
+		if (
+			!candidate ||
+			candidate.decision === "restartable" ||
+			candidate.decision.replacementKey !== key
+		)
+			return true;
+		key = candidate.idempotencyKey;
+	}
+	return true;
 }

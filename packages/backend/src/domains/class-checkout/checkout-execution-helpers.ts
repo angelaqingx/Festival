@@ -105,18 +105,40 @@ export function unissuedInvalidCartRestartDecision(
 	value: ClassCheckoutExecution,
 	intentStatus: string,
 	events: readonly ClassCheckoutExecutionEvent[],
+	timing?: { expiresAtIso: string; nowIso: string },
 ): { replacementKey: string } | "restartable" | null {
-	if (!hasUnissuedInvalidCartEvidence(value, events)) return null;
+	if (
+		events.some(
+			(event) =>
+				event.eventType === "paid_order_observed" ||
+				Boolean(event.evidence.shopifyOrderGid),
+		)
+	)
+		return null;
 	if (
 		intentStatus === "superseded" &&
 		value.state === "rejected" &&
-		value.resultCode === "checkout_restarted_unissued"
+		["checkout_restarted_unissued", "checkout_restarted_expired"].includes(
+			value.resultCode ?? "",
+		)
 	) {
 		const restart = events.find(
 			(event) => event.eventType === "customer_restarted_unissued",
 		);
 		return restart ? { replacementKey: restart.id } : null;
 	}
+	if (
+		value.checkpoint === "attached" &&
+		Boolean(value.shopifyCartId) &&
+		["ready", "checkout_started"].includes(intentStatus) &&
+		(["ready", "retryable", "completed"].includes(value.state) ||
+			(value.state === "recovery_required" &&
+				value.resultCode === "checkout_expired")) &&
+		timing &&
+		Date.parse(timing.expiresAtIso) <= Date.parse(timing.nowIso)
+	)
+		return "restartable";
+	if (!hasUnissuedInvalidCartEvidence(value, events)) return null;
 	return intentStatus === "creating" &&
 		["running", "retryable", "recovery_required"].includes(value.state)
 		? "restartable"

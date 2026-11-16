@@ -60,7 +60,10 @@ export class ClassCheckoutRecoveryRequiredError extends AppError {
 			...(legacyInvalidCart
 				? {
 						status: "recovery_required",
-						reasonCode: "checkout_legacy_invalid_cart",
+						reasonCode:
+							record.checkpoint === "attached"
+								? "checkout_expired"
+								: "checkout_legacy_invalid_cart",
 						retryAllowed: false,
 						restartAllowed: legacyInvalidCart.restartAllowed,
 					}

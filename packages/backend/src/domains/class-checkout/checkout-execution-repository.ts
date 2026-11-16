@@ -219,6 +219,20 @@ export class PostgresClassCheckoutExecutionRepository
 		return findUnissuedInvalidCartRestartQuery(sql, this.schema, input);
 	}
 
+	async findReplacementIntentId(
+		input: UnissuedCartReplacementInput,
+	): Promise<string | null> {
+		const rows = await sql.unsafe(
+			`SELECT intent.id FROM ${this.schema}.checkout_intents intent
+			JOIN ${this.schema}.class_checkout_execution_events event ON event.id=intent.idempotency_key AND event.organization_id=intent.organization_id
+			JOIN ${this.schema}.class_checkout_executions source ON source.intent_id=event.intent_id AND source.organization_id=event.organization_id
+			WHERE intent.organization_id=$1 AND intent.customer_id=$2 AND intent.idempotency_key=$3
+				AND intent.intent_type='class_entry' AND event.event_type='customer_restarted_unissued' AND source.customer_id=$2`,
+			[input.organizationId, input.customerId, input.replacementKey],
+		);
+		return (rows[0]?.id as string | undefined) ?? null;
+	}
+
 	async isUnissuedCartReplacementBlocked(
 		input: UnissuedCartReplacementInput,
 	): Promise<boolean> {
