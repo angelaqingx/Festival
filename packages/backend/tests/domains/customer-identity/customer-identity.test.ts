@@ -203,6 +203,9 @@ describe("domains/customer-identity", () => {
 			{
 				integrations: {
 					ensureReady: async () => {},
+					recordIntegrationHealth: async () => {
+						throw new Error("unused");
+					},
 					getIntegration: async () => stored,
 					upsertIntegration: async (input) => {
 						const created: CustomerAccountIntegrationRecord = {

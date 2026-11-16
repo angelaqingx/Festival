@@ -305,6 +305,15 @@ export interface MembershipListingsPort {
 }
 
 export interface ClassCheckoutStorefrontPort {
+	updateBuyerIdentity?(input: {
+		organizationId: string;
+		shopifyCartId: string;
+		buyerAccessToken: string;
+		expectedStorefrontBinding: {
+			shopDomain: string;
+			integrationVersion: number;
+		};
+	}): Promise<void>;
 	inspectCart?(input: {
 		organizationId: string;
 		shopifyCartId: string;
@@ -318,6 +327,7 @@ export interface ClassCheckoutStorefrontPort {
 		customerGid?: string | null;
 		checkoutUrl?: string;
 		buyerIdentityPresent?: boolean;
+		estimatedTotal?: { amount: string; currencyCode: string };
 		lines: Array<{
 			intentLineId?: string | null;
 			variantGid: string;

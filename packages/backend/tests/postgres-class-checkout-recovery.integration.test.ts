@@ -841,73 +841,163 @@ async function expiredAttachedFixture() {
 	return f;
 }
 
+for (const status of ["rejected", "needs_review", "superseded"] as const) {
+	postgresTest(
+		`issued ${status} checkout remains a tenant-scoped candidate and blocks a fresh class intent`,
+		async () => {
+			const f = await expiredAttachedFixture();
+			await sql.unsafe(
+				`UPDATE ${f.schema}.checkout_intents SET status=$1 WHERE id='intent'`,
+				[status],
+			);
+			const before = await f.repository.events("org", "intent");
+			const pending = await f.checkout.listPendingClassCheckouts(
+				"org",
+				"customer",
+			);
+			expect(pending.complete).toBe(true);
+			expect(pending.candidates).toHaveLength(1);
+			expect(pending.candidates[0].intent.status).toBe(status);
+			expect(
+				(await f.checkout.listPendingClassCheckouts("other", "customer"))
+					.candidates,
+			).toHaveLength(0);
+			expect(
+				(await f.checkout.listPendingClassCheckouts("org", "other")).candidates,
+			).toHaveLength(0);
+			expect(
+				await f.checkout.hasProcessingIntent(
+					"org",
+					"customer",
+					new Date().toISOString(),
+				),
+			).toBe(true);
+			expect(
+				await f.checkout.createIntent({
+					organizationId: "org",
+					customerId: "customer",
+					sessionId: "fresh-session",
+					idempotencyKey: "fresh-key",
+					intentType: "class_entry",
+					shopifyProductGid: "product",
+					shopifyVariantGid: "variant",
+					amount: "50.00",
+					currencyCode: "USD",
+					expiresAtIso: new Date(Date.now() + 3600000).toISOString(),
+				}),
+			).toEqual({ kind: "in_progress" });
+			expect(await f.repository.events("org", "intent")).toEqual(before);
+		},
+	);
+}
+
 postgresTest(
-	"expired attached customer restart preserves original history and converges concurrent requests",
+	"pending discovery excludes approved purchases and safe predispatch expiry without writes",
+	async () => {
+		const f = await fixture();
+		expect(
+			(await f.checkout.listPendingClassCheckouts("org", "customer"))
+				.candidates,
+		).toHaveLength(1);
+		await sql.unsafe(
+			`UPDATE ${f.schema}.checkout_intents SET expires_at=NOW()-INTERVAL '1 minute' WHERE id='intent'`,
+		);
+		const before = await f.repository.get("org", "intent");
+		expect(
+			(await f.checkout.listPendingClassCheckouts("org", "customer"))
+				.candidates,
+		).toHaveLength(0);
+		expect(await f.repository.get("org", "intent")).toEqual(before);
+		await sql.unsafe(
+			`UPDATE ${f.schema}.checkout_intents SET status='approved' WHERE id='intent'`,
+		);
+		expect(
+			(await f.checkout.listPendingClassCheckouts("org", "customer"))
+				.candidates,
+		).toHaveLength(0);
+	},
+);
+
+postgresTest(
+	"pending discovery signals incomplete candidate lists rather than silently choosing the newest checkout",
+	async () => {
+		const f = await fixture();
+		await sql.unsafe(
+			`UPDATE ${f.schema}.checkout_intents SET status='failed' WHERE id='intent'`,
+		);
+		for (let index = 0; index < 21; index++) {
+			const id = `historical-${index}`;
+			await sql.unsafe(
+				`INSERT INTO ${f.schema}.checkout_carts (reference,shopify_cart_id,organization_id,customer_id,session_id,integration_version,status,expires_at) VALUES ($1,$2,'org','customer','old',1,'expired',NOW()-INTERVAL '1 hour')`,
+				[id, `${id}-remote`],
+			);
+			await sql.unsafe(
+				`INSERT INTO ${f.schema}.checkout_intents (id,correlation_id,organization_id,customer_id,session_id,idempotency_key,intent_type,shopify_product_gid,shopify_variant_gid,amount,currency_code,cart_reference,status,expires_at) VALUES ($1,$2,'org','customer','old',$1,'class_entry','product','variant','50','USD',$1,'expired',NOW()-INTERVAL '1 hour')`,
+				[id, `${id}-correlation`],
+			);
+		}
+		const pending = await f.checkout.listPendingClassCheckouts(
+			"org",
+			"customer",
+		);
+		expect(pending.complete).toBe(false);
+		expect(pending.candidates).toHaveLength(20);
+	},
+);
+
+postgresTest(
+	"expired attached checkout stays discoverable and concurrent restart cannot supersede it",
 	async () => {
 		const f = await expiredAttachedFixture();
 		const before = required(await f.repository.get("org", "intent"));
+		const eventsBefore = await f.repository.events("org", "intent");
 		const intentBefore = (
 			await sql.unsafe(
-				`SELECT created_at::text,expires_at::text FROM ${f.schema}.checkout_intents WHERE id='intent'`,
+				`SELECT status,created_at::text,expires_at::text FROM ${f.schema}.checkout_intents WHERE id='intent'`,
 			)
 		)[0];
-		const eventsBefore = await f.repository.events("org", "intent");
-		const discovery = { ...f.input, festivalShortName: "fest" };
 		expect(
-			await f.repository.findUnissuedInvalidCartRestart(discovery),
-		).toEqual(before);
+			await f.repository.findUnissuedInvalidCartRestart({
+				...f.input,
+				festivalShortName: "fest",
+			}),
+		).toBeNull();
+		expect(
+			await Promise.all([
+				f.repository.restartUnissuedInvalidCart(f.input),
+				f.repository.restartUnissuedInvalidCart(f.input),
+			]),
+		).toEqual([null, null]);
 		expect(await f.repository.get("org", "intent")).toEqual(before);
-		const [one, two] = await Promise.all([
-			f.repository.restartUnissuedInvalidCart(f.input),
-			f.repository.restartUnissuedInvalidCart(f.input),
-		]);
-		expect(one).toEqual(two);
-		expect(required(one).replacementKey).toMatch(/^[0-9a-f-]{36}$/);
-		expect(await f.repository.get("org", "intent")).toMatchObject({
-			createdAtIso: before.createdAtIso,
-			recoveryRecordedAtIso: null,
-			resultCode: "checkout_restarted_expired",
-			state: "rejected",
-		});
+		expect(await f.repository.events("org", "intent")).toEqual(eventsBefore);
 		expect(
 			(
 				await sql.unsafe(
-					`SELECT created_at::text,expires_at::text FROM ${f.schema}.checkout_intents WHERE id='intent'`,
+					`SELECT status,created_at::text,expires_at::text FROM ${f.schema}.checkout_intents WHERE id='intent'`,
 				)
 			)[0],
 		).toEqual(intentBefore);
-		const eventsAfter = await f.repository.events("org", "intent");
-		expect(eventsAfter.slice(0, eventsBefore.length)).toEqual(eventsBefore);
-		expect(eventsAfter.slice(eventsBefore.length)).toMatchObject([
-			{
-				id: required(one).replacementKey,
-				eventType: "customer_restarted_unissued",
-				evidence: { actorId: "customer" },
-			},
-		]);
+		const candidates = await f.checkout.listPendingClassCheckouts(
+			"org",
+			"customer",
+		);
+		expect(candidates.complete).toBe(true);
+		expect(candidates.candidates).toHaveLength(1);
+		expect(candidates.candidates[0].execution?.recoveryReference).toBe(
+			before.recoveryReference,
+		);
 		expect(
-			await f.repository.restartUnissuedInvalidCart({
-				...f.input,
-				customerId: "other",
-			}),
-		).toBeNull();
-		expect(
-			await f.repository.findUnissuedInvalidCartRestart({
-				...discovery,
-				festivalShortName: "other",
-			}),
-		).toBeNull();
+			await f.checkout.hasProcessingIntent(
+				"org",
+				"customer",
+				new Date().toISOString(),
+			),
+		).toBe(true);
 		await f.repository.observePayment({
 			...f.input,
-			shopifyOrderGid: "late-order",
+			shopifyOrderGid: "partial-order",
 			approved: false,
 		});
-		expect(
-			await f.repository.isUnissuedCartReplacementBlocked({
-				...f.input,
-				replacementKey: required(one).replacementKey,
-			}),
-		).toBe(true);
 		expect(await f.repository.restartUnissuedInvalidCart(f.input)).toBeNull();
 	},
 );

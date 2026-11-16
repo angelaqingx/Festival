@@ -163,6 +163,15 @@ export function createInMemoryClassExecutionsRepo(
 				? (getStore().intents.get(intentId)?.expiresAtIso ?? null)
 				: null,
 		buildInMemoryRestartLookup(lazyStore),
+		(org, intentId) => {
+			const intent = getStore().intents.get(intentId);
+			return (
+				!!intent &&
+				intent.organizationId === org &&
+				intent.status !== "approved" &&
+				(Boolean(intent.cartReference) || intent.status === "needs_review")
+			);
+		},
 	);
 }
 
@@ -294,7 +303,15 @@ export async function hasInMemoryProcessingIntent(
 ): Promise<boolean> {
 	if (
 		intentType === "class_entry" &&
-		(await store.classExecutions.findBlocking(organizationId, customerId))
+		([...store.intents.values()].some(
+			(intent) =>
+				intent.organizationId === organizationId &&
+				intent.customerId === customerId &&
+				intent.intentType === "class_entry" &&
+				intent.status !== "approved" &&
+				!!intent.cartReference,
+		) ||
+			(await store.classExecutions.findBlocking(organizationId, customerId)))
 	) {
 		return true;
 	}

@@ -212,6 +212,16 @@ export async function createIntentTx(
 	const intentType = input.intentType ?? "membership";
 	if (
 		intentType === "class_entry" &&
+		(await hasUnresolvedIssuedClassIntentQuery(
+			tx,
+			schema,
+			input.organizationId,
+			input.customerId,
+		))
+	)
+		return { kind: "in_progress" };
+	if (
+		intentType === "class_entry" &&
 		(await findBlockingRowTx(
 			tx,
 			schema,
@@ -458,3 +468,19 @@ export async function queryReplayState(
 }
 
 export { INTENT_COLUMNS };
+
+export async function hasUnresolvedIssuedClassIntentQuery(
+	runner: SqlRunner,
+	schema: string,
+	organizationId: string,
+	customerId: string,
+): Promise<boolean> {
+	const rows = (await runner.unsafe(
+		`SELECT 1 FROM ${schema}.checkout_intents
+		WHERE organization_id = $1 AND customer_id = $2
+			AND intent_type = 'class_entry' AND status <> 'approved'
+			AND cart_reference IS NOT NULL LIMIT 1`,
+		[organizationId, customerId],
+	)) as unknown[];
+	return rows.length > 0;
+}

@@ -11,14 +11,26 @@ import {
 } from "solid-js";
 import { useFestivalShell } from "../../app/FestivalShellContext.js";
 import type { FestivalAppController } from "../../app/useFestivalAppController.js";
-import { getCustomerSession } from "../../lib/api.js";
+import {
+	getCustomerSession,
+	getPendingClassCheckout,
+	resumePendingClassCheckout,
+} from "../../lib/api.js";
 import { isOrganizationPageRoute } from "../../lib/routes.js";
+import {
+	createPendingCheckoutState,
+	type PendingCheckoutDependencies,
+} from "./pending-checkout-state.js";
 
 export type CustomerSession = CustomerSessionResponse["session"];
 
 export function createCustomerIdentityState(
 	shell: Pick<FestivalAppController, "route" | "parentRegistration">,
 	fetchSession = getCustomerSession,
+	pendingDependencies: PendingCheckoutDependencies = {
+		read: getPendingClassCheckout,
+		resume: resumePendingClassCheckout,
+	},
 ) {
 	const unauthenticated: CustomerSession = { authenticated: false };
 	const [customerSession, setCustomerSession] =
@@ -27,6 +39,7 @@ export function createCustomerIdentityState(
 		createSignal(false);
 	let latestRequest = 0;
 	let disposed = false;
+	const pendingCheckout = createPendingCheckoutState(pendingDependencies);
 
 	async function refreshCustomerSession(
 		slugOverride?: string,
@@ -43,6 +56,7 @@ export function createCustomerIdentityState(
 		const request = ++latestRequest;
 		if (!targetSlug) {
 			batch(() => {
+				pendingCheckout.clear(true);
 				setCustomerSession(unauthenticated);
 				setIsCustomerSessionLoading(false);
 			});
@@ -58,14 +72,22 @@ export function createCustomerIdentityState(
 			batch(() => {
 				if (session.authenticated) {
 					shell.parentRegistration.bindSession(targetSlug, session.csrfToken);
+					pendingCheckout.bindOwner(targetSlug, session.csrfToken);
+					void pendingCheckout.refresh();
 				} else {
 					shell.parentRegistration.clear(targetSlug);
+					pendingCheckout.clearOrganization(targetSlug);
 				}
 				setCustomerSession(session);
 			});
 			return session;
 		} catch {
-			if (isCurrentRequest()) setCustomerSession(unauthenticated);
+			if (isCurrentRequest()) {
+				batch(() => {
+					pendingCheckout.clear(true);
+					setCustomerSession(unauthenticated);
+				});
+			}
 			return unauthenticated;
 		} finally {
 			if (isCurrentRequest()) setIsCustomerSessionLoading(false);
@@ -75,19 +97,52 @@ export function createCustomerIdentityState(
 	createEffect(
 		on(shell.route, () => {
 			batch(() => {
+				const route = shell.route();
+				const slug =
+					isOrganizationPageRoute(route) && "slug" in route ? route.slug : null;
+				if (pendingCheckout.ownerSlug() !== slug) pendingCheckout.clear(true);
 				setCustomerSession(unauthenticated);
 				void refreshCustomerSession();
 			});
 		}),
 	);
+	let returnRefresh: Promise<unknown> | null = null;
+	const refreshOnReturn = () => {
+		if (
+			disposed ||
+			(typeof document !== "undefined" && document.visibilityState === "hidden")
+		)
+			return;
+		if (!returnRefresh) {
+			returnRefresh = refreshCustomerSession().finally(() => {
+				returnRefresh = null;
+			});
+		}
+	};
+	if (typeof window !== "undefined") {
+		window.addEventListener("pageshow", refreshOnReturn);
+		window.addEventListener("focus", refreshOnReturn);
+	}
+	if (typeof document !== "undefined") {
+		document.addEventListener("visibilitychange", refreshOnReturn);
+	}
 	onCleanup(() => {
 		disposed = true;
+		pendingCheckout.clear();
+		if (typeof window !== "undefined") {
+			window.removeEventListener("pageshow", refreshOnReturn);
+			window.removeEventListener("focus", refreshOnReturn);
+		}
+		if (typeof document !== "undefined") {
+			document.removeEventListener("visibilitychange", refreshOnReturn);
+		}
 	});
 
 	return {
 		customerSession,
 		isCustomerSessionLoading,
 		refreshCustomerSession,
+		pendingCheckout,
 	};
 }
 

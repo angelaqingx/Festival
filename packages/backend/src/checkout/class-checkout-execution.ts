@@ -63,6 +63,10 @@ export class InMemoryClassCheckoutExecutionRepository
 			intentId: string,
 		) => string | null = () => null,
 		private readonly restartLookup?: InMemoryClassCheckoutRestartLookup,
+		private readonly hasUnresolvedIssuedOutcome: (
+			organizationId: string,
+			intentId: string,
+		) => boolean = () => false,
 	) {}
 
 	private store(): InMemoryExecutionStore {
@@ -82,6 +86,11 @@ export class InMemoryClassCheckoutExecutionRepository
 	}
 
 	private blocks(value: ClassCheckoutExecution): boolean {
+		if (
+			this.hasUnresolvedIssuedOutcome(value.organizationId, value.intentId) &&
+			value.checkpoint !== "prepared"
+		)
+			return true;
 		return shouldExecutionBlock(
 			{
 				isTerminal: this.isTerminal,

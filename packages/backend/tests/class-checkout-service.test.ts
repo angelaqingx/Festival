@@ -433,7 +433,7 @@ function wireStorefrontClient(f: Awaited<ReturnType<typeof createFixture>>) {
 	};
 }
 
-async function expiredTwoLineCheckout() {
+async function twoLineSubmission() {
 	const f = await createFixture();
 	const subtype = await f.organizations.createRegistrationCatalogValue({
 		organizationId: f.organization.id,
@@ -465,7 +465,12 @@ async function expiredTwoLineCheckout() {
 			pieces: f.defaultPieces,
 		})),
 	};
-	const first = await f.service.start(submission);
+	return { ...f, submission };
+}
+
+async function expiredTwoLineCheckout() {
+	const f = await twoLineSubmission();
+	const first = await f.service.start(f.submission);
 	const source = required(
 		await f.checkout.classExecutions.get(f.organization.id, first.intentId),
 	);
@@ -477,70 +482,118 @@ async function expiredTwoLineCheckout() {
 	const recovery = {
 		organizationId: f.organization.id,
 		customerId: f.customer.id,
-		festivalShortName: submission.festivalShortName,
+		festivalShortName: f.submission.festivalShortName,
 		recoveryReference: source.recoveryReference,
 	};
-	return { ...f, submission, first, source, history, recovery };
+	return { ...f, first, source, history, recovery };
+}
+
+async function strandUnissuedAttempt(
+	f: Awaited<ReturnType<typeof createFixture>>,
+	submission: StartClassCheckoutInput,
+) {
+	const create = spyOn(f.storefront, "createCart").mockRejectedValueOnce(
+		new ClassCheckoutCartObservationError("gid://shopify/Cart/legacy-invalid"),
+	);
+	const executions = f.checkout.classExecutions;
+	const transition = executions.transition.bind(executions);
+	const legacyWrite = spyOn(executions, "transition").mockImplementation(
+		async (input) => {
+			if (input.eventType === "create_dispatched")
+				return transition({ ...input, storefrontBinding: undefined });
+			if (input.eventType === "invalid_remote_cart_observed") {
+				await transition({
+					claim: input.claim,
+					checkpoint: input.checkpoint,
+					shopifyCartId: input.shopifyCartId,
+					eventType: input.eventType,
+				});
+				throw new Error(
+					"Legacy worker interrupted before separate recovery write",
+				);
+			}
+			return transition(input);
+		},
+	);
+	await expect(f.service.start(submission)).rejects.toMatchObject({
+		code: "checkout_persistence_unavailable",
+	});
+	legacyWrite.mockRestore();
+	create.mockRestore();
+	f.now.setTime(f.now.getTime() + 31_000);
+	const intent = required(await f.checkout.findIntentByKey(submission));
+	return { intentId: intent.id, intent };
+}
+
+async function unissuedTwoLineCheckout() {
+	const f = await twoLineSubmission();
+	const first = await strandUnissuedAttempt(f, f.submission);
+	const source = required(
+		await f.checkout.classExecutions.get(f.organization.id, first.intentId),
+	);
+	const history = await f.checkout.classExecutions.events(
+		f.organization.id,
+		first.intentId,
+	);
+	const recovery = {
+		organizationId: f.organization.id,
+		customerId: f.customer.id,
+		festivalShortName: f.submission.festivalShortName,
+		recoveryReference: source.recoveryReference,
+	};
+	return { ...f, first, source, history, recovery };
 }
 
 describe("ClassCheckoutService", () => {
-	it("discovers and concurrently restarts an expired two-line checkout without rewriting its history", async () => {
+	it("preserves an expired issued two-line checkout and refuses concurrent replacement", async () => {
 		const f = await expiredTwoLineCheckout();
 		expect(await f.service.findUnissuedCartRestart(f.recovery)).toEqual({
-			recoveryReference: f.source.recoveryReference,
+			recoveryReference: null,
 		});
+		const results = await Promise.allSettled([
+			f.service.restartUnissuedCart(f.recovery),
+			f.service.restartUnissuedCart(f.recovery),
+		]);
+		for (const result of results) {
+			expect(result.status).toBe("rejected");
+			if (result.status === "rejected")
+				expect(result.reason).toMatchObject({
+					code: "checkout_restart_unavailable",
+				});
+		}
 		expect(
 			await f.checkout.classExecutions.get(f.organization.id, f.first.intentId),
 		).toEqual(f.source);
-		const [one, two] = await Promise.all([
-			f.service.restartUnissuedCart(f.recovery),
-			f.service.restartUnissuedCart(f.recovery),
-		]);
-		expect(one).toEqual(two);
-		expect(one.replacementKey).toMatch(/^[0-9a-f-]{36}$/);
-		expect(one.registrations).toHaveLength(2);
-		const after = required(
-			await f.checkout.classExecutions.get(f.organization.id, f.first.intentId),
-		);
-		expect(after).toMatchObject({
-			createdAtIso: f.source.createdAtIso,
-			recoveryRecordedAtIso: null,
-			resultCode: "checkout_restarted_expired",
-			state: "rejected",
-		});
-		const history = await f.checkout.classExecutions.events(
-			f.organization.id,
-			f.first.intentId,
-		);
-		expect(history.slice(0, f.history.length)).toEqual(f.history);
-		expect(history.slice(f.history.length)).toMatchObject([
-			{ id: one.replacementKey, eventType: "customer_restarted_unissued" },
-		]);
+		expect(
+			await f.checkout.classExecutions.events(
+				f.organization.id,
+				f.first.intentId,
+			),
+		).toEqual(f.history);
 		expect(await f.checkout.findIntentByKey(f.submission)).toMatchObject({
-			createdAtIso: f.first.intent?.createdAtIso,
-			expiresAtIso: f.first.intent?.expiresAtIso,
-			status: "superseded",
+			status: "checkout_started",
 		});
-		const replacement = await f.service.start({
-			...f.submission,
-			idempotencyKey: one.replacementKey,
-		});
-		expect(replacement.intentId).not.toBe(f.first.intentId);
-		expect(replacement.intent?.lines).toHaveLength(2);
 	});
 
-	it("keeps an audited expiry restart discoverable after a lost restart response and status refresh", async () => {
+	it("keeps expiry as unresolved recovery without advertising restart before or after status refresh", async () => {
 		const f = await expiredTwoLineCheckout();
-		const first = await f.service.restartUnissuedCart(f.recovery);
-		expect(
-			await f.service.recoveryStatus({
-				...f.recovery,
-				sessionId: f.submission.sessionId,
-				idempotencyKey: f.submission.idempotencyKey,
-			}),
-		).toMatchObject({ reasonCode: "checkout_expired", restartAllowed: true });
-		const replay = await f.service.restartUnissuedCart(f.recovery);
-		expect(replay).toEqual(first);
+		const status = await f.service.recoveryStatus({
+			...f.recovery,
+			sessionId: f.submission.sessionId,
+			idempotencyKey: f.submission.idempotencyKey,
+		});
+		expect(status).toMatchObject({
+			status: "recovery_required",
+			reasonCode: "checkout_expired",
+			retryAllowed: false,
+		});
+		expect(status.restartAllowed).not.toBe(true);
+		expect(await f.service.findUnissuedCartRestart(f.recovery)).toEqual({
+			recoveryReference: null,
+		});
+		await expect(
+			f.service.restartUnissuedCart(f.recovery),
+		).rejects.toMatchObject({ code: "checkout_restart_unavailable" });
 		expect(
 			(
 				await f.checkout.classExecutions.events(
@@ -548,58 +601,28 @@ describe("ClassCheckoutService", () => {
 					f.first.intentId,
 				)
 			).filter((event) => event.eventType === "customer_restarted_unissued"),
-		).toHaveLength(1);
-		await f.checkout.classExecutions.observePayment({
-			...f.recovery,
-			intentId: f.first.intentId,
-			shopifyOrderGid: "late",
-			approved: false,
-		});
-		expect(
-			(
-				await f.service.recoveryStatus({
-					...f.recovery,
-					sessionId: f.submission.sessionId,
-					idempotencyKey: f.submission.idempotencyKey,
-				})
-			).restartAllowed,
-		).not.toBe(true);
+		).toHaveLength(0);
 	});
 
-	it("exposes expiry restart in status and preflight but rejects wrong owner, festival, and observed payment", async () => {
+	it("rejects expired issued-cart restart for every owner/festival and preserves observed payment", async () => {
 		const f = await expiredTwoLineCheckout();
-		await expect(
-			f.service.restartUnissuedCart({ ...f.recovery, customerId: "other" }),
-		).rejects.toMatchObject({ status: 404 });
-		await expect(
-			f.service.restartUnissuedCart({ ...f.recovery, organizationId: "other" }),
-		).rejects.toMatchObject({ status: 404 });
-		await expect(
-			f.service.restartUnissuedCart({
-				...f.recovery,
-				festivalShortName: "other",
-			}),
-		).rejects.toMatchObject({ status: 404 });
+		for (const input of [
+			{ ...f.recovery, customerId: "other" },
+			{ ...f.recovery, organizationId: "other" },
+			{ ...f.recovery, festivalShortName: "other" },
+		]) {
+			await expect(f.service.restartUnissuedCart(input)).rejects.toMatchObject({
+				status: 404,
+			});
+		}
 		await expect(
 			f.service.preflightRecovery(f.submission),
-		).rejects.toMatchObject({
-			recovery: { reasonCode: "checkout_expired", restartAllowed: true },
-		});
-		expect(
-			await f.service.recoveryStatus({
-				...f.recovery,
-				sessionId: f.submission.sessionId,
-				idempotencyKey: f.submission.idempotencyKey,
-			}),
-		).toMatchObject({ restartAllowed: true });
+		).rejects.toMatchObject({ recovery: { reasonCode: "checkout_expired" } });
 		await f.checkout.classExecutions.observePayment({
 			...f.recovery,
 			intentId: f.first.intentId,
 			shopifyOrderGid: "paid",
 			approved: false,
-		});
-		expect(await f.service.findUnissuedCartRestart(f.recovery)).toEqual({
-			recoveryReference: null,
 		});
 		await expect(
 			f.service.restartUnissuedCart(f.recovery),
@@ -607,7 +630,7 @@ describe("ClassCheckoutService", () => {
 	});
 
 	it("restores canonical edited replacement snapshots after reload and resumes one intent across renewed owner sessions", async () => {
-		const f = await expiredTwoLineCheckout();
+		const f = await unissuedTwoLineCheckout();
 		const { replacementKey } = await f.service.restartUnissuedCart(f.recovery);
 		const edited = {
 			...f.submission,
@@ -650,7 +673,7 @@ describe("ClassCheckoutService", () => {
 	});
 
 	it("restores all frozen replacement selections in order even after partial metadata persistence", async () => {
-		const f = await expiredTwoLineCheckout();
+		const f = await unissuedTwoLineCheckout();
 		const { replacementKey } = await f.service.restartUnissuedCart(f.recovery);
 		const edited = {
 			...f.submission,
@@ -682,7 +705,7 @@ describe("ClassCheckoutService", () => {
 
 	it("withholds status and replay links when late source payment arrives during Shopify lookup", async () => {
 		for (const entry of ["status", "replay"] as const) {
-			const f = await expiredTwoLineCheckout();
+			const f = await unissuedTwoLineCheckout();
 			const { replacementKey } = await f.service.restartUnissuedCart(
 				f.recovery,
 			);
@@ -719,14 +742,13 @@ describe("ClassCheckoutService", () => {
 	});
 
 	for (const lateDuringHandoff of [false, true]) {
-		it(`fences late ancestor payment across repeated expired replacements (${lateDuringHandoff ? "during" : "before"} handoff)`, async () => {
-			const f = await expiredTwoLineCheckout();
+		it(`fences late ancestor payment across repeated never-issued legacy replacements (${lateDuringHandoff ? "during" : "before"} handoff)`, async () => {
+			const f = await unissuedTwoLineCheckout();
 			const firstRestart = await f.service.restartUnissuedCart(f.recovery);
-			const firstReplacement = await f.service.start({
+			const firstReplacement = await strandUnissuedAttempt(f, {
 				...f.submission,
 				idempotencyKey: firstRestart.replacementKey,
 			});
-			f.now.setTime(f.now.getTime() + 31 * 60_000);
 			const nextSource = required(
 				await f.checkout.classExecutions.get(
 					f.organization.id,
@@ -1990,7 +2012,7 @@ describe("ClassCheckoutService", () => {
 		).toHaveLength(1);
 	});
 
-	it("allows both classes to be checked out again after the office closes an expired attached cart", async () => {
+	it("keeps new registration blocked when an office closure only supersedes an issued cart locally", async () => {
 		const f = await createFixture();
 		const festival = required(f.festival);
 		const concertoSubtype =
@@ -2075,17 +2097,23 @@ describe("ClassCheckoutService", () => {
 			code: "checkout_abandoned",
 			recovery: closed,
 		});
-		const replacement = await f.service.start({
-			...input,
-			idempotencyKey: "replacement-after-office-closure",
+		await expect(
+			f.service.start({
+				...input,
+				idempotencyKey: "replacement-after-office-closure",
+			}),
+		).rejects.toMatchObject({
+			status: 409,
+			code: "checkout_previous_operation_pending",
 		});
-		expect(replacement.intentId).not.toBe(original.intentId);
-		expect(replacement.checkoutUrl).toBe(
-			`https://${f.storeDomain}/checkouts/c123`,
-		);
 		expect(
-			replacement.intent?.lines?.map((line) => line.festivalClassId),
-		).toEqual([f.classConfig.id, concerto.id]);
+			(
+				await f.checkout.listPendingClassCheckouts(
+					f.organization.id,
+					f.customer.id,
+				)
+			).candidates,
+		).toHaveLength(1);
 	});
 
 	it("routes a checkout blocked by an expired cart to its festival, while approved operations do not block", async () => {
@@ -3374,7 +3402,7 @@ describe("ClassCheckoutService", () => {
 			}),
 		).rejects.toMatchObject({
 			status: 409,
-			code: "checkout_in_progress",
+			code: "checkout_previous_operation_pending",
 		});
 	});
 

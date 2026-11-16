@@ -18,6 +18,7 @@ import {
 	CUSTOMER_SESSION_COOKIE,
 	type CustomerAccountService,
 } from "../../customer/customer-account-service.js";
+import type { PendingClassCheckoutService } from "../../domains/class-checkout/pending-class-checkout-service.js";
 import { AppError } from "../../errors/app-error.js";
 import { assertNoBearerPrincipal } from "../customer-auth/customer-auth.routes.js";
 import { resolveRequestOrigin } from "../shared/csrf-guard.js";
@@ -70,6 +71,7 @@ export interface BrowserClassCheckoutDto {
 export interface CustomerClassCheckoutRoutesOptions {
 	customerAccountService?: CustomerAccountService;
 	classCheckoutService?: ClassCheckoutService;
+	pendingClassCheckoutService?: Pick<PendingClassCheckoutService, "getPending">;
 }
 
 function recoveryDto(
@@ -331,6 +333,7 @@ export async function handleClassCheckout(
 	c: Context<CustomerEnv>,
 	cas?: CustomerAccountService,
 	ccs?: ClassCheckoutService,
+	pendingCheckouts?: Pick<PendingClassCheckoutService, "getPending">,
 ) {
 	try {
 		const ctx = await resolveFormAccess({
@@ -339,6 +342,13 @@ export async function handleClassCheckout(
 			ccs,
 			requireIdempotency: true,
 		});
+		if (pendingCheckouts && (await pendingCheckouts.getPending(ctx.access))) {
+			throw new AppError(
+				"You have an unfinished checkout. View your cart to continue or resolve it before adding registrations.",
+				409,
+				"pending_checkout_exists",
+			);
+		}
 		const payload = preCheckCheckoutPayload(await readValidJsonOrBody(c));
 		const festivalShortName =
 			c.req.param("festivalShortName") ||
@@ -373,6 +383,7 @@ async function handleRecoveryAction(options: {
 	cas?: CustomerAccountService;
 	ccs?: ClassCheckoutService;
 	mode: "status" | "restart";
+	pendingCheckouts?: Pick<PendingClassCheckoutService, "getPending">;
 }) {
 	const { c, cas, ccs, mode } = options;
 	const isStatus = mode === "status";
@@ -393,6 +404,26 @@ async function handleRecoveryAction(options: {
 			recoveryReference,
 		};
 		const fest = c.req.param("festivalShortName");
+		if (isStatus && options.pendingCheckouts) {
+			const pending = await options.pendingCheckouts.getPending(access);
+			if (pending) {
+				c.header("Cache-Control", "no-store");
+				return c.json(
+					recoveryDto({
+						status:
+							pending.state === "processing"
+								? "processing"
+								: "recovery_required",
+						recoveryReference: pending.recoveryReference,
+						...(pending.festivalShortName
+							? { festivalShortName: pending.festivalShortName }
+							: {}),
+						reasonCode: pending.reasonCode,
+						retryAllowed: false,
+					}),
+				);
+			}
+		}
 		if (!isStatus) {
 			const res = await checkout.restartUnissuedCart({
 				...base,
@@ -417,7 +448,8 @@ export const handleClassCheckoutStatus = (
 	c: Context<CustomerEnv>,
 	cas?: CustomerAccountService,
 	ccs?: ClassCheckoutService,
-) => handleRecoveryAction({ c, cas, ccs, mode: "status" });
+	pendingCheckouts?: Pick<PendingClassCheckoutService, "getPending">,
+) => handleRecoveryAction({ c, cas, ccs, mode: "status", pendingCheckouts });
 
 export const handleClassCheckoutRestart = (
 	c: Context<CustomerEnv>,
@@ -463,7 +495,11 @@ function makeRecoveryValidator(fieldContext: string) {
 export function buildCustomerClassCheckoutRoutes(
 	options: CustomerClassCheckoutRoutesOptions,
 ) {
-	const { customerAccountService: cas, classCheckoutService: ccs } = options;
+	const {
+		customerAccountService: cas,
+		classCheckoutService: ccs,
+		pendingClassCheckoutService,
+	} = options;
 	const makeGuard = (requireIdempotency = false, setNoStore = false) =>
 		preValidationGuard<CustomerEnv>(async (c) => {
 			if (setNoStore) c.header("Cache-Control", "no-store");
@@ -476,7 +512,7 @@ export function buildCustomerClassCheckoutRoutes(
 		preCheck: preCheckCheckoutPayload,
 	});
 	const onCheckout = (c: Context<CustomerEnv>) =>
-		handleClassCheckout(c, cas, ccs);
+		handleClassCheckout(c, cas, ccs, pendingClassCheckoutService);
 	return new Hono<CustomerEnv>()
 		.post("/class-checkout", guardIdempotent, checkoutValidator, onCheckout)
 		.post(REG_CHECKOUT, guardIdempotent, checkoutValidator, onCheckout)
@@ -484,7 +520,8 @@ export function buildCustomerClassCheckoutRoutes(
 			`${REG_CHECKOUT}/status`,
 			guardIdempotent,
 			makeRecoveryValidator("Checkout status request"),
-			(c) => handleClassCheckoutStatus(c, cas, ccs),
+			(c) =>
+				handleClassCheckoutStatus(c, cas, ccs, pendingClassCheckoutService),
 		)
 		.get(`${REG_CHECKOUT}/restart`, (c) =>
 			handleFindClassCheckoutRestart(c, cas, ccs),

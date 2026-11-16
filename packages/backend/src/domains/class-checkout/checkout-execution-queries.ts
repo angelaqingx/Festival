@@ -246,8 +246,11 @@ export async function findBlockingRowTx(
 		WHERE e.organization_id = $1
 			AND e.customer_id = $2
 			AND ($3::text IS NULL OR e.intent_id <> $3)
-			AND i.status NOT IN ('approved', 'rejected', 'needs_review', 'superseded')
 			AND (
+				(i.status <> 'approved' AND
+					(i.cart_reference IS NOT NULL OR e.checkpoint = 'attached'))
+				OR (i.status = 'needs_review' AND e.checkpoint <> 'prepared')
+				OR (i.status NOT IN ('approved', 'rejected', 'needs_review', 'superseded') AND (
 				e.state = 'recovery_required'
 				OR (e.state = 'running' AND e.lease_expires_at > clock_timestamp())
 				OR (
@@ -259,7 +262,7 @@ export async function findBlockingRowTx(
 					AND e.state IN ('ready', 'retryable', 'completed')
 					AND i.expires_at <= clock_timestamp()
 				)
-			)
+			)))
 		ORDER BY e.created_at DESC
 		LIMIT 1`,
 		[organizationId, customerId, excludeIntentId ?? null],

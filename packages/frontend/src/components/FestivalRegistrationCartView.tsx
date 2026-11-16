@@ -185,9 +185,18 @@ export function FestivalRegistrationCartView(
 														"This registration is no longer eligible."}
 												</p>
 											</Show>
-											<Show when={result()?.isEligible}>
-												<span class="parent-badge parent-status-available">
-													Ready for checkout
+											<Show
+												when={props.cart.checkoutSubmission()}
+												fallback={
+													<Show when={result()?.isEligible}>
+														<span class="parent-badge parent-status-available">
+															Ready for checkout
+														</span>
+													</Show>
+												}
+											>
+												<span class="parent-badge parent-status-neutral">
+													Selection saved
 												</span>
 											</Show>
 										</div>

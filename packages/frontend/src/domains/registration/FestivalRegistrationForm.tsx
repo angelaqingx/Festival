@@ -42,16 +42,28 @@ export function FestivalRegistrationCartSection(props: RegistrationViewProps) {
 				canRestoreCheckout={Boolean(state.checkoutRestartReference())}
 				onRestoreCheckout={state.handleRestoreCheckout}
 			/>
-			<p class="parent-note">
-				Need to change a registration before payment? Remove it and register
-				again.
-			</p>
+			<Show
+				when={!state.cart.checkoutSubmission()}
+				fallback={
+					<p class="parent-note">
+						Your selections are saved. Check the existing checkout before
+						changing or adding registrations.
+					</p>
+				}
+			>
+				<p class="parent-note">
+					Need to change a registration before payment? Remove it and register
+					again.
+				</p>
+			</Show>
 			<Button
 				type="button"
 				variant="secondary"
 				onClick={() => page.app.navigate(state.registerPath())}
 			>
-				Continue registration
+				{state.cart.checkoutSubmission()
+					? "Browse classes"
+					: "Continue registration"}
 			</Button>
 		</>
 	);
@@ -77,6 +89,7 @@ function ClassRowActionButton(props: {
 								<Button
 									type="button"
 									disabled={
+										state.isRegistrationBlocked() ||
 										!state.classOptionEligibility.isEligible(props.classId) ||
 										state.options.classesLoading()
 									}
@@ -273,6 +286,7 @@ function ClassRegistrationSummarySidebar(props: {
 			<Button
 				type="button"
 				disabled={
+					state.isRegistrationBlocked() ||
 					!state.localSelectionValid() ||
 					state.pieceDirty() ||
 					state.isAdding() ||

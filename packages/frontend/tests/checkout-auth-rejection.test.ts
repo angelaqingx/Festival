@@ -50,6 +50,10 @@ async function mountCheckout() {
 				sessionReads++;
 				return nextSessionRead ? nextSessionRead() : response;
 			},
+			{
+				read: async () => ({ checkout: null }),
+				resume: async () => ({ checkoutUrl: "https://shop.example/checkout" }),
+			},
 		);
 		const workspace = parentRegistration.workspace("org", "festival");
 		const getCsrf = () => {

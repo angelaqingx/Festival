@@ -279,6 +279,7 @@ export function buildRegistrationGroupRoutes(options: ApiRouterOptions) {
 		waitlistService,
 		customerAccountService,
 		classCheckoutService,
+		pendingClassCheckoutService,
 	} = options;
 	const repository = organizationService.repository;
 	const dropTransferEnabled =
@@ -309,6 +310,7 @@ export function buildRegistrationGroupRoutes(options: ApiRouterOptions) {
 			buildCustomerRegistrationRoutes({
 				customerAccountService,
 				classCheckoutService,
+				pendingClassCheckoutService,
 				dropTransferService,
 			}),
 		)

@@ -63,6 +63,7 @@ export interface AddToCartActionContext {
 	isDisposed: () => boolean;
 	setAllowLeave: (val: boolean) => void;
 	clearForm: () => void;
+	isRegistrationBlocked?: () => boolean;
 }
 
 export function createAddToCartHandler(ctx: AddToCartActionContext) {
@@ -77,6 +78,7 @@ export function createAddToCartHandler(ctx: AddToCartActionContext) {
 			!ctx.localSelectionValid() ||
 			ctx.pieceDirty() ||
 			ctx.isAdding() ||
+			ctx.isRegistrationBlocked?.() ||
 			Boolean(ctx.cart.checkoutSubmission()) ||
 			ctx.isPurchased(cls.id) ||
 			ctx.cart.hasItem(child.id, cls.id)
@@ -85,6 +87,7 @@ export function createAddToCartHandler(ctx: AddToCartActionContext) {
 		}
 		ctx.setIsAdding(true);
 		const revision = ctx.getFormRevision();
+		const csrfToken = ctx.getCsrf();
 		try {
 			const input = buildCartItemInput(
 				child,
@@ -105,10 +108,12 @@ export function createAddToCartHandler(ctx: AddToCartActionContext) {
 				ctx.slug,
 				ctx.festivalSlug,
 				[...cartItemsToLineItemInputs(ctx.cart.items()), candidate],
-				ctx.getCsrf(),
+				csrfToken,
 			);
 			if (
 				ctx.isDisposed() ||
+				ctx.getCsrf() !== csrfToken ||
+				ctx.isRegistrationBlocked?.() ||
 				revision !== ctx.getFormRevision() ||
 				ctx.view() !== "class"
 			) {
@@ -167,6 +172,9 @@ export interface CheckoutRecoveryActionContext {
 	isHandingOff: () => boolean;
 	setCompleteHandoff: (fn: (() => void) | undefined) => void;
 	getCompleteHandoff: () => (() => void) | undefined;
+	isRegistrationBlocked?: () => boolean;
+	onCheckoutHandoff?: (submission: RegistrationCheckoutSubmission) => void;
+	refreshPendingCheckout?: () => Promise<void>;
 }
 
 export function createCheckoutRecoveryHandlers(
@@ -177,9 +185,9 @@ export function createCheckoutRecoveryHandlers(
 		submission: RegistrationCheckoutSubmission,
 	) {
 		ctx.setHandingOff(true);
+		ctx.onCheckoutHandoff?.(submission);
 		const onPageHide = () => {
 			ctx.setDiscoveredRestart(null);
-			ctx.cart.completeCheckout(submission);
 			ctx.setHandingOff(false);
 			ctx.setIsSubmittingCheckout(false);
 		};
@@ -193,6 +201,17 @@ export function createCheckoutRecoveryHandlers(
 		const completeHandoff = ctx.getCompleteHandoff();
 		if (completeHandoff) {
 			window.removeEventListener("pagehide", completeHandoff);
+		}
+		if (
+			validationMayRelease &&
+			error instanceof ApiError &&
+			error.status === 409 &&
+			error.code === "pending_checkout_exists"
+		) {
+			void ctx.refreshPendingCheckout?.();
+			ctx.cart.releaseCheckout({ retireKey: true });
+			ctx.setCheckoutError(error.message);
+			return;
 		}
 		if (error instanceof ApiError && error.recovery) {
 			ctx.cart.setCheckoutRecovery(error.recovery);
@@ -219,12 +238,24 @@ export function createCheckoutRecoveryHandlers(
 				? error.message
 				: "Checkout failed. Please try again.",
 		);
+		if (
+			ctx.cart.checkoutSubmission() ||
+			(error instanceof ApiError && error.recovery)
+		) {
+			void ctx.refreshPendingCheckout?.();
+		}
 	}
 
 	async function handleRefreshCheckout() {
 		const recovery = ctx.cart.checkoutRecovery();
 		const submission = ctx.cart.checkoutSubmission();
-		if (!recovery || !submission || ctx.isSubmittingCheckout()) return;
+		if (
+			!recovery ||
+			!submission ||
+			ctx.isSubmittingCheckout() ||
+			ctx.isRegistrationBlocked?.()
+		)
+			return;
 		ctx.setCheckoutError(null);
 		ctx.setIsSubmittingCheckout(true);
 		try {
@@ -248,13 +279,18 @@ export function createCheckoutRecoveryHandlers(
 	}
 
 	function handleRestartCheckout() {
-		if (ctx.isSubmittingCheckout()) return;
+		if (ctx.isSubmittingCheckout() || ctx.isRegistrationBlocked?.()) return;
 		if (ctx.cart.restartAbandonedCheckout()) ctx.setCheckoutError(null);
 	}
 
 	async function handleRestoreCheckout() {
 		const recoveryReference = ctx.checkoutRestartReference();
-		if (!recoveryReference || ctx.isSubmittingCheckout()) return;
+		if (
+			!recoveryReference ||
+			ctx.isSubmittingCheckout() ||
+			ctx.isRegistrationBlocked?.()
+		)
+			return;
 		const csrfToken = ctx.getCsrf();
 		ctx.setCheckoutError(null);
 		ctx.setIsSubmittingCheckout(true);
@@ -278,7 +314,12 @@ export function createCheckoutRecoveryHandlers(
 	}
 
 	async function handleCartCheckout() {
-		if (ctx.cart.itemCount() === 0 || ctx.isSubmittingCheckout()) return;
+		if (
+			ctx.cart.itemCount() === 0 ||
+			ctx.isSubmittingCheckout() ||
+			ctx.isRegistrationBlocked?.()
+		)
+			return;
 		const recovery = ctx.cart.checkoutRecovery();
 		if (recovery && !recovery.retryAllowed) return;
 		const previousSubmission = ctx.cart.checkoutSubmission();
@@ -296,7 +337,12 @@ export function createCheckoutRecoveryHandlers(
 					);
 				}
 			}
-			if (ctx.isDisposed() || ctx.getCsrf() !== csrfToken) return;
+			if (
+				ctx.isDisposed() ||
+				ctx.getCsrf() !== csrfToken ||
+				ctx.isRegistrationBlocked?.()
+			)
+				return;
 			submission = ctx.cart.beginCheckout();
 			const res = await startClassCheckout(ctx.slug, ctx.festivalSlug, {
 				lineItems: submission.lineItems,

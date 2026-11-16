@@ -47,7 +47,12 @@ async function fixture() {
 		intentId: "source",
 	};
 
-	async function attachIntent(id: string, key: string, expired: boolean) {
+	async function attachIntent(
+		id: string,
+		key: string,
+		expired: boolean,
+		legacyUnissued = false,
+	) {
 		await sql.unsafe(
 			`INSERT INTO ${schema}.checkout_carts (reference,shopify_cart_id,organization_id,customer_id,session_id,integration_version,status,expires_at) VALUES ($1,$2,'org','customer','session',1,'checkout_started',NOW()+($3::int * INTERVAL '1 hour'))`,
 			[`${id}-cart`, `${id}-remote`, expired ? -1 : 1],
@@ -58,11 +63,16 @@ async function fixture() {
 				id,
 				`${id}-correlation`,
 				key,
-				`${id}-cart`,
+				legacyUnissued ? null : `${id}-cart`,
 				expired ? -1 : 1,
 				expired ? -2 : 0,
 			],
 		);
+		if (legacyUnissued)
+			await sql.unsafe(
+				`UPDATE ${schema}.checkout_intents SET status='creating' WHERE id=$1`,
+				[id],
+			);
 		await checkout.classExecutions.prepare({
 			organizationId: "org",
 			customerId: "customer",
@@ -84,20 +94,20 @@ async function fixture() {
 				owner: `${id}-worker`,
 				generation: worker.generation,
 			},
-			checkpoint: "attached",
-			state: "completed",
+			checkpoint: legacyUnissued ? "remote_cart_known" : "attached",
+			state: legacyUnissued ? "retryable" : "completed",
 			shopifyCartId: `${id}-remote`,
 			releaseLease: true,
-			eventType: "cart_attached",
+			eventType: legacyUnissued
+				? "invalid_remote_cart_observed"
+				: "cart_attached",
 		});
 		return worker;
 	}
 
-	const worker = await attachIntent("source", "source-key", true);
-	await checkout.classExecutions.recordApplicationExpiry({
-		...source,
-		expectedGeneration: worker.generation,
-	});
+	// Historical never-issued invalid carts remain the only customer restart path.
+	// Issued/attached expiry is covered by the recovery suite and cannot restart.
+	await attachIntent("source", "source-key", true, true);
 	const historyBefore = await checkout.classExecutions.events("org", "source");
 	const timestamps = async () => {
 		const rows = await sql.unsafe(
@@ -211,7 +221,7 @@ postgresTest(
 );
 
 postgresTest(
-	"a paid replacement keeps its single allocation when the expired source is paid and deliveries replay",
+	"a paid legacy replacement keeps its single allocation when its source is paid and deliveries replay",
 	async () => {
 		const f = await fixture();
 		const replacement = required(await f.restart());

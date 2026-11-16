@@ -231,6 +231,15 @@ describe("repository nginx security policy", () => {
 			expect(proxiesRoute(locations, "GET", restartPath)).toBe(true);
 			expect(proxiesRoute(locations, "POST", restartPath)).toBe(true);
 			expect(proxiesRoute(locations, "PATCH", restartPath)).toBe(false);
+			const pendingPath =
+				"/api/organizations/festival/customer/pending-checkout";
+			expect(proxiesRoute(locations, "GET", pendingPath)).toBe(true);
+			expect(proxiesRoute(locations, "HEAD", pendingPath)).toBe(true);
+			expect(proxiesRoute(locations, "POST", pendingPath)).toBe(false);
+			const resumePath = `${pendingPath}/CCR-8564900F445F/resume`;
+			expect(proxiesRoute(locations, "POST", resumePath)).toBe(true);
+			expect(proxiesRoute(locations, "GET", resumePath)).toBe(false);
+			expect(proxiesRoute(locations, "PATCH", resumePath)).toBe(false);
 			for (const route of privateRoutes) {
 				const block = selectLocation(locations, route.path);
 				expect(

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { InMemoryCustomerAccountRepository } from "../src/customer/in-memory-customer-account-repository.js";
 import { PostgresCustomerAccountRepository } from "../src/customer/postgres-customer-account-repository.js";
 import { PostgresOrganizationRepository } from "../src/repo/postgres-organization-repository.js";
 import { buildCanonicalPostgresSchemaSql } from "../src/repo/postgres-schema.js";
@@ -25,6 +26,49 @@ function buildSessionInput(orgId: string, now: string, suffix = "1") {
 }
 
 describe("customer account repository contract", () => {
+	it("keeps order observations separate from authentication and ignores stale integration observations", async () => {
+		const repo = new InMemoryCustomerAccountRepository();
+		const saved = await repo.upsertIntegration({
+			organizationId: "org",
+			storefrontDomain: "shop.myshopify.com",
+			clientId: "client",
+			encryptedClientSecret: "encrypted-secret",
+		});
+		await repo.setIntegrationReadiness("org", {
+			readiness: "failed",
+			canReadOrders: true,
+			lastError: "discovery failed",
+			verifiedAtIso: "2026-11-16T00:00:00.000Z",
+		});
+		expect(
+			await repo.recordIntegrationHealth("org", 1, {
+				kind: "order_access",
+				canReadOrders: false,
+			}),
+		).toBe(true);
+		expect(await repo.getIntegration("org")).toMatchObject({
+			readiness: "failed",
+			canReadOrders: false,
+			lastError: "discovery failed",
+			verifiedAtIso: "2026-11-16T00:00:00.000Z",
+		});
+		await repo.upsertIntegration({ ...saved, clientId: "rotated" });
+		const rotated = await repo.getIntegration("org");
+		expect(
+			await repo.recordIntegrationHealth("org", 1, {
+				kind: "order_access",
+				canReadOrders: true,
+			}),
+		).toBe(false);
+		expect(
+			await repo.recordIntegrationHealth("org", 1, {
+				kind: "discovery_verified",
+				verifiedAtIso: "2026-11-16T00:00:00.000Z",
+			}),
+		).toBe(false);
+		expect(await repo.getIntegration("org")).toEqual(rotated);
+	});
+
 	it("defines distinct durable PostgreSQL configuration, state, and session tables across split repositories", async () => {
 		const source = buildCanonicalPostgresSchemaSql("schema");
 		const sessionSource = await Bun.file(
