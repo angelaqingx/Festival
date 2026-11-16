@@ -30,4 +30,3 @@
 - [G4] Targeted tests reject a different customer, organization, or festival; stored payment/order/entitlement evidence; needs-review state; unknown Shopify creation; and other unsafe running or recovery states while retaining eligible unpaid-expiry recovery.
 - [G5] Payment and reconciliation tests cover late source payment before and after replacement payment, duplicate delivery, replay, concurrent restart/payment processing, edited or merged replacement carts, and repeated restart chains. Late source evidence remains visible for review, and no duplicate entitlement grants or capacity allocation occur across the linked checkouts even when cart contents or replacement request keys change.
 - [G6] UI tests cover the expired message, saved-item review/restart action, successful next checkout handoff, navigation/reload recovery, and the staff-review message for ineligible recovery; the handoff explains those customer-visible steps and limitations.
-
