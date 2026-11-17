@@ -1,7 +1,7 @@
 # S16 — Post-`#413` Session Scope, Route Provider Cleanup & Pre-Cutover Verification
 
 ## Goal reference
-- Blocked goals (pending PR `#413` merge): `goals/s16-post-410-session-scope-and-size-trim/goals.v0.md`
+- Locked goals: `goals/s16-post-410-session-scope-and-size-trim/goals.v0.md`
 - Goal establishment record: `goals/s16-post-410-session-scope-and-size-trim/establish-goals.v0.md`
 - Bounded context architecture: `specs/bounded-contexts-2026.md` (`customer-identity`, `class-checkout`, §2.4 & §6.2 boundaries)
 
@@ -52,7 +52,13 @@ bun run test
 Plus PostgreSQL 17 integration verification (`POSTGRES_INTEGRATION_URL` / `DATABASE_URL`) passing with `0` errors and `0` warnings.
 
 ## Delivery
-Pending execution.
+- **Active-Org Session Scope & Freshness Guard (`#385`, `#393`, `#413`)**: Scoped `CustomerIdentityContext` (`packages/frontend/src/domains/customer/CustomerIdentityContext.tsx`) session refresh `createEffect` and `isCurrentRequest()` freshness guard to an `activeOrgSlug` `createMemo` while preserving `#413` `refreshOnReturn` (`pageshow`, `focus`, `visibilitychange`) without flashing `customerSession` to `unauthenticated` on same-org return or triggering per-click Shopify GraphQL calls.
+- **Deterministic Session-Scope Test Coverage**: Added `packages/frontend/tests/customer-identity-session-scope.test.ts` and updated `packages/frontend/tests/customer-registration-session.test.ts` covering delayed-response intra-org navigation, post-auth intra-org navigation, mid-refresh `refreshOnReturn` intra-org navigation, org switching, non-customer routes, sign-out, and stale response dropping.
+- **Route Provider Cleanup**: Removed unused `<ClassRegistrationProvider>` wrapper around `<Pages.CustomerCheckoutRecoveryPage app={useFestivalShell()} />` on `/org/:slug/checkout-recovery/:token` in `packages/frontend/src/app/AppRoutes.tsx`.
+- **`CHANGELOG.md` Pre-Cutover Sync**: Updated `CHANGELOG.md` `## [0.4.0]` with `#412`, `#413`, `S15` (`#414`), and `S16` release notes ahead of `S14` `main` to `release` cutover, with zero forced splits of grandfathered files (`<= 2,000`L baseline).
 
 ## Quality gate results
-Pending execution.
+- `pwsh -NoProfile -File .agents/skills/festival-session/scripts/validate-packet.ps1 -TaskName s16-post-410-session-scope-and-size-trim -RequireCodeReview`: PASS (exit `0`)
+- `bun run verify:toolchain`, `bun run format:check`, `bun run lint`, `bun run build`, `bun run --cwd packages/frontend check:types`, `bunx --bun tsc -p packages/backend/tsconfig.json --noEmit`, `bun run check:sql`: PASS (all exit `0`, `0` errors, `0` warnings)
+- `bun test packages/backend/tests/architecture-boundaries.test.ts packages/backend/tests/file-size-ratchet.test.ts`: PASS (`11 pass`, `0 fail`, exit `0`, `0` errors, `0` warnings)
+- `bun run test`: PASS (`common` `365 pass`, `backend` `1,731 pass` / `153` Postgres-gated `skip` / `0 fail`, `frontend` `560 pass`, `shopify-confirmation` `20 pass`; full PostgreSQL 17 integration matrix verified in GitHub Actions `Pull Request Checks / verify`)

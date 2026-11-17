@@ -73,7 +73,14 @@ bun run test
 Plus Linux/Docker PostgreSQL 17 integration and schema parity verification (`DATABASE_URL` / `POSTGRES_INTEGRATION_URL`, `bun run check:schema-parity`).
 
 ## Delivery
-Pending execution.
+Merged in PR `#414` (merge commit `e55b67eee91e33b1c6b9730ac28879551ac735f0`, implementation commit `fdfa469`):
+- **`RefreshConcurrencyLimiter` & Per-Session Coalescing (`#407`)**: Added `packages/backend/src/domains/customer-identity/refresh-concurrency-limiter.ts` bounding active customer token-refresh permits with a retryable `503` acquire timeout ahead of `await sql.reserve()`, preserving `pg_try_advisory_lock` and `encrypted_tokens` CAS in `customer-session-repository.ts` (`0` DB migrations), and coalescing concurrent same-session refreshes via `withRepositoryRefreshLock` in `customer-token-refresh.ts` (verified by `customer-token-refresh-concurrency.test.ts` and `customer-token-refresh-concurrency.integration.test.ts`).
+- **Public Organization Cache Invalidation (`#383`)**: Subscribed `TenantOrganizationService.publicOrganizationListCache` (`4`h TTL) in `packages/backend/src/domains/tenant-org/tenant-organization-service.ts` to `DomainCacheInvalidator` (`OrgUpdated`, `CachesCleared`) via `deleteWhere(() => true)` with immediate `OrgUpdated` emission after `tenants.createOrganization(...)` before `createMembership` (verified in `tenant-org.test.ts`).
+- **CI Parity (`pr-checks.yml` & `integration.yml`)**: Added `push: branches: [main]` in `.github/workflows/pr-checks.yml` and aligned `.github/workflows/integration.yml` with `postgres:17-alpine`, `POSTGRES_INTEGRATION_URL`, lint/type/SQL/schema-parity gates, and pre-startup `oven/bun:1.4.2 bun run scripts/migrate.ts`.
+- **Tiered File-Size Ratchet (`#216`)**: Added `packages/backend/tests/file-size-ratchet.test.ts` and `packages/backend/tests/fixtures/file-size-ratchet-baseline.ts` enforcing `<= 500` lines on new `.ts`/`.tsx` production files and strict domains/entrypoints and `<= 2,000` lines on grandfathered existing non-domain files.
 
 ## Quality gate results
-Pending execution.
+- `pwsh -NoProfile -File .agents/skills/festival-session/scripts/validate-packet.ps1 -TaskName s15-backend-pool-cache-and-ci-hardening -RequireCodeReview`: PASS (exit `0`)
+- `bun run verify:toolchain`, `bun run format:check`, `bun run lint`, `bun run build`, `bun run --cwd packages/frontend check:types`, `bunx --bun tsc -p packages/backend/tsconfig.json --noEmit`, `bun run check:sql`: PASS (`0` errors, `0` warnings)
+- `bun test packages/backend/tests/architecture-boundaries.test.ts packages/backend/tests/file-size-ratchet.test.ts`: PASS (`0` errors, `0` warnings)
+- PR `#414` (`e55b67eee91e33b1c6b9730ac28879551ac735f0`) GitHub Actions `Pull Request Checks / verify` (full unit + PostgreSQL 17 integration & schema parity suite): PASS (`0` errors, `0` warnings)

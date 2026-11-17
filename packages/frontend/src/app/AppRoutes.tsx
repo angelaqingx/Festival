@@ -66,17 +66,9 @@ function publicOrgRoutes() {
 			/>
 			<Route
 				path="/checkout-recovery/:token"
-				component={() => {
-					const p = useParams();
-					return (
-						<ClassRegistrationProvider
-							slug={p.slug ?? ""}
-							festivalSlug={p.festivalSlug ?? ""}
-						>
-							<Pages.CustomerCheckoutRecoveryPage app={useFestivalShell()} />
-						</ClassRegistrationProvider>
-					);
-				}}
+				component={() => (
+					<Pages.CustomerCheckoutRecoveryPage app={useFestivalShell()} />
+				)}
 			/>
 			<Route
 				path="/account"
