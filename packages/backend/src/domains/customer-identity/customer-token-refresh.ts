@@ -30,32 +30,29 @@ export function buildSessionTouchInput(
 
 const repositoryRefreshes = new WeakMap<
 	CustomerSessionRepository,
-	Map<string, Promise<void>>
+	Map<string, Promise<CustomerSessionRecord>>
 >();
 
-async function withRepositoryRefreshLock<T>(
+function withRepositoryRefreshLock(
 	sessions: CustomerSessionRepository,
 	sessionId: string,
-	operation: () => Promise<T>,
-): Promise<T> {
+	operation: () => Promise<CustomerSessionRecord>,
+): Promise<CustomerSessionRecord> {
 	let locks = repositoryRefreshes.get(sessions);
 	if (!locks) {
 		locks = new Map();
 		repositoryRefreshes.set(sessions, locks);
 	}
-	const previous = locks.get(sessionId) ?? Promise.resolve();
-	let release = () => {};
-	const pending = new Promise<void>((resolve) => {
-		release = resolve;
+	const sessionLocks = locks;
+	const existing = sessionLocks.get(sessionId);
+	if (existing) return existing;
+	const pending = operation().finally(() => {
+		if (sessionLocks.get(sessionId) === pending) {
+			sessionLocks.delete(sessionId);
+		}
 	});
-	locks.set(sessionId, pending);
-	await previous;
-	try {
-		return await operation();
-	} finally {
-		release();
-		if (locks.get(sessionId) === pending) locks.delete(sessionId);
-	}
+	sessionLocks.set(sessionId, pending);
+	return pending;
 }
 
 function isActiveSession(
@@ -174,17 +171,15 @@ export async function refreshSessionTokens(
 	integration: CustomerAccountIntegrationRecord,
 ): Promise<CustomerSessionRecord> {
 	try {
-		if (ctx.sessions.withSessionRefreshLock) {
-			return await ctx.sessions.withSessionRefreshLock(
-				session.sessionId,
-				(sessions) =>
-					refreshLockedSession({ ...ctx, sessions }, session, integration),
-			);
-		}
 		return await withRepositoryRefreshLock(
 			ctx.sessions,
 			session.sessionId,
-			() => refreshLockedSession(ctx, session, integration),
+			() =>
+				ctx.sessions.withSessionRefreshLock
+					? ctx.sessions.withSessionRefreshLock(session.sessionId, (sessions) =>
+							refreshLockedSession({ ...ctx, sessions }, session, integration),
+						)
+					: refreshLockedSession(ctx, session, integration),
 		);
 	} catch (error) {
 		if (error instanceof AppError) throw error;

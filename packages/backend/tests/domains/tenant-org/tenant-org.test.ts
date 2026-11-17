@@ -124,6 +124,126 @@ describe("domains/tenant-org services (unit)", () => {
 		]);
 	});
 
+	it("caches listPublicOrganizations and invalidates on OrgUpdated and clearAll", async () => {
+		const invalidator = new DomainCacheInvalidator();
+		const slugs = [{ slug: "alpha" }];
+		const listOrganizationSlugs = mock(async () => [...slugs]);
+		const service = new TenantOrganizationService(
+			{ listOrganizationSlugs } as unknown as TenantRepository,
+			{} as AppUserMembershipRepository,
+		);
+		service.bindCacheInvalidator(invalidator);
+		const getSlugs = async () =>
+			(await service.listPublicOrganizations()).organizations.map(
+				(o) => o.slug,
+			);
+
+		expect(await getSlugs()).toEqual(["alpha"]);
+		slugs.push({ slug: "beta" });
+		expect(await getSlugs()).toEqual(["alpha"]);
+		expect(listOrganizationSlugs).toHaveBeenCalledTimes(1);
+
+		invalidator.emit({
+			type: "OrgUpdated",
+			organizationId: "o2",
+			slug: "beta",
+		});
+		expect(await getSlugs()).toEqual(["alpha", "beta"]);
+		expect(listOrganizationSlugs).toHaveBeenCalledTimes(2);
+
+		slugs.push({ slug: "gamma" });
+		invalidator.clearAll();
+		expect(await getSlugs()).toEqual(["alpha", "beta", "gamma"]);
+		expect(listOrganizationSlugs).toHaveBeenCalledTimes(3);
+	});
+
+	it("unsubscribes previous cache invalidator listener when re-binding", async () => {
+		let slugCalls = 0;
+		const listOrganizationSlugs = mock(async () => [
+			{ slug: `org-${++slugCalls}` },
+		]);
+		const service = new TenantOrganizationService(
+			{ listOrganizationSlugs } as unknown as TenantRepository,
+			{} as AppUserMembershipRepository,
+		);
+		const getSlugs = async () =>
+			(await service.listPublicOrganizations()).organizations.map(
+				(o) => o.slug,
+			);
+		const watch = () => {
+			const inv = new DomainCacheInvalidator();
+			const state = { calls: 0, unsub: mock(() => {}) };
+			const orig = inv.subscribe.bind(inv);
+			inv.subscribe = (fn) => {
+				const off = orig((e) => {
+					state.calls++;
+					fn(e);
+				});
+				return () => {
+					state.unsub();
+					off();
+				};
+			};
+			return { inv, state };
+		};
+
+		const first = watch();
+		const second = watch();
+		service.bindCacheInvalidator(first.inv);
+		expect(await getSlugs()).toEqual(["org-1"]);
+
+		service.bindCacheInvalidator(second.inv);
+		expect(first.state.unsub).toHaveBeenCalledTimes(1);
+		first.inv.emit({ type: "OrgUpdated", organizationId: "o1", slug: "o1" });
+		expect(first.state.calls).toBe(0);
+		expect(await getSlugs()).toEqual(["org-1"]);
+
+		service.bindCacheInvalidator(second.inv);
+		expect(second.state.unsub).toHaveBeenCalledTimes(1);
+		second.inv.emit({ type: "OrgUpdated", organizationId: "o2", slug: "o2" });
+		expect(second.state.calls).toBe(1);
+		expect(await getSlugs()).toEqual(["org-2"]);
+		expect(listOrganizationSlugs).toHaveBeenCalledTimes(2);
+
+		service.bindCacheInvalidator({ emit: mock(() => {}) });
+		expect(second.state.unsub).toHaveBeenCalledTimes(2);
+		second.inv.emit({ type: "OrgUpdated", organizationId: "o3", slug: "o3" });
+		expect(second.state.calls).toBe(1);
+	});
+
+	it("emits OrgUpdated when createMembership rejects after createOrganization", async () => {
+		const invalidator = new DomainCacheInvalidator();
+		const events: unknown[] = [];
+		invalidator.subscribe((e) => events.push(e));
+		const tenants = {
+			findOrganizationBySlug: mock(async () => null),
+			findOrganizationByName: mock(async () => null),
+			createOrganization: mock(async ({ name, slug }) => ({
+				id: "org-partial",
+				name,
+				slug,
+			})),
+		} as unknown as TenantRepository;
+		const memberships = {
+			upsertUser: mock(async () => ({ id: "u-1" })),
+			createMembership: mock(async () => {
+				throw new Error("membership insert failed");
+			}),
+		} as unknown as AppUserMembershipRepository;
+
+		const service = new TenantOrganizationService(tenants, memberships);
+		service.bindCacheInvalidator(invalidator);
+		await expect(
+			service.createOrganization(
+				{ uid: "fb-1", email: "admin@example.com", displayName: "Admin" },
+				{ name: "Partial Org", shortName: "partial" },
+			),
+		).rejects.toThrow("membership insert failed");
+		expect(events).toEqual([
+			{ type: "OrgUpdated", organizationId: "org-partial", slug: "partial" },
+		]);
+	});
+
 	it("emits RegistrationAgeConfigUpdated and validates age date", async () => {
 		const invalidator = new DomainCacheInvalidator();
 		const events: Array<{

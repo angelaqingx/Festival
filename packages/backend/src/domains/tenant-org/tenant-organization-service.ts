@@ -38,9 +38,44 @@ function normalizeUserIdentity(identity: AuthenticatedUser): AuthenticatedUser {
 	};
 }
 
+function subscribePublicOrganizationListInvalidator(
+	invalidator: S09InvalidationSink | DomainCacheInvalidator,
+	cache: BoundedAsyncCache<"all", PublicOrganizationListResponse>,
+): (() => void) | undefined {
+	if (
+		"subscribe" in invalidator &&
+		typeof invalidator.subscribe === "function"
+	) {
+		return invalidator.subscribe((event) => {
+			if (event.type === "OrgUpdated" || event.type === "CachesCleared") {
+				cache.deleteWhere(() => true);
+			}
+		});
+	}
+	return undefined;
+}
+
+async function loadPublicOrganizationList(
+	tenants: TenantRepository,
+	cache: BoundedAsyncCache<"all", PublicOrganizationListResponse>,
+): Promise<PublicOrganizationListResponse> {
+	const listing = await cache.getOrLoad("all", async () => {
+		const value = { organizations: await tenants.listOrganizationSlugs() };
+		const bytes = Buffer.byteLength(JSON.stringify(value));
+		return {
+			value,
+			ttlMs: PUBLIC_ORGANIZATION_LIST_TTL_MS,
+			bytes,
+			cache: bytes > PUBLIC_ORGANIZATION_LIST_MAX_BYTES ? false : undefined,
+		};
+	});
+	return { organizations: listing.organizations.map(({ slug }) => ({ slug })) };
+}
+
 /** Handles tenant organizations, user sessions, timezones, and accompanist policies. */
 export class TenantOrganizationService {
 	private cacheInvalidator?: S09InvalidationSink | DomainCacheInvalidator;
+	private unsubscribeInvalidator?: () => void;
 	private readonly publicOrganizationListCache = new BoundedAsyncCache<
 		"all",
 		PublicOrganizationListResponse
@@ -59,7 +94,13 @@ export class TenantOrganizationService {
 	bindCacheInvalidator(
 		invalidator: S09InvalidationSink | DomainCacheInvalidator,
 	): void {
+		this.unsubscribeInvalidator?.();
+		this.unsubscribeInvalidator = undefined;
 		this.cacheInvalidator = invalidator;
+		this.unsubscribeInvalidator = subscribePublicOrganizationListInvalidator(
+			invalidator,
+			this.publicOrganizationListCache,
+		);
 	}
 
 	async getSession(identity?: AuthenticatedUser): Promise<SessionResponse> {
@@ -82,25 +123,11 @@ export class TenantOrganizationService {
 		return { session };
 	}
 
-	async listPublicOrganizations(): Promise<PublicOrganizationListResponse> {
-		const listing = await this.publicOrganizationListCache.getOrLoad(
-			"all",
-			async () => {
-				const value = {
-					organizations: await this.tenants.listOrganizationSlugs(),
-				};
-				const bytes = Buffer.byteLength(JSON.stringify(value));
-				return {
-					value,
-					ttlMs: PUBLIC_ORGANIZATION_LIST_TTL_MS,
-					bytes,
-					cache: bytes > PUBLIC_ORGANIZATION_LIST_MAX_BYTES ? false : undefined,
-				};
-			},
+	listPublicOrganizations(): Promise<PublicOrganizationListResponse> {
+		return loadPublicOrganizationList(
+			this.tenants,
+			this.publicOrganizationListCache,
 		);
-		return {
-			organizations: listing.organizations.map(({ slug }) => ({ slug })),
-		};
 	}
 
 	async listMemberships(
@@ -139,6 +166,11 @@ export class TenantOrganizationService {
 		});
 		// The organization is already public even if creating its membership fails.
 		this.publicOrganizationListCache.deleteWhere(() => true);
+		emitDomainInvalidation(this.cacheInvalidator, {
+			type: "OrgUpdated",
+			organizationId: organization.id,
+			slug: organization.slug,
+		});
 		const membership = await this.memberships.createMembership({
 			organizationId: organization.id,
 			userId: user.id,
@@ -146,11 +178,6 @@ export class TenantOrganizationService {
 			origin: "creator",
 		});
 
-		emitDomainInvalidation(this.cacheInvalidator, {
-			type: "OrgUpdated",
-			organizationId: organization.id,
-			slug: organization.slug,
-		});
 		return {
 			organization,
 			membership: toSessionMembership({ membership, organization }),
