@@ -1,21 +1,18 @@
 # S19 — Issue `#418`: Restrict Post-Creation Teacher Division Changes to Organization Admins
 
 ## Goal reference
-- Goal contract (`draft` pending `D6`): `goals/s19-issue-418-admin-only-teacher-division-edits/goals.v0.md`
-- Goal establishment record (`draft` pending `D6`): `goals/s19-issue-418-admin-only-teacher-division-edits/establish-goals.v0.md`
-- Master program ledger: `specs/pre-thanksgiving-program.md` (Wave 4E, `DRAFT (D6)`, depends strictly on `S18` `DONE` on `origin/main` + `D6` resolution)
+- Locked goals: `goals/s19-issue-418-admin-only-teacher-division-edits/goals.v0.md`
+- Goal establishment record: `goals/s19-issue-418-admin-only-teacher-division-edits/establish-goals.v0.md`
+- Master program ledger: `specs/pre-thanksgiving-program.md` (Wave 4E, `READY`, depends strictly on `S18` `DONE` on `origin/main`; `D6` locked: `exactly 1` active org division)
 - Bounded context architecture: `specs/bounded-contexts-2026.md` (`teacher-directory` bounded context & `@festival/common`)
 
 ## Scope
 
 ### In scope
-- Goal lock artifacts (for Step 1.3 `draft -> locked` transition once `D6` is confirmed):
-  - `goals/s19-issue-418-admin-only-teacher-division-edits/establish-goals.v0.md`
-  - `goals/s19-issue-418-admin-only-teacher-division-edits/goals.v0.md`
 - Shared contracts (`@festival/common`):
-  - `packages/common/src/directory.ts`, `packages/common/src/profile.ts`, and `packages/common/src/index.ts` (if new schema/type exports are added) — narrow `UpsertCustomerTeacherProfileInputSchema` to `v.strictObject({ displayName, publicDirectoryOptIn })` (decoupled from `UpsertParticipantProfileInputSchema` / `UpsertCustomerAccompanistProfileInputSchema` which keeps `divisionIds`), and add `UpdateAdminTeacherProfileDivisionsBodySchema` (`v.strictObject({ divisionIds: v.array(nonEmptyText("Division ID", 200)) })`) and `UpdateAdminTeacherProfileDivisionsInputSchema`.
+  - `packages/common/src/directory.ts`, `packages/common/src/profile.ts`, and `packages/common/src/index.ts` (if new schema/type exports are added) — narrow `UpsertCustomerTeacherProfileInputSchema` to `v.strictObject({ displayName, publicDirectoryOptIn })` (decoupled from `UpsertParticipantProfileInputSchema` / `UpsertCustomerAccompanistProfileInputSchema` which keeps `divisionIds`), and add `UpdateTeacherProfileDivisionsBodySchema` / `UpdateAdminTeacherProfileDivisionsInputSchema` (`v.strictObject({ divisionIds: v.pipe(v.array(nonEmptyText("Division ID", 200)), v.length(1, "Exactly one division is required.")) })`).
 - Backend (`teacher-directory`, routes, facades/composition, NGINX, `<= 500` lines/file):
-  - `packages/backend/src/routes/participant-profile/participant-profile.routes.ts` — keep `PUT /customer/orgs/:orgSlug/profiles/teacher` validated with narrowed `UpsertCustomerTeacherProfileInputSchema` (rejecting `divisionIds` with `400`); add `PATCH /admin/orgs/:orgSlug/profiles/teachers/:profileId/divisions` (`requireAuth`, `requireTenant`, `requireTenantRole(["Admin"])`, `jsonValidator(UpdateAdminTeacherProfileDivisionsBodySchema)`) and register its `defineRouteSecurity` (`authenticationClass: "admin"`, `csrfRequired: false`, `browserAllowed: true`) in `PARTICIPANT_PROFILE_ROUTE_SECURITY`.
+  - `packages/backend/src/routes/participant-profile/participant-profile.routes.ts` — keep `PUT /customer/orgs/:orgSlug/profiles/teacher` validated with narrowed `UpsertCustomerTeacherProfileInputSchema` (rejecting `divisionIds` with `400`); add `PATCH /admin/orgs/:orgSlug/profiles/teachers/:profileId/divisions` (`requireAuth`, `requireTenant`, `requireTenantRole(["Admin"])`, `jsonValidator(UpdateTeacherProfileDivisionsBodySchema)`) and register its `defineRouteSecurity` (`authenticationClass: "admin"`, `csrfRequired: false`, `browserAllowed: true`) in `PARTICIPANT_PROFILE_ROUTE_SECURITY`.
   - `packages/backend/src/routes/route-groups.ts`, `packages/backend/src/routes/api-router.ts`, and `packages/backend/src/routes/route-security.ts` — propagate `DirectoryRoutesType` Hono RPC signature and route security declarations.
   - `nginx/festival.conf` and `docker/nginx.festival.conf` — widen the `/api/admin/orgs/[^/]+/profiles/...` `PATCH` regex location allowlist to permit `/api/admin/orgs/:orgSlug/profiles/teachers/:profileId/divisions`.
   - `packages/backend/src/services/participant-profile-service.ts`, `packages/backend/src/commerce/membership-status-service.ts`, `packages/backend/src/services/accompanist-membership-service.ts` (for `loadActiveTeacherRoster` / `listCurrentRoster` `directory` port wiring if needed), and `packages/backend/src/composition/teacher-directory.ts` — pass `products: repository` to `ParticipantDirectoryService`, expose `updateTeacherProfileDivisions`, and pass `directory: organizations` to `MembershipEntitlementService`.
@@ -24,7 +21,7 @@
 - Frontend (`<= 500` lines/file):
   - `packages/frontend/src/lib/api/directory.ts` (and `packages/frontend/src/lib/api.ts` if re-exports are added) — update `upsertCustomerTeacherProfile` input to `{ displayName, publicDirectoryOptIn }` and add `updateAdminTeacherProfileDivisions`.
   - `packages/frontend/src/pages/CustomerTeacherDirectoryCard.tsx` (plus any Accompanist directory card component introduced in `S18`), `packages/frontend/src/pages/CustomerAccountMembershipsPage.tsx`, and `packages/frontend/src/pages/teacherDirectoryHelpers.ts` — render Teacher divisions read-only without checkboxes (preserving exact `"Public Teacher Directory"` heading text), omit `divisionIds` on Teacher profile saves, enforce the organization's Accompanist division policy (`exactly_one`, `one_to_two`, `one_to_all` via `getAccompanistMembershipForm` + `validateMembershipDivisionSelection`) in the Accompanist directory card UI, and keep Teacher (read-only) vs Accompanist (editable within policy) cards independent for dual-role customers.
-  - `packages/frontend/src/pages/AdminTeacherDirectoryPanel.tsx`, `packages/frontend/src/pages/adminTeacherDirectoryHelpers.ts`, optional extracted subcomponent `packages/frontend/src/pages/AdminTeacherDivisionEditor.tsx` (`<= 500` lines/file), and `packages/frontend/src/styles.css` (minimal scoped read-only/admin division editor styling if needed).
+  - `packages/frontend/src/pages/AdminTeacherDirectoryPanel.tsx`, `packages/frontend/src/pages/adminTeacherDirectoryHelpers.ts`, optional extracted subcomponent `packages/frontend/src/pages/AdminTeacherDivisionEditor.tsx` (`<= 500` lines/file), and `packages/frontend/src/styles.css` (single-division Admin selector + minimal scoped layout rules if needed).
 - Tests, changelog & packet artifacts:
   - Common tests: `packages/common/tests/schemas.test.ts`.
   - Backend unit, security & PostgreSQL 17 integration tests: `packages/backend/tests/participant-profile-routes.test.ts`, `packages/backend/tests/participant-profile-routes-security.test.ts`, `packages/backend/tests/participant-profile-membership.test.ts`, `packages/backend/tests/participant-profile-admin-consent.test.ts`, `packages/backend/tests/profile-repository.test.ts`, `packages/backend/tests/organization-repository.test.ts`, `packages/backend/tests/postgres-organization-repository.test.ts`, `packages/backend/tests/postgres-profile-postal-code.integration.test.ts`, `packages/backend/tests/public-teacher-directory.integration.test.ts`, `packages/backend/tests/domains/teacher-directory/teacher-directory.test.ts`, `packages/backend/tests/membership-status-service.test.ts`, `packages/backend/tests/route-security.test.ts`, and `packages/backend/tests/nginx-security.test.ts`.
@@ -37,20 +34,20 @@
 - `catalog-repertoire` files owned in parallel by `S20` (`#359` Admin Concerto CSV import/export).
 
 ## Approach
-1. **Step 1 Preflight, `S18` Gate & `D6` Goal Lock**:
+1. **Preflight Dependency Check (`S18` Must Be `DONE`)**:
    - Run `git fetch origin --prune` and confirm `origin/main:specs/pre-thanksgiving-program.md` marks `S18` (`s18-issue-416-accompanist-public-directory-parity`) as `DONE`.
-   - Confirm `D6` with the user (`>= 1` active divisions vs `exactly 1` active division for Admin Teacher division edits), update `establish-goals.v0.md` and `goals.v0.md` from `- State: draft` to `- State: locked`, check `[x] D6` in `specs/pre-thanksgiving-program.md`, run `validate-packet.ps1 -TaskName s19-issue-418-admin-only-teacher-division-edits`, and branch `feat/s19-issue-418-admin-only-teacher-division-edits` off `origin/main`.
+   - Validate `s19-issue-418-admin-only-teacher-division-edits` via `validate-packet.ps1` (confirming `state=locked` and exit `0`), then branch `feat/s19-issue-418-admin-only-teacher-division-edits` off `origin/main`.
 2. **Rule 1 — Customer Teacher Division Lock & Server-Side Seeding**:
    - Split `UpsertCustomerTeacherProfileInputSchema` in `packages/common/src/directory.ts` to `v.strictObject({ displayName: nonEmptyText("Display name", 100), publicDirectoryOptIn: v.boolean() })` while keeping `UpsertParticipantProfileInputSchema` (`UpsertCustomerAccompanistProfileInputSchema`) with `divisionIds` for `PUT /customer/orgs/:orgSlug/profiles/accompanist`.
    - In `ParticipantDirectoryService.upsertTeacherProfile` (`participant-directory-service.ts`), validate only `["displayName", "publicDirectoryOptIn"]` via `assertAllowedFields` (returning `400` if `divisionIds` or any extra field is sent, leaving existing DB state untouched).
    - When `existing === null` on first-time `upsertTeacherProfile`, seed `divisionIds` server-side from the customer's active `teacher_membership` grant(s) (`grants.filter(g => g.entitlementClass === "teacher_membership" && g.status === "active").map(g => g.divisionId)` deduplicated and verified against active org divisions); when `existing !== null`, pass `existing.division_ids` unchanged so customer display-name and opt-in edits never alter assigned divisions.
    - Update `CustomerTeacherDirectoryCard.tsx` to display assigned Teacher division names as a read-only summary/badge list (no `<input type="checkbox">` elements for Teacher divisions) and submit `{ displayName, publicDirectoryOptIn }` only, keeping the `"Public Teacher Directory"` heading text verbatim.
-3. **Rule 2 — Organization-Admin Teacher Division Endpoint & UI (`D6`)**:
+3. **Rule 2 — Organization-Admin Single-Division Teacher Endpoint & UI (`D6` Locked: `exactly 1`)**:
    - Add `PATCH /admin/orgs/:orgSlug/profiles/teachers/:profileId/divisions` in `participant-profile.routes.ts` (`requireAuth`, `requireTenant`, `requireTenantRole(["Admin"])`, `PARTICIPANT_PROFILE_ROUTE_SECURITY` `authenticationClass: "admin"`), update `nginx/festival.conf` + `docker/nginx.festival.conf`, and update `route-security.test.ts` + `nginx-security.test.ts`.
    - Implement `ParticipantDirectoryService.updateTeacherProfileDivisions(organizationId, profileId, payload, actorUid)`:
-     - Validate `divisionIds` against active divisions in `organizationId` (`organizations.listDivisions(organizationId, true)`) and enforce the confirmed `D6` count rule (`divisionIds.length >= 1` vs `divisionIds.length === 1`), returning `400` on invalid UUIDs, duplicates/count violations, or inactive/cross-org division IDs.
-     - Persist via `directory.updateTeacherProfileDivisions(organizationId, profileId, uniqueDivisionIds)` (`404` when `profileId` is missing or belongs to another organization), preserving `approval_status`, emitting `TeacherDirectoryChanged`, and returning the redacted/admin-visible `TeacherProfileRecord`.
-   - Add an Admin Teacher division edit control in `AdminTeacherDirectoryPanel.tsx` (extracting `AdminTeacherDivisionEditor.tsx` if needed to stay well under `<= 500` lines/file) wired to `updateAdminTeacherProfileDivisions`.
+     - Require `divisionIds` to contain **strictly `1`** active division belonging to `organizationId` (`organizations.listDivisions(organizationId, true)`); reject `0`, `>1`, duplicate, invalid UUID, inactive, or cross-org division IDs with `400` without mutating DB state.
+     - Persist via `directory.updateTeacherProfileDivisions(organizationId, profileId, [divisionId])` (`404` when `profileId` is missing or belongs to another organization), preserving `approval_status`, emitting `TeacherDirectoryChanged`, and returning the redacted/admin-visible `TeacherProfileRecord`.
+   - Add a single-division Admin selector (`<select>` or radio control over active organization divisions) for Teacher profiles in `AdminTeacherDirectoryPanel.tsx` (extracting `AdminTeacherDivisionEditor.tsx` if needed to stay well under `<= 500` lines/file) wired to `updateAdminTeacherProfileDivisions`.
 4. **Rule 3 — Immutable Entitlement Evidence + Effective Division Resolution Across Status, Eligibility, Picker & Roster (`AC #6`)**:
    - Never mutate `orgs.membership_entitlement_divisions` in PostgreSQL (preserving creation-time purchase evidence).
    - Resolve a Teacher's effective active division(s) from `orgs.teacher_profile_divisions` whenever a `teacher_profiles` row exists for `(organization_id, customer_id)`, falling back to `orgs.membership_entitlement_divisions` **only** when no `teacher_profiles` row exists yet, across all four read/eligibility surfaces:
@@ -84,7 +81,7 @@ pwsh -NoProfile -File .agents/skills/festival-session/scripts/validate-packet.ps
 Plus PostgreSQL 17 integration verification (`POSTGRES_INTEGRATION_URL` / `DATABASE_URL`) passing with `0` errors and `0` warnings.
 
 ## Delivery
-Pending `D6` resolution, `S18` merge to `origin/main`, and `S19` execution.
+Pending `S19` execution (after `S18` merges to `origin/main`).
 
 ## Quality gate results
 Pending `S19` execution.
