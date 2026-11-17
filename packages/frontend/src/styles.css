@@ -1859,6 +1859,7 @@ form.shopify-integration-card {
 	display: grid;
 	place-items: center;
 	padding: 1rem;
+	z-index: 100;
 }
 
 .modal-card {
