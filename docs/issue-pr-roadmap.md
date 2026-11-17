@@ -3,7 +3,7 @@
 This document outlines the architecture boundaries of the Festival monorepo, catalogs all 21 open GitHub issues by architectural layer and functional domain, establishes best practices for combining vs. separating Front End and Back End work in pull requests, and proposes a sequenced PR roadmap for team review.
 
 > [!NOTE]
-> **Active Master Ledger (`2026-11-16`)**: [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md) is the authoritative active execution ledger (`S00`–`S16`). Since this initial issue-grouping draft, `#332` (`#383`), `#327` (`#396`), `#330` (`#396`), and `S09`–`S14` modularization have merged onto `main`, `#336` has an approved open PR (`#412`), and `#410` has open PR `#413` (`#410` stays open pending live partial-payment E2E). Active pre-release and December QA items (`#357`, `#359`, `#340`, `#341`, `#412`, `#413` / `#410`) are tracked in [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
+> **Active Master Ledger (`2026-11-16`)**: [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md) is the authoritative active execution ledger (`S00`–`S18`). Since this initial issue-grouping draft, `#332` (`#383`), `#327` (`#396`), `#330` (`#396`), `#336` (`#412`), `#410` checkout restoration code (`#413`; Issue `#410` stays open pending live partial-payment E2E), `S09`–`S14` modularization, `S15` (`#414`), and `S16` (`#415`) have merged onto `main`. Sequential pre-`v0.4.0` packets **`S17` (`#417`)** and **`S18` (`#416`)** land next ahead of the **December 1, 2026 Phase 1 Live Launch** (Paid Teacher Shopify checkout + `$0` Unpaid Accompanist form; paid Accompanist `#133` deferred to summer), while December (`Dec 1–31` -> `v1.0.0`) hardens **Phase 2 Student Class Registration** (`#357`, `#359`, `#328`–`#329`, `#333`–`#335`, `#340`, `#341`).
 
 ---
 
@@ -46,7 +46,7 @@ All 21 open issues have been standardized with `Front End:`, `Back End:`, or `Fr
 
 | Issue    | Title                                                                          | Layer     | Primary Affected Files                                                                                                                                                 |
 | :------- | :----------------------------------------------------------------------------- | :-------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **#336 (Open PR #412 — Approved)** | `Front End: Move classes popover below the top of the page` | Front End | `packages/frontend/src/styles.css`, `packages/frontend/src/components/FestivalClassModal.tsx`, `packages/frontend/src/pages/FestivalAdminClassesPage.tsx` |
+| **#336 (DONE in #412)** | `Front End: Move classes popover below the top of the page` | Front End | `packages/frontend/src/styles.css`, `packages/frontend/src/components/FestivalClassModal.tsx`, `packages/frontend/src/pages/FestivalAdminClassesPage.tsx` |
 | **#335** | `Front End: Improve membership cards with separated details and actions`       | Front End | `packages/frontend/src/pages/AdminMembershipProductsPage.tsx`, `packages/frontend/src/styles.css`                                                                      |
 | **#334** | `Front End: Display entitlement state badges in a wrapping horizontal list`    | Front End | `packages/frontend/src/pages/AdminEntitlementOperationsSection.tsx`, `packages/frontend/src/pages/AdminMembershipProductsPage.tsx`, `packages/frontend/src/styles.css` |
 | **#333** | `Front End: Fix overlapping festival dates and controls in organization admin` | Front End | `packages/frontend/src/pages/AdminFestivalsPage.tsx`, `packages/frontend/src/components/FestivalRegistrationWindowEditor.tsx`, `packages/frontend/src/styles.css`      |
@@ -76,8 +76,15 @@ All 21 open issues have been standardized with `Front End:`, `Back End:`, or `Fr
 | **#247** | `Back End (Deferred): Shopify Defense in Depth`                                              | Back End             | Future Shopify checkout validation architecture                                                                                          |
 | **#246** | `Front End / Back End (Future): Waitlist Entitlements`                                       | Front End / Back End | Future waitlist purchase-permission domain model                                                                                         |
 | **#172** | `Front End / Back End (Deferred): Teacher multi-division policy and checkout snapshots`      | Front End / Back End | `packages/common/`, `packages/backend/src/checkout/`, `packages/backend/src/commerce/`, `packages/frontend/src/pages/MembershipPage.tsx` |
-| **#133** | `Front End / Back End (Later Phase): Paid accompanist Shopify checkout and order projection` | Front End / Back End | `packages/backend/src/checkout/`, `packages/backend/src/commerce/`, `packages/frontend/src/pages/AccompanistMembershipPage.tsx`          |
+| **#133** | `Front End / Back End (Deferred to Summer): Paid accompanist Shopify checkout and order projection` | Front End / Back End | `packages/backend/src/checkout/`, `packages/backend/src/commerce/`, `packages/frontend/src/pages/AccompanistMembershipPage.tsx` (`Dec 1` launches `$0` unpaid Accompanist form + `#416` directory parity) |
 | **#98**  | `Front End / Back End (Post-MVP): Membership cancellation and refund approval workflow`      | Front End / Back End | `packages/backend/src/commerce/`, `packages/backend/src/shopify/`, `packages/frontend/src/pages/`                                        |
+
+### Group F: Pre-`Dec 1` Phase 1 Membership & Directory Launch Packets (`S17`–`S18` -> `v0.4.0`)
+
+| Issue    | Title                                                                                          | Layer                | Primary Affected Files                                                                                                                                                                                                 |
+| :------- | :--------------------------------------------------------------------------------------------- | :------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **#417 (Queued `S17`)** | `Front End: Add Teacher and Accompanist acquisition buttons to account memberships` | Front End | `packages/frontend/src/pages/CustomerAccountMembershipsPage.tsx`, `packages/frontend/src/pages/customerMembershipStatus.ts`, `packages/frontend/src/styles.css`, frontend account membership tests |
+| **#416 (Queued `S18`, after `S17`)** | `Automatically approve new accompanist public-directory listings during membership registration` *(expanded per `D5` to full `#361` parity + removing copy-pasted `staffAccessConsent` gate)* | Front End / Back End | `packages/frontend/src/pages/AccompanistMembershipPage.tsx`, `packages/common/src/commerce.ts`, `packages/frontend/src/lib/api/{directory,commerce}.ts`, `CustomerAccountMembershipsPage.tsx`, `CustomerTeacherDirectoryCard.tsx`, `AdminTeacherDirectoryPanel.tsx`, `customer-membership.routes.ts`, `packages/backend/src/domains/teacher-directory/**`, `packages/backend/src/repo/*` |
 
 ---
 
@@ -103,9 +110,11 @@ Multiple issues should be combined into a single PR **only** when they meet all 
    - Both #328 and #329 are direct follow-ups to #322 in `class-checkout-validation.ts` (moved from `class-checkout-helpers.ts` during `S11`) and share `class-checkout-service.test.ts`. Running them on separate branches would conflict directly in validation ordering and test fixtures. **Recommendation**: Combine #328 + #329 into a single Back End PR.
 2. **`packages/frontend/src/pages/CustomerAccountOrdersPage.tsx` (#330 and #327 — DONE in #396)**:
    - Both `#330` (exposing `festivalShortName` and passing `entitlement.id` in `handleSaveRepertoire`) and `#327` (selecting concerto catalog works when editing existing registrations) landed together in PR `#396`.
-3. **`packages/frontend/src/styles.css` (#333, #334, #335, #336, and #332 — #332 DONE in #383; #336 Open PR #412 Approved)**:
-   - `#332` landed in PR `#383` and `#336` has an approved open PR (`#412`), leaving `#333`, `#334`, and `#335` in `packages/frontend/src/styles.css`.
+3. **`packages/frontend/src/styles.css` (#333, #334, #335, #336, and #332 — #332 DONE in #383; #336 DONE in #412)**:
+   - `#332` landed in PR `#383` and `#336` landed in PR `#412` (`84df859`), leaving `#333`, `#334`, and `#335` in `packages/frontend/src/styles.css`.
    - Grouping the remaining three Admin UI layout fixes (#333, #334, #335) avoids CSS merge conflicts.
+4. **`packages/frontend/src/pages/CustomerAccountMembershipsPage.tsx` (#417 `S17` -> #416 `S18`)**:
+   - Both `#417` (`Acquire Memberships` H1 + `Annual Teacher` / `Annual Accompanist` primary buttons) and `#416` (accompanist self-service directory card on account memberships) modify `CustomerAccountMembershipsPage.tsx` and customer account membership tests. **Resolution**: Execute sequentially (`S17` then `S18`) prior to `v0.4.0` cutover (`S14`).
 
 ---
 
@@ -117,16 +126,17 @@ flowchart LR
     PR1["PR 1 (Back End)<br/>#328 + #329<br/>Repertoire Catalog Validation"]
     PR2["PR 2 (FE / BE Bugfix - DONE #396)<br/>#330<br/>Fix handleSaveRepertoire 404s"]
     PR3["PR 3 (Front End - DONE #396)<br/>#327<br/>Concerto Selector in Account Editor"]
-    PR4["PR 4 (Front End Admin UI)<br/>#333 + #334 + #335 (#336 Open PR #412)<br/>Admin Layout & Card Fixes"]
+    PR4["PR 4 (Front End Admin UI)<br/>#333 + #334 + #335 (#336 DONE #412)<br/>Admin Layout & Card Fixes"]
     PR5["PR 5 (Front End Public UI - DONE #383)<br/>#332<br/>Front Page Org Grid Redesign"]
     PR1 --> PR2 --> PR3
     PR4 --> PR5
   end
 
-  subgraph Active["Active Pre-Thanksgiving & Dec QA Ledger"]
-    S15S16["Pre-v0.4.0 Stabilization<br/>S15 + S16 + PR #412 / PR #413 (#410)"]
-    DecQA["December QA & Registration<br/>#357 + #359 + #340 + #341"]
-    S15S16 --> DecQA
+  subgraph Active["Active Pre-Dec 1 Launch & Dec Phase 2 QA Ledger"]
+    DoneW4["Merged on main<br/>#412 (#336) + #413 (#410) + S15 (#414) + S16 (#415)"]
+    S17S18["Pre-v0.4.0 Sequential Launch Packets<br/>S17 (#417) -> S18 (#416) -> Cut v0.4.0 (Dec 1 Phase 1 Live)"]
+    DecQA["December Phase 2 Student Class Reg QA<br/>#357 + #359 + #328-#329 + #333-#335 + #340 + #341 -> v1.0.0"]
+    DoneW4 --> S17S18 --> DecQA
   end
 
   subgraph Tier2["Tier 2: Phase 4 & Phase 5 Deliverables"]
@@ -142,7 +152,7 @@ flowchart LR
 
 ### Tier 1: Immediate Actionable Bugfix & UI PRs
 
-> Active follow-ups `#357`, `#359`, `#340`, `#341`, approved open PR `#412` (`#336`), and open PR `#413` (`#410`; issue stays open pending live partial-payment E2E) are sequenced alongside `S15`–`S16` in [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
+> Merged Wave 4 stabilization PRs (`#412` closing `#336`, `#413` landing `#410` checkout restoration code while `#410` stays open pending live partial-payment E2E, `S15` `#414`, and `S16` `#415`), sequential pre-`v0.4.0` packets `S17` (`#417`) -> `S18` (`#416`) for the `Dec 1` Phase 1 Live Launch, and December Phase 2 Student Class Registration QA items (`#357`, `#359`, `#340`, `#341`) are tracked in [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
 
 #### PR 1 — Back End: Repertoire Catalog Validation Hardening
 
@@ -182,7 +192,7 @@ flowchart LR
 #### PR 4 — Front End: Admin Layout, Cards, Badges & Popover Polish
 
 - **Issues Included**:
-  - **#336 (Open PR #412 — Approved by `ericpassmore`)**: `Front End: Move classes popover below the top of the page`
+  - **#336 (DONE in #412)**: `Front End: Move classes popover below the top of the page`
   - **#335**: `Front End: Improve membership cards with separated details and actions`
   - **#334**: `Front End: Display entitlement state badges in a wrapping horizontal list`
   - **#333**: `Front End: Fix overlapping festival dates and controls in organization admin`
@@ -192,13 +202,13 @@ flowchart LR
   - `packages/frontend/src/pages/AdminMembershipProductsPage.tsx` (#335, #334)
   - `packages/frontend/src/pages/AdminEntitlementOperationsSection.tsx` (#334)
   - `packages/frontend/src/pages/AdminFestivalsPage.tsx` & `packages/frontend/src/components/FestivalRegistrationWindowEditor.tsx` (#333)
-  - `packages/frontend/src/components/FestivalClassModal.tsx` & `packages/frontend/src/pages/FestivalAdminClassesPage.tsx` (#336, in approved open PR `#412`)
+  - `packages/frontend/src/components/FestivalClassModal.tsx` & `packages/frontend/src/pages/FestivalAdminClassesPage.tsx` (#336, merged in PR `#412`)
 - **Sub-Splitting Option (Option 4A vs. Option 4B)**:
-  - **Option 4-Unified**: Combine the remaining three Admin UI/CSS polish issues (`#333`, `#334`, `#335`) in a single PR after `#412` (`#336`) lands to avoid `styles.css` conflicts.
+  - **Option 4-Unified**: Combine the remaining three Admin UI/CSS polish issues (`#333`, `#334`, `#335`) in a single PR now that `#412` (`#336`) has merged to avoid `styles.css` conflicts.
   - **Option 4A + 4B Split**:
     - **PR 4A (Admin Memberships UI)**: Combine **#334 + #335** (both on `/org/:slug/admin/memberships` touching `AdminMembershipProductsPage.tsx`, `AdminEntitlementOperationsSection.tsx`, and `styles.css`).
-    - **PR 4B (Admin Festivals UI)**: **#333** (`/org/:slug/admin/festivals` plus `styles.css`; **#336** is already in approved open PR `#412`).
-- **Merge Order**: `#412` (`#336`) is open and approved; remaining `#333`–`#335` are scheduled in December Week 2 QA per [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
+    - **PR 4B (Admin Festivals UI)**: **#333** (`/org/:slug/admin/festivals` plus `styles.css`; **#336** merged in PR `#412`).
+- **Merge Order**: `#412` (`#336`) merged (`84df859`); remaining `#333`–`#335` are scheduled in December Week 2 QA per [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
 
 #### PR 5 — Front End: Public Front Page Redesign (`DONE in #383`)
 
@@ -236,7 +246,7 @@ These issues are explicitly marked in their specifications as FYI tracking, post
 - **#247** (`Back End (Deferred): Shopify Defense in Depth`): Future Shopify checkout validation layer.
 - **#246** (`Front End / Back End (Future): Waitlist Entitlements`): Future waitlist purchase-permission model.
 - **#172** (`Front End / Back End (Deferred): Teacher multi-division policy and checkout snapshots`): Deferred from #166.
-- **#133** (`Front End / Back End (Later Phase): Paid accompanist Shopify checkout and order projection`): Postponed work outside #129 critical path.
+- **#133** (`Front End / Back End (Deferred to Summer): Paid accompanist Shopify checkout and order projection`): Deferred to summer (`D5`); December 1, 2026 Phase 1 live launch uses the `$0` unpaid Accompanist registration form paired with `#416` (`S18`) Public Directory parity and `#417` (`S17`) account acquisition buttons.
 - **#98** (`Front End / Back End (Post-MVP): Membership cancellation and refund approval workflow`): Split from #78; outside Teacher Membership MVP.
 
 ---
