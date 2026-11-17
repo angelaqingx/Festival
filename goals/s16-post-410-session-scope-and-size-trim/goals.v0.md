@@ -1,7 +1,7 @@
 # Goals Extract
 - Task name: s16-post-410-session-scope-and-size-trim
 - Iteration: v0
-- State: blocked
+- State: locked
 
 ## Goals
 1. Update both the `createEffect` trigger and the `isCurrentRequest()` freshness guard in `packages/frontend/src/domains/customer/CustomerIdentityContext.tsx` to use an `activeOrgSlug` memo (`!disposed && request === latestRequest && activeOrgSlug() === targetSlug`), preserve PR `#413`'s `refreshOnReturn` focus/pageshow check without flashing `customerSession` to `unauthenticated` on same-org return (eliminating `#413`'s per-click live Shopify Storefront/Admin GraphQL calls), and add a delayed-response intra-org navigation test (`#385` + `#393`).

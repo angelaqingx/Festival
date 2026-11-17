@@ -3,6 +3,7 @@ import {
 	batch,
 	createContext,
 	createEffect,
+	createMemo,
 	createSignal,
 	on,
 	onCleanup,
@@ -40,13 +41,15 @@ export function createCustomerIdentityState(
 	let latestRequest = 0;
 	let disposed = false;
 	const pendingCheckout = createPendingCheckoutState(pendingDependencies);
+	const activeOrgSlug = createMemo(() => {
+		const r = shell.route();
+		return isOrganizationPageRoute(r) && "slug" in r ? r.slug : null;
+	});
 
 	async function refreshCustomerSession(
 		slugOverride?: string,
 	): Promise<CustomerSession> {
-		const route = shell.route();
-		const targetSlug =
-			isOrganizationPageRoute(route) && "slug" in route ? route.slug : null;
+		const targetSlug = activeOrgSlug();
 		if (
 			disposed ||
 			(slugOverride !== undefined && slugOverride !== targetSlug)
@@ -64,7 +67,7 @@ export function createCustomerIdentityState(
 		}
 
 		const isCurrentRequest = () =>
-			!disposed && request === latestRequest && shell.route() === route;
+			!disposed && request === latestRequest && activeOrgSlug() === targetSlug;
 		setIsCustomerSessionLoading(true);
 		try {
 			const { session } = await fetchSession(targetSlug);
@@ -95,11 +98,8 @@ export function createCustomerIdentityState(
 	}
 
 	createEffect(
-		on(shell.route, () => {
+		on(activeOrgSlug, (slug) => {
 			batch(() => {
-				const route = shell.route();
-				const slug =
-					isOrganizationPageRoute(route) && "slug" in route ? route.slug : null;
 				if (pendingCheckout.ownerSlug() !== slug) pendingCheckout.clear(true);
 				setCustomerSession(unauthenticated);
 				void refreshCustomerSession();

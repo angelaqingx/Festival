@@ -14,6 +14,8 @@
 - `pg_trgm` trigram indexes (`20261115020000_repertoire_typeahead_trigram_indexes.sql`), `ConcertoTitleField` typeahead combobox (`LIMIT 100`), manual concerto entry, and Orders concerto selector (`#362`, `#327`, `#396`).
 - Self-service restart for unpaid expired attached class checkouts, `CCR-*` validation, and ancestor-chain late-payment guard across edited restored carts (`#409`, `#357`).
 - Fresh Docker PostgreSQL 17 volume bootstrap (`#386`, `#391`).
+- Cross-session pending Shopify class checkout discovery, live cart and order financial-state verification, same-owner resume endpoints, navbar cart badge routing, and Customer Account sign-in readiness decoupling (`#410`, `#413`).
+- Bounded customer token refresh concurrency bulkhead (`RefreshConcurrencyLimiter`) with per-session coalescing ahead of `sql.reserve()`, `push: [main]` and `integration.yml` PostgreSQL 17 CI parity, and tiered `500`/`2,000`-line source file-size ratchet (`S15`, `#407`, `#216`, `#414`).
 
 ### Changed
 
@@ -25,6 +27,7 @@
 - Isolated parent registration drafts and carts per customer session (`#388`, `#393`).
 - Scoped `AdminUsersPage` roster to the active Firebase UID and organization (`#387`, `#392`).
 - Keyed the parent registration workspace to `(org, festival)` (`#390`, `#395`).
+- Scoped `CustomerIdentityContext` session refresh effect and `isCurrentRequest()` freshness guard to an `activeOrgSlug` memo while preserving `refreshOnReturn`, and removed the unused `ClassRegistrationProvider` wrapper on `/org/:slug/checkout-recovery/:token` (`S16`, `#385`, `#393`).
 
 ### Fixed
 
@@ -35,6 +38,9 @@
 - Preserved customer sessions across transient Shopify OAuth discovery `503` failures (`#389`, `#394`).
 - Kept missing or undecryptable local Storefront credential failures retryable instead of permanently locking carts (`#357`, `#408`).
 - Sent `Authorization` and CSRF headers on admin entitlement operations (`#402`, `#408`), preserved explicit checkout CSRF/idempotency arguments (`#404`, `#408`), unlocked same-session carts after pre-dispatch `401`/`403` rejections (`#398`, `#408`), and canonicalized configured admin recovery origins (`#405`, `#408`).
+- Positioned admin class (`FestivalClassModal`) and waitlist (`FestivalClassWaitlistModal`) dialogs via a viewport-anchored `Portal` backdrop instead of clipping inside transformed panels (`#336`, `#412`).
+- Subscribed `TenantOrganizationService.publicOrganizationListCache` (`4`h TTL) to `DomainCacheInvalidator` (`OrgUpdated` and `CachesCleared`) and invalidated on organization creation prior to membership creation (`S15`, `#383`, `#414`).
+- Prevented intra-org route changes from flashing `customerSession` to `unauthenticated`, dropping in-flight session reads, or triggering per-click pending Shopify checkout GraphQL checks (`S16`, `#385`, `#393`, `#413`).
 
 ### Security
 

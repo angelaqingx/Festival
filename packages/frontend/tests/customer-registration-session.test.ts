@@ -313,8 +313,11 @@ describe("customer session registration drafts", () => {
 			);
 
 			view.setRoute({ kind: "festival-cart", slug, festivalSlug });
+			expect(view.requests).toHaveLength(2);
+			expect(view.customerSession().authenticated).toBe(true);
+			const replacement = view.refreshCustomerSession();
 			view.requests[2].resolve(authenticated("session-b"));
-			await Bun.sleep(0);
+			await replacement;
 			expect(view.observed.at(-1)).toEqual({
 				csrfToken: "session-b",
 				draft: emptyDraft,
@@ -338,11 +341,13 @@ describe("customer session registration drafts", () => {
 			const existingDraft = readDraft(view.workspace);
 
 			view.setRoute({ kind: "festival-cart", slug, festivalSlug });
+			expect(view.requests).toHaveLength(1);
+			const staleRead = view.refreshCustomerSession();
 			const refresh = view.refreshCustomerSession();
 			view.requests[2].resolve(authenticated("session-a"));
 			await refresh;
 			view.requests[1].resolve(anonymous);
-			await Bun.sleep(0);
+			await staleRead;
 			expect(readDraft(view.workspace)).toEqual(existingDraft);
 			expect(view.customerSession()).toEqual(
 				authenticated("session-a").session,

@@ -1,16 +1,16 @@
 # Establish Goals
 - Task name: s16-post-410-session-scope-and-size-trim
 - Iteration: v0
-- State: blocked
+- State: locked
 
 ## Status
-Blocked pending PR `#413` merge to `main`. Packet stays `blocked` until PR `#413` lands on `origin/main` (Issue `#410` remains open afterwards for live partial-payment acceptance), then transitions to `locked` before implementation begins.
+Locked for `S16` execution. PRs `#412` (`84df859`), `#413` (`2d90c74`), and `#414` (`S15`, `e55b67e`) have merged to `origin/main` (Issue `#410` remains open separately for live partial-payment E2E acceptance).
 
 ## Request
 After PR `#413` merges to `main`, update both the `createEffect` trigger and `isCurrentRequest()` freshness guard in `CustomerIdentityContext.tsx` to track an `activeOrgSlug` memo while preserving PR `#413`'s `refreshOnReturn` focus/pageshow check without flashing `customerSession` to `unauthenticated` (`#385` + `#393` + eliminating `#413`'s per-click live Shopify GraphQL calls), remove the unused `<ClassRegistrationProvider>` wrapper around membership `CustomerCheckoutRecoveryPage` in `AppRoutes.tsx`, update `CHANGELOG.md` `## [0.4.0]` with `#412`, `#413`, `S15`, and `S16` entries, and pass full pre-cutover verification under the `500`L-new / `2,000`L-existing file-size ratchet policy (with zero forced splits of grandfathered files).
 
 ## Blocking ambiguity
-Blocked until open PR #413 (implementing Issue #410 Shopify checkout restoration and can_read_orders / OAuth login-readiness decoupling) merges to main; Issue #410 itself stays open for live partial-payment acceptance testing.
+None.
 
 ## Assumptions
 - `S15` (`s15-backend-pool-cache-and-ci-hardening`), PR `#412` (`#336`), and PR `#413` (`#410`) will merge to `origin/main` before `S16` transitions from `blocked` to `locked`.
@@ -34,4 +34,4 @@ Blocked until open PR #413 (implementing Issue #410 Shopify checkout restoration
 - [G3] Full verification (`verify:toolchain`, `format:check`, `lint`, `build`, frontend/backend `tsc --noEmit`, `check:sql`, `architecture-boundaries.test.ts`, `file-size-ratchet.test.ts`, and Postgres 17 integration suites via `bun run test`) passes with `0` errors and `0` warnings under the `500`L-new / `2,000`L-existing policy without forced splits of grandfathered files.
 
 ## Next action
-Wait for PR `#413` to merge to `main`, flip `- State: blocked` to `- State: locked` in `goals/s16-post-410-session-scope-and-size-trim/{establish-goals,goals}.v0.md` after clearing `## Blocking ambiguity`, re-run `validate-packet.ps1`, and execute `tasks/s16-post-410-session-scope-and-size-trim/spec.md` on an isolated branch off updated `origin/main`.
+Execute `tasks/s16-post-410-session-scope-and-size-trim/spec.md` on an isolated branch (`fix/s16-post-410-session-scope-and-size-trim`) off `origin/main`.
