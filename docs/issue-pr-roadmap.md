@@ -3,7 +3,7 @@
 This document outlines the architecture boundaries of the Festival monorepo, catalogs all 21 open GitHub issues by architectural layer and functional domain, establishes best practices for combining vs. separating Front End and Back End work in pull requests, and proposes a sequenced PR roadmap for team review.
 
 > [!NOTE]
-> **Active Master Ledger (`2026-11-16`)**: [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md) is the authoritative active execution ledger (`S00`–`S18`). Since this initial issue-grouping draft, `#332` (`#383`), `#327` (`#396`), `#330` (`#396`), `#336` (`#412`), `#410` checkout restoration code (`#413`; Issue `#410` stays open pending live partial-payment E2E), `S09`–`S14` modularization, `S15` (`#414`), and `S16` (`#415`) have merged onto `main`. Sequential pre-`v0.4.0` packets **`S17` (`#417`)** and **`S18` (`#416`)** land next ahead of the **December 1, 2026 Phase 1 Live Launch** (Paid Teacher Shopify checkout + `$0` Unpaid Accompanist form; paid Accompanist `#133` deferred to summer), while December (`Dec 1–31` -> `v1.0.0`) hardens **Phase 2 Student Class Registration** (`#357`, `#359`, `#328`–`#329`, `#333`–`#335`, `#340`, `#341`).
+> **Active Master Ledger (`2026-11-17`)**: [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md) is the authoritative active execution ledger (`S00`–`S20`). Since this initial issue-grouping draft, `#332` (`#383`), `#327` (`#396`), `#330` (`#396`), `#336` (`#412`), `#410` checkout restoration code (`#413`; Issue `#410` stays open pending live partial-payment E2E), `S09`–`S14` modularization, `S15` (`#414`), and `S16` (`#415`) have merged onto `main`. Pre-`v0.4.0` work now runs along two tracks ahead of the **December 1, 2026 Phase 1 Live Launch** (Paid Teacher Shopify checkout + `$0` Unpaid Accompanist form; paid Accompanist `#133` deferred to summer): sequential `teacher-directory` packets **`S17` (`#417`) -> `S18` (`#416`) -> `S19` (`#418`, `DRAFT (D6)`)** alongside parallel `catalog-repertoire` packet **`S20` (`#359` Admin Concerto Repertoire CSV import/export, `READY`)**, leaving December (`Dec 1–31` -> `v1.0.0`) focused on **Phase 2 Student Class Registration** (`#357`, `#328`–`#329`, `#333`–`#335`, `#340`, `#341`).
 
 ---
 
@@ -79,12 +79,14 @@ All 21 open issues have been standardized with `Front End:`, `Back End:`, or `Fr
 | **#133** | `Front End / Back End (Deferred to Summer): Paid accompanist Shopify checkout and order projection` | Front End / Back End | `packages/backend/src/checkout/`, `packages/backend/src/commerce/`, `packages/frontend/src/pages/AccompanistMembershipPage.tsx` (`Dec 1` launches `$0` unpaid Accompanist form + `#416` directory parity) |
 | **#98**  | `Front End / Back End (Post-MVP): Membership cancellation and refund approval workflow`      | Front End / Back End | `packages/backend/src/commerce/`, `packages/backend/src/shopify/`, `packages/frontend/src/pages/`                                        |
 
-### Group F: Pre-`Dec 1` Phase 1 Membership & Directory Launch Packets (`S17`–`S18` -> `v0.4.0`)
+### Group F: Pre-`Dec 1` Phase 1 Membership, Directory & Concerto CSV Launch Packets (`S17`–`S20` -> `v0.4.0`)
 
 | Issue    | Title                                                                                          | Layer                | Primary Affected Files                                                                                                                                                                                                 |
 | :------- | :--------------------------------------------------------------------------------------------- | :------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **#417 (Queued `S17`)** | `Front End: Add Teacher and Accompanist acquisition buttons to account memberships` | Front End | `packages/frontend/src/pages/CustomerAccountMembershipsPage.tsx`, `packages/frontend/src/pages/customerMembershipStatus.ts`, `packages/frontend/src/styles.css`, frontend account membership tests |
-| **#416 (Queued `S18`, after `S17`)** | `Automatically approve new accompanist public-directory listings during membership registration` *(expanded per `D5` to full `#361` parity + removing copy-pasted `staffAccessConsent` gate)* | Front End / Back End | `packages/frontend/src/pages/AccompanistMembershipPage.tsx`, `packages/common/src/commerce.ts`, `packages/frontend/src/lib/api/{directory,commerce}.ts`, `CustomerAccountMembershipsPage.tsx`, `CustomerTeacherDirectoryCard.tsx`, `AdminTeacherDirectoryPanel.tsx`, `customer-membership.routes.ts`, `packages/backend/src/domains/teacher-directory/**`, `packages/backend/src/repo/*` |
+| **#417 (Queued `S17`, `READY`)** | `Front End: Add Teacher and Accompanist acquisition buttons to account memberships` | Front End | `packages/frontend/src/pages/CustomerAccountMembershipsPage.tsx`, `packages/frontend/src/pages/customerMembershipStatus.ts`, `packages/frontend/src/styles.css`, frontend account membership tests |
+| **#416 (Queued `S18`, `READY` after `S17`)** | `Automatically approve new accompanist public-directory listings during membership registration` *(expanded per `D5` to full `#361` parity + removing copy-pasted `staffAccessConsent` gate)* | Front End / Back End | `packages/frontend/src/pages/AccompanistMembershipPage.tsx`, `packages/common/src/commerce.ts`, `packages/frontend/src/lib/api/{directory,commerce}.ts`, `CustomerAccountMembershipsPage.tsx`, `CustomerTeacherDirectoryCard.tsx`, `AdminTeacherDirectoryPanel.tsx`, `customer-membership.routes.ts`, `packages/backend/src/domains/teacher-directory/**`, `packages/backend/src/repo/*` |
+| **#418 (Queued `S19`, `DRAFT (D6)` after `S18`)** | `Front End / Back End: Restrict post-creation Teacher membership division changes to administrators` | Front End / Back End | `packages/common/src/{directory,profile}.ts`, `participant-profile.routes.ts`, `CustomerTeacherDirectoryCard.tsx`, `CustomerAccountMembershipsPage.tsx`, `AdminTeacherDirectoryPanel.tsx`, `packages/backend/src/domains/teacher-directory/**`, `packages/backend/src/commerce/membership-status-service.ts`, `nginx/*.conf`, `docker/nginx.festival.conf` |
+| **#359 (Queued `S20`, `READY` parallel worktree)** | `Admin: Bulk import and export the Concerto repertoire catalog as CSV` *(pulled into `v0.4.0` ahead of `Dec 1`)* | Front End / Back End | `packages/common/src/{repertoire,concerto-repertoire-csv}.ts`, `packages/backend/src/domains/catalog-repertoire/**`, `packages/backend/src/routes/admin-org/admin-concerto-repertoire.routes.ts`, `packages/frontend/src/lib/api/concerto-catalog.ts`, `AdminConcertoRepertoirePage.tsx`, `AdminHomePage.tsx`, `AdminRoutes.tsx`, `nginx/*.conf`, `docker/nginx.festival.conf` |
 
 ---
 
@@ -113,8 +115,8 @@ Multiple issues should be combined into a single PR **only** when they meet all 
 3. **`packages/frontend/src/styles.css` (#333, #334, #335, #336, and #332 — #332 DONE in #383; #336 DONE in #412)**:
    - `#332` landed in PR `#383` and `#336` landed in PR `#412` (`84df859`), leaving `#333`, `#334`, and `#335` in `packages/frontend/src/styles.css`.
    - Grouping the remaining three Admin UI layout fixes (#333, #334, #335) avoids CSS merge conflicts.
-4. **`packages/frontend/src/pages/CustomerAccountMembershipsPage.tsx` (#417 `S17` -> #416 `S18`)**:
-   - Both `#417` (`Acquire Memberships` H1 + `Annual Teacher` / `Annual Accompanist` primary buttons) and `#416` (accompanist self-service directory card on account memberships) modify `CustomerAccountMembershipsPage.tsx` and customer account membership tests. **Resolution**: Execute sequentially (`S17` then `S18`) prior to `v0.4.0` cutover (`S14`).
+4. **`teacher-directory` Account & Admin UI Slice (#417 `S17` -> #416 `S18` -> #418 `S19`) vs. `catalog-repertoire` (#359 `S20`)**:
+   - `#417` (`S17`), `#416` (`S18`), and `#418` (`S19`, `DRAFT (D6)`) share `CustomerAccountMembershipsPage.tsx`, `CustomerTeacherDirectoryCard.tsx`, `AdminTeacherDirectoryPanel.tsx`, `domains/teacher-directory/**`, and profile/account test suites (`12+` overlapping files between `S18` and `S19`). **Resolution**: Execute `S17 -> S18 -> S19` sequentially, while running `#359` (`S20`) in a parallel `catalog-repertoire` worktree (`100%` disjoint from `S17`–`S18`, and disjoint across all domain/UI modules from `S19`).
 
 ---
 
@@ -134,9 +136,13 @@ flowchart LR
 
   subgraph Active["Active Pre-Dec 1 Launch & Dec Phase 2 QA Ledger"]
     DoneW4["Merged on main<br/>#412 (#336) + #413 (#410) + S15 (#414) + S16 (#415)"]
-    S17S18["Pre-v0.4.0 Sequential Launch Packets<br/>S17 (#417) -> S18 (#416) -> Cut v0.4.0 (Dec 1 Phase 1 Live)"]
-    DecQA["December Phase 2 Student Class Reg QA<br/>#357 + #359 + #328-#329 + #333-#335 + #340 + #341 -> v1.0.0"]
-    DoneW4 --> S17S18 --> DecQA
+    S17S19["Sequential teacher-directory Track<br/>S17 (#417) -> S18 (#416) -> S19 (#418 DRAFT D6)"]
+    S20CSV["Parallel catalog-repertoire Worktree<br/>S20 (#359 Concerto CSV Import/Export)"]
+    Cut040["Cut v0.4.0<br/>Dec 1 Phase 1 Live Launch"]
+    DecQA["December Phase 2 Student Class Reg QA<br/>#357 + #328-#329 + #333-#335 + #340 + #341 -> v1.0.0"]
+    DoneW4 --> S17S19 --> Cut040
+    DoneW4 --> S20CSV --> Cut040
+    Cut040 --> DecQA
   end
 
   subgraph Tier2["Tier 2: Phase 4 & Phase 5 Deliverables"]
@@ -152,7 +158,7 @@ flowchart LR
 
 ### Tier 1: Immediate Actionable Bugfix & UI PRs
 
-> Merged Wave 4 stabilization PRs (`#412` closing `#336`, `#413` landing `#410` checkout restoration code while `#410` stays open pending live partial-payment E2E, `S15` `#414`, and `S16` `#415`), sequential pre-`v0.4.0` packets `S17` (`#417`) -> `S18` (`#416`) for the `Dec 1` Phase 1 Live Launch, and December Phase 2 Student Class Registration QA items (`#357`, `#359`, `#340`, `#341`) are tracked in [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
+> Merged Wave 4 stabilization PRs (`#412` closing `#336`, `#413` landing `#410` checkout restoration code while `#410` stays open pending live partial-payment E2E, `S15` `#414`, and `S16` `#415`), sequential `teacher-directory` packets `S17` (`#417`) -> `S18` (`#416`) -> `S19` (`#418`, `DRAFT (D6)`), parallel `catalog-repertoire` packet `S20` (`#359`), and December Phase 2 Student Class Registration QA items (`#357`, `#340`, `#341`) are tracked in [specs/pre-thanksgiving-program.md](../specs/pre-thanksgiving-program.md).
 
 #### PR 1 — Back End: Repertoire Catalog Validation Hardening
 
