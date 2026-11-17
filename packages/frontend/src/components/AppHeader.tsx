@@ -61,12 +61,31 @@ export function AppHeader(props: AppHeaderProps) {
 		festivalSlug()
 			? `/org/${slug()}/festival/${festivalSlug()}`
 			: buildOrgRootPath(slug() ?? "");
-	const cartCount = () =>
-		festivalSlug()
+	const pendingCheckout = customerIdentity.pendingCheckout;
+	const hasPendingCheckout = () =>
+		customerIdentity.customerSession().authenticated &&
+		pendingCheckout.ownerSlug() === slug() &&
+		pendingCheckout.isBlocked();
+	const cartFestivalSlug = () =>
+		(hasPendingCheckout()
+			? pendingCheckout.checkout()?.festivalShortName
+			: null) ?? festivalSlug();
+	const cartPath = () =>
+		buildFestivalCartPath(slug() ?? "", cartFestivalSlug() ?? "");
+	const cartCount = () => {
+		if (hasPendingCheckout()) {
+			return pendingCheckout.checkout()?.registrationCount ?? null;
+		}
+		return festivalSlug()
 			? props.app.parentRegistration
 					.workspace(slug() ?? "", festivalSlug() ?? "")
 					.cart.itemCount()
 			: 0;
+	};
+	const cartLabel = () =>
+		cartCount() === null
+			? "Cart, checkout status needs checking"
+			: `Cart, ${cartCount()} registrations`;
 	function follow(event: MouseEvent, path: string) {
 		if (
 			event.button !== 0 ||
@@ -104,6 +123,7 @@ export function AppHeader(props: AppHeaderProps) {
 			)
 				return;
 			props.app.parentRegistration.clear(organizationSlug);
+			pendingCheckout.clearOrganization(organizationSlug);
 			logoutCustomer(organizationSlug, session.csrfToken);
 		}
 	}
@@ -207,18 +227,13 @@ export function AppHeader(props: AppHeaderProps) {
 					)}
 				</Show>
 				<div class="org-landing-actions parent-header-actions">
-					<Show when={festivalSlug()}>
+					<Show when={cartFestivalSlug()}>
 						<a
 							class="parent-header-button parent-cart-link"
 							classList={{ active: props.app.route().kind === "festival-cart" }}
-							href={buildFestivalCartPath(slug() ?? "", festivalSlug() ?? "")}
-							onClick={(event) =>
-								follow(
-									event,
-									buildFestivalCartPath(slug() ?? "", festivalSlug() ?? ""),
-								)
-							}
-							aria-label={`Cart, ${cartCount()} registrations`}
+							href={cartPath()}
+							onClick={(event) => follow(event, cartPath())}
+							aria-label={cartLabel()}
 							aria-current={
 								props.app.route().kind === "festival-cart" ? "page" : undefined
 							}
@@ -227,7 +242,9 @@ export function AppHeader(props: AppHeaderProps) {
 								shopping_cart
 							</span>
 							<span class="parent-header-label">Cart</span>
-							<span class="parent-cart-count">{cartCount()}</span>
+							<span class="parent-cart-count">
+								{cartCount() ?? (pendingCheckout.isChecking() ? "…" : "?")}
+							</span>
 						</a>
 					</Show>
 					<button

@@ -27,12 +27,15 @@ export type {
 	EvaluateRegistrationEligibilityInput,
 	EvaluateRegistrationEligibilityResponse,
 	JoinWaitlistInput,
+	PendingClassCheckoutDto,
+	PendingClassCheckoutResponse,
 	ProposedPurchaseLineItem,
 	RegistrationAccompanistSummary,
 	RegistrationChangeLog,
 	RegistrationEligibleClass,
 	RegistrationTeacherSummary,
 	RepertoirePiece,
+	ResumePendingClassCheckoutResponse,
 	StartClassCheckoutInput,
 	StartClassCheckoutResponse,
 	TransferRegistrationInput,
@@ -272,6 +275,26 @@ export function getClassCheckoutRecoveryStatus(
 			param: fp(slug, festivalSlug),
 			json: { recoveryReference },
 		},
+	);
+}
+
+export function getPendingClassCheckout(slug: string) {
+	return rGet<C.PendingClassCheckoutResponse>(cust()["pending-checkout"], {
+		param: { slug: enc(slug) },
+	});
+}
+
+export function resumePendingClassCheckout(
+	slug: string,
+	reference: string,
+	csrfToken: string,
+	submissionKey?: string,
+) {
+	return rPost<C.ResumePendingClassCheckoutResponse>(
+		cust({ csrf: csrfToken, idem: submissionKey })["pending-checkout"][
+			":reference"
+		].resume,
+		{ param: { slug: enc(slug), reference: enc(reference) }, json: {} },
 	);
 }
 

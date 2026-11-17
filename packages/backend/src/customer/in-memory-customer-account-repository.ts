@@ -97,6 +97,31 @@ export class InMemoryCustomerAccountRepository
 		this.integrations.set(organizationId, record);
 		return record;
 	}
+	async recordIntegrationHealth(
+		organizationId: string,
+		expectedIntegrationVersion: number,
+		observation: Parameters<
+			CustomerAccountRepository["recordIntegrationHealth"]
+		>[2],
+	) {
+		const existing = this.integrations.get(organizationId);
+		if (existing?.integrationVersion !== expectedIntegrationVersion)
+			return false;
+		const patch =
+			observation.kind === "order_access"
+				? { canReadOrders: observation.canReadOrders }
+				: {
+						readiness: "ready" as const,
+						verifiedAtIso: observation.verifiedAtIso,
+						lastError: undefined,
+					};
+		this.integrations.set(organizationId, {
+			...existing,
+			...patch,
+			updatedAtIso: new Date().toISOString(),
+		});
+		return true;
+	}
 	async putOAuthState(state: CustomerOAuthStateRecord) {
 		this.states.set(state.stateHash, state);
 	}

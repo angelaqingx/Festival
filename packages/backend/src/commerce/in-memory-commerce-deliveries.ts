@@ -222,6 +222,8 @@ export function upsertOrderProjectionInStore(
 	const projection: ShopifyOrderProjection = {
 		...existing,
 		...input,
+		// Historical payment evidence survives a later incomplete observation.
+		fullyPaidAtIso: existing?.fullyPaidAtIso ?? input.fullyPaidAtIso,
 		createdAtIso: existing?.createdAtIso ?? input.updatedAtIso,
 		updatedAtIso: input.updatedAtIso,
 	};

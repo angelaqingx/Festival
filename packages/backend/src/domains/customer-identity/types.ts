@@ -147,6 +147,13 @@ export interface CustomerIntegrationRepository {
 			lastError?: string;
 		},
 	): Promise<CustomerAccountIntegrationRecord>;
+	recordIntegrationHealth(
+		organizationId: string,
+		expectedIntegrationVersion: number,
+		observation:
+			| { kind: "discovery_verified"; verifiedAtIso: string }
+			| { kind: "order_access"; canReadOrders: boolean },
+	): Promise<boolean>;
 }
 
 export interface CustomerSessionRepository {

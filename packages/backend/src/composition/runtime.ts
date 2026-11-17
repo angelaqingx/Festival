@@ -122,6 +122,7 @@ function mountApiRouter(app: Hono, deps: RuntimeDependencies): void {
 				commerceProjection.shopifyOrderProjectionService,
 			volunteerRepository: volunteersComms.volunteerRepository,
 			classCheckoutService: classCheckout.classCheckoutService,
+			pendingClassCheckoutService: classCheckout.pendingClassCheckoutService,
 			customClaimsWriter: auth.customClaimsWriter,
 			repertoireRepository: catalogRepertoire.repertoireRepository,
 			dropTransferService: classCheckout.dropTransferService,

@@ -1,5 +1,6 @@
 import { Show } from "solid-js";
 import { Button } from "../components/Button.js";
+import { PendingClassCheckoutPanel } from "../components/PendingClassCheckoutPanel.js";
 import { useCustomerIdentity } from "../domains/customer/CustomerIdentityContext.js";
 import {
 	FestivalRegistrationCartSection,
@@ -93,7 +94,16 @@ export function FestivalClassRegistrationPage(
 				}
 			>
 				<RegistrationPageHeading state={state} />
-				<Show when={state.view() === "cart"}>
+				<PendingClassCheckoutPanel
+					pending={state.pendingCheckout}
+					slug={props.slug}
+					festivalSlug={props.festivalSlug}
+					showDetails={state.view() === "cart"}
+					savedSelections={state.cart.items()}
+					navigate={props.app.navigate}
+					onResume={() => void state.handleResumePendingCheckout()}
+				/>
+				<Show when={state.view() === "cart" && !state.isRegistrationBlocked()}>
 					<FestivalRegistrationCartSection page={props} state={state} />
 				</Show>
 				<Show when={state.view() !== "cart"}>

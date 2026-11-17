@@ -18,6 +18,7 @@ import {
 	SHOPIFY_CUSTOMER_TOKENS_PURPOSE,
 	type ShopifySecretKeyring,
 } from "../../infra/s10-infra.js";
+import { throwCustomerGraphqlErrors } from "./customer-graphql-errors.js";
 import {
 	type ApiDiscovery,
 	type Discovery,
@@ -188,8 +189,22 @@ export async function startCustomerOAuthFlow(
 	const org = await ctx.loadOrganizationBySlug(slug);
 	if (!org) throw new AppError("Organization not found.", 404);
 	const integration = await ctx.integrations.getIntegration(org.id);
-	if (!integration || integration.readiness !== "ready") throw safeAuthError();
+	if (!integration) throw safeAuthError();
 	const expected = resolveStartReturnTo(slug, returnTo, offeringId);
+	if (integration.readiness !== "ready") {
+		const key = `${integration.organizationId}\0${integration.integrationVersion}\0${integration.storefrontDomain}`;
+		ctx.discoveryCache.deleteWhere((entry) => entry === key);
+	}
+	const { oidc } = await ctx.discover(integration);
+	if (
+		integration.readiness !== "ready" &&
+		!(await ctx.integrations.recordIntegrationHealth(
+			org.id,
+			integration.integrationVersion,
+			{ kind: "discovery_verified", verifiedAtIso: ctx.now().toISOString() },
+		))
+	)
+		throw safeAuthError();
 	const state = randomOpaque();
 	const nonce = randomOpaque();
 	await ctx.sessions.putOAuthState({
@@ -202,7 +217,6 @@ export async function startCustomerOAuthFlow(
 			ctx.now().getTime() + OAUTH_STATE_TTL_MS,
 		).toISOString(),
 	});
-	const { oidc } = await ctx.discover(integration);
 	const url = new URL(oidc.authorization_endpoint);
 	url.search = new URLSearchParams({
 		scope: "openid email customer-account-api:full",
@@ -220,6 +234,7 @@ async function runGraphql(
 	integration: CustomerAccountIntegrationRecord,
 	api: ApiDiscovery,
 	accessToken: string,
+	operation: "customer_identity" | "customer_orders",
 	query: string,
 	variables?: Record<string, unknown>,
 ) {
@@ -236,9 +251,7 @@ async function runGraphql(
 			body: JSON.stringify({ query, variables }),
 		},
 	);
-	if (Array.isArray(result.errors) && result.errors.length) {
-		throw new AppError("Customer order access is unavailable.", 403);
-	}
+	throwCustomerGraphqlErrors(result, operation);
 	return result;
 }
 
@@ -278,6 +291,7 @@ async function verifyCallbackCustomerGid(
 		integration,
 		discovered.api,
 		bundle.accessToken,
+		"customer_identity",
 		"query FestivalCustomerIdentity { customer { id } }",
 	);
 	const customerGid = jsonChild(gidResult.data, "customer")?.id;
@@ -436,32 +450,34 @@ export async function fetchCustomerOrdersFlow(
 		throw new AppError("Customer session is invalid.", 401);
 	}
 	const query = `query FestivalOrders($after: String) { customer { orders(first: 20, after: $after) { nodes { number createdAt totalPrice { amount currencyCode } financialStatus fulfillmentStatus cancelledAt cancelReason totalRefunded { amount currencyCode } lineItems(first: 50) { nodes { title quantity totalPrice { amount currencyCode } } } } pageInfo { hasNextPage endCursor } } } }`;
-	let result: Record<string, unknown>;
+	let orders: CustomerOrdersResponse;
 	try {
-		result = await runGraphql(
+		const result = await runGraphql(
 			ctx,
 			valid.integration,
 			api,
 			bundle.accessToken,
+			"customer_orders",
 			query,
 			{ after: after || null },
 		);
-		await ctx.integrations.setIntegrationReadiness(org.id, {
-			readiness: "ready",
-			canReadOrders: true,
-			verifiedAtIso: ctx.now().toISOString(),
-		});
+		orders = parseCustomerOrdersPayload(result);
 	} catch (error) {
-		await ctx.integrations.setIntegrationReadiness(org.id, {
-			readiness: "failed",
-			canReadOrders: false,
-			lastError: "Customer order access is unavailable.",
-		});
+		await ctx.integrations.recordIntegrationHealth(
+			org.id,
+			valid.integration.integrationVersion,
+			{ kind: "order_access", canReadOrders: false },
+		);
 		throw error;
 	}
+	await ctx.integrations.recordIntegrationHealth(
+		org.id,
+		valid.integration.integrationVersion,
+		{ kind: "order_access", canReadOrders: true },
+	);
 	const touched = await ctx.sessions.touchSession(
 		ctx.sessionTouchInput(session, ctx.now()),
 	);
 	if (!touched) throw new AppError("Customer session is invalid.", 401);
-	return parseCustomerOrdersPayload(result);
+	return orders;
 }

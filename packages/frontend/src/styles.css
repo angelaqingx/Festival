@@ -77,6 +77,28 @@ button.secondary-button {
 	box-shadow: none;
 }
 
+.pending-checkout-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.parent-shell button.pending-checkout-refresh {
+	display: inline-grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	min-width: 44px;
+	padding: 0;
+	flex-shrink: 0;
+}
+
+.pending-checkout-refresh:focus-visible {
+	outline: 2px solid var(--bullet-accent);
+	outline-offset: 3px;
+}
+
 button.link-button {
 	padding: 0;
 	background: none;

@@ -46,6 +46,7 @@ import type { CustomerAccountRepository } from "./customer/customer-account-repo
 import type { CustomerAccountService } from "./customer/customer-account-service.js";
 import type { CustomerAvailabilityRepository } from "./customer/customer-availability-repository.js";
 import type { CustomerAvailabilityService } from "./customer/customer-availability-service.js";
+import type { PendingClassCheckoutService } from "./domains/class-checkout/pending-class-checkout-service.js";
 import { DomainCacheInvalidator } from "./lib/domain-cache-invalidator.js";
 import type { DropTransferService } from "./registration/drop-transfer-service.js";
 import type { RegistrationChangeRepository } from "./registration/registration-change-repository.js";
@@ -80,6 +81,7 @@ export interface CreateAppOptions {
 	checkoutRepository?: CheckoutRepository;
 	membershipCheckoutService?: MembershipCheckoutService;
 	classCheckoutService?: ClassCheckoutService;
+	pendingClassCheckoutService?: PendingClassCheckoutService;
 	commerceRepository?: MembershipCommerceRepository;
 	shopifyOrderProjectionService?: ShopifyOrderProjectionService;
 	shopifyWebhookService?: ShopifyWebhookService;

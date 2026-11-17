@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import { generateKeyPairSync, sign } from "node:crypto";
 import {
 	CUSTOMER_STAFF_ACCESS_PRIVACY_NOTICE_VERSION,
@@ -126,6 +126,8 @@ async function fixture(
 	let nonce = "";
 	let tokenCalls = 0;
 	let denyOrders = false;
+	let orderErrorCode: string | undefined;
+	let invalidOrders = false;
 	let tokenClaims: Record<string, unknown> = {};
 	let tokenKid = "test";
 	let jwksKid = "test";
@@ -183,9 +185,14 @@ async function fixture(
 				return response({
 					data: { customer: null },
 					errors: [
-						{ message: "protected data denied", token: "must-not-leak" },
+						{
+							message: "protected data denied",
+							token: "must-not-leak",
+							extensions: { code: orderErrorCode },
+						},
 					],
 				});
+			if (invalidOrders) return response({ data: { customer: null } });
 			return response({
 				data: {
 					customer: {
@@ -277,6 +284,12 @@ async function fixture(
 		},
 		setDeny: (value: boolean) => {
 			denyOrders = value;
+		},
+		setOrderErrorCode: (value: string) => {
+			orderErrorCode = value;
+		},
+		setInvalidOrders: (value: boolean) => {
+			invalidOrders = value;
 		},
 		setTokenClaims: (value: Record<string, unknown>) => {
 			tokenClaims = value;
@@ -1323,6 +1336,164 @@ describe("CustomerAccountService", () => {
 				.authenticated,
 		).toBe(false);
 	});
+	for (const [providerCode, status, code] of [
+		["ACCESS_DENIED", 403, "customer_account_access_denied"],
+		["THROTTLED", 503, "customer_account_throttled"],
+	] as const) {
+		it(`reports the ${providerCode} order failure without changing authentication or retrying`, async () => {
+			const f = await fixture();
+			const auth = await f.authenticate();
+			f.setDeny(true);
+			f.setOrderErrorCode(providerCode);
+			const warning = spyOn(console, "warn").mockImplementation(() => {});
+			try {
+				await expect(
+					f.service.orders("festival", auth.sessionId),
+				).rejects.toMatchObject({ status, code });
+				expect(JSON.parse(String(warning.mock.calls[0]?.[0]))).toMatchObject({
+					operation: "customer_orders",
+					codes: [providerCode],
+				});
+				expect(await f.repository.getIntegration(f.org.id)).toMatchObject({
+					readiness: "ready",
+					canReadOrders: false,
+				});
+				expect(
+					(await f.repository.getSession(auth.sessionId))?.revokedAtIso,
+				).toBeUndefined();
+				expect(f.graphqlRequests()).toHaveLength(2);
+			} finally {
+				warning.mockRestore();
+			}
+		});
+	}
+
+	it("keeps sign-in and existing sessions available after customer order denial", async () => {
+		const f = await fixture();
+		const auth = await f.authenticate();
+		await f.service.orders("festival", auth.sessionId);
+		const before = await f.repository.getIntegration(f.org.id);
+		f.setDeny(true);
+		await expect(
+			f.service.orders("festival", auth.sessionId),
+		).rejects.toMatchObject({ status: 403 });
+		const after = await f.repository.getIntegration(f.org.id);
+		expect(after).toMatchObject({
+			readiness: "ready",
+			canReadOrders: false,
+			integrationVersion: before?.integrationVersion,
+			encryptedClientSecret: before?.encryptedClientSecret,
+			verifiedAtIso: before?.verifiedAtIso,
+		});
+		const fresh = await f.authenticate();
+		expect(
+			(await f.service.session("festival", fresh.sessionId)).session
+				.authenticated,
+		).toBe(true);
+		expect(
+			(await f.service.session("festival", auth.sessionId)).session
+				.authenticated,
+		).toBe(true);
+		f.setDeny(false);
+		await f.service.orders("festival", fresh.sessionId);
+		expect((await f.repository.getIntegration(f.org.id))?.canReadOrders).toBe(
+			true,
+		);
+	});
+
+	for (const readiness of ["failed", "unknown"] as const) {
+		it(`recovers configured ${readiness} sign-in only after fresh validated discovery`, async () => {
+			const f = await fixture();
+			const original = await f.repository.getIntegration(f.org.id);
+			if (!original) throw new Error("integration");
+			if (readiness === "failed")
+				await f.repository.setIntegrationReadiness(f.org.id, {
+					readiness,
+					canReadOrders: false,
+					lastError: "Customer order access is unavailable.",
+				});
+			else await f.repository.upsertIntegration(original);
+			const before = await f.repository.getIntegration(f.org.id);
+			const discoveries = f.discoveryCalls();
+			const auth = await f.begin("/org/festival");
+			expect(auth.hostname).toBe("accounts.shopify.com");
+			expect(f.discoveryCalls()).toBe(discoveries + 2);
+			expect(await f.repository.getIntegration(f.org.id)).toMatchObject({
+				readiness: "ready",
+				canReadOrders: false,
+				integrationVersion: before?.integrationVersion,
+				encryptedClientSecret: before?.encryptedClientSecret,
+				lastError: undefined,
+			});
+		});
+	}
+
+	for (const failure of ["outage", "issuer", "endpoint"] as const) {
+		it(`does not create OAuth state when recovery discovery fails: ${failure}`, async () => {
+			const f = await fixture();
+			await f.repository.setIntegrationReadiness(f.org.id, {
+				readiness: "failed",
+				canReadOrders: false,
+			});
+			if (failure === "outage") f.setDiscoveryUnavailable(true);
+			if (failure === "issuer")
+				f.setDiscoveryIssuer("https://untrusted.example/authentication/shop");
+			if (failure === "endpoint")
+				f.setAuthorizationEndpoint("http://accounts.shopify.com/auth");
+			const states = spyOn(f.repository, "putOAuthState");
+			await expect(f.begin()).rejects.toMatchObject({ status: 503 });
+			expect(states).not.toHaveBeenCalled();
+			expect((await f.repository.getIntegration(f.org.id))?.readiness).toBe(
+				"failed",
+			);
+		});
+	}
+
+	it("cannot repair or create OAuth state for an integration rotated during discovery recovery", async () => {
+		const f = await fixture();
+		await f.repository.setIntegrationReadiness(f.org.id, {
+			readiness: "failed",
+			canReadOrders: false,
+		});
+		const record = f.repository.recordIntegrationHealth.bind(f.repository);
+		spyOn(f.repository, "recordIntegrationHealth").mockImplementation(
+			async (...args) => {
+				if (args[2].kind === "discovery_verified") {
+					const old = await f.repository.getIntegration(f.org.id);
+					if (!old) throw new Error("integration");
+					await f.repository.upsertIntegration({
+						...old,
+						clientId: "rotated-client",
+					});
+				}
+				return record(...args);
+			},
+		);
+		const states = spyOn(f.repository, "putOAuthState");
+		await expect(f.begin()).rejects.toMatchObject({ status: 503 });
+		expect(states).not.toHaveBeenCalled();
+		expect(await f.repository.getIntegration(f.org.id)).toMatchObject({
+			readiness: "unknown",
+			clientId: "rotated-client",
+			integrationVersion: 2,
+		});
+	});
+
+	it("marks order capability unavailable for an invalid success payload without disabling sign-in", async () => {
+		const f = await fixture();
+		const auth = await f.authenticate();
+		await f.service.orders("festival", auth.sessionId);
+		f.setInvalidOrders(true);
+		await expect(
+			f.service.orders("festival", auth.sessionId),
+		).rejects.toMatchObject({ status: 503 });
+		expect(await f.repository.getIntegration(f.org.id)).toMatchObject({
+			readiness: "ready",
+			canReadOrders: false,
+		});
+		expect((await f.begin()).hostname).toBe("accounts.shopify.com");
+	});
+
 	it("fails closed on protected-data denial and enforces CSRF and exact origin for logout", async () => {
 		const f = await fixture();
 		const auth = await f.authenticate();

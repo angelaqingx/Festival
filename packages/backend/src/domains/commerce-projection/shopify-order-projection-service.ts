@@ -201,7 +201,11 @@ export class ShopifyOrderProjectionService {
 			nowIso(this.deps.now),
 			correlation.correlationId,
 		);
-		await this.deps.commerce.upsertOrderProjection(projection);
+		// A delayed read must not erase the historical receipt for an already
+		// approved registration (for example after a later refund).
+		if (pendingStatus !== "approved") {
+			await this.deps.commerce.upsertOrderProjection(projection);
+		}
 		const intent = await this.resolveIntentOrFinalize(
 			delivery,
 			order,
@@ -242,6 +246,18 @@ export class ShopifyOrderProjectionService {
 		order: ShopifyPaidOrder,
 		projection: ShopifyOrderProjectionInput,
 	): Promise<ProcessingResult> {
+		if (!order.fullyPaid) {
+			// A paid notification is a wake-up signal, not payment proof. Leave the
+			// decision pending and its delivery retryable so later full payment can
+			// be projected, including when the same reconciliation delivery is reused.
+			await this.deps.commerce.markDeliveryFailed(delivery.id, {
+				category: "upstream",
+				stage: "order_read",
+				code: "invalid_data",
+				failedAtIso: nowIso(this.deps.now),
+			});
+			return "failed";
+		}
 		const validated = await this.classValidator.validateClassPurchase(
 			delivery.organizationId,
 			intent,

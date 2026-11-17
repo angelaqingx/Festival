@@ -10,6 +10,7 @@ import type {
 	ClassCheckoutExecution,
 	ClassCheckoutExecutionRepository,
 } from "./checkout-execution-types.js";
+import type { PendingClassCheckoutCandidates } from "./pending-checkout-types.js";
 
 export type CheckoutCartStatus =
 	| "ready"
@@ -166,6 +167,11 @@ export type CreateCheckoutIntentInput = Omit<
 
 export interface CheckoutRepository {
 	classExecutions?: ClassCheckoutExecutionRepository;
+	/** Includes expired remote outcomes; this read must not reap or resolve them. */
+	listPendingClassCheckouts?(
+		organizationId: string,
+		customerId: string,
+	): Promise<PendingClassCheckoutCandidates>;
 	setClassCheckoutPaymentEvidenceLookup?(
 		lookup: (intent: CheckoutIntentRecord) => boolean,
 	): void;

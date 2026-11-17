@@ -12,6 +12,7 @@ import type { ShopifyOrderProjectionService } from "../commerce/shopify-order-pr
 import type { CommunicationService } from "../communication/communication-service.js";
 import type { CustomerAccountService } from "../customer/customer-account-service.js";
 import type { CustomerAvailabilityService } from "../customer/customer-availability-service.js";
+import type { PendingClassCheckoutService } from "../domains/class-checkout/pending-class-checkout-service.js";
 import type { DropTransferService } from "../registration/drop-transfer-service.js";
 import type { RegistrationChangeRepository } from "../registration/registration-change-repository.js";
 import type { RepertoireRepository } from "../repertoire/index.js";
@@ -44,6 +45,7 @@ export interface ApiRouterOptions {
 	shopifyOrderProjectionService?: ShopifyOrderProjectionService;
 	volunteerRepository?: VolunteerRepository;
 	classCheckoutService?: ClassCheckoutService;
+	pendingClassCheckoutService?: PendingClassCheckoutService;
 	customClaimsWriter?: CustomClaimsWriter;
 	repertoireRepository?: RepertoireRepository;
 	dropTransferService?: DropTransferService;

@@ -70,6 +70,15 @@ export class PostgresCustomerAccountRepository
 	putOAuthState(s: CustomerOAuthStateRecord) {
 		return this.sessions.putOAuthState(s);
 	}
+	recordIntegrationHealth(
+		id: string,
+		version: number,
+		observation: Parameters<
+			CustomerAccountRepository["recordIntegrationHealth"]
+		>[2],
+	) {
+		return this.integrations.recordIntegrationHealth(id, version, observation);
+	}
 	consumeOAuthState(hash: string, now: string) {
 		return this.sessions.consumeOAuthState(hash, now);
 	}

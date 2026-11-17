@@ -4,6 +4,7 @@ import type { RegistrationEligibleClass } from "@festival/common";
 
 const solid = await import("solid-js/dist/solid.js");
 mock.module("solid-js", () => solid);
+const [pendingBlocked, setPendingBlocked] = solid.createSignal(false);
 mock.module("@solidjs/router", () => ({ useBeforeLeave: () => {} }));
 mock.module("../../src/domains/customer/CustomerIdentityContext.js", () => ({
 	useCustomerIdentity: () => ({
@@ -11,6 +12,11 @@ mock.module("../../src/domains/customer/CustomerIdentityContext.js", () => ({
 		isCustomerSessionLoading: () => false,
 		refreshCustomerSession: async () => {},
 		setCustomerSession: () => {},
+		pendingCheckout: {
+			isBlocked: pendingBlocked,
+			markHandoff: () => {},
+			resume: async () => null,
+		},
 	}),
 }));
 globalThis.window = new EventTarget() as Window & typeof globalThis;
@@ -156,6 +162,25 @@ assert.equal(state.purchased.state, "pending");
 assert.equal(state.purchased.error, undefined);
 assert.equal(render(), "Available / Purchased");
 state.setPieces([piece]);
+setPendingBlocked(true);
+await state.handleAddToCart();
+assert.equal(
+	workspace.cart.itemCount(),
+	0,
+	"an unresolved checkout blocks Add to Cart",
+);
+assert.equal(navigations.length, 0);
+setPendingBlocked(false);
+const racedAdd = state.handleAddToCart();
+setPendingBlocked(true);
+await racedAdd;
+assert.equal(
+	workspace.cart.itemCount(),
+	0,
+	"a checkout discovered during eligibility blocks the stale add result",
+);
+assert.equal(navigations.length, 0);
+setPendingBlocked(false);
 await state.handleAddToCart();
 assert.equal(workspace.cart.items()[0]?.classId, available.id);
 assert.deepEqual(navigations, ["/org/org/festival/festival/register"]);

@@ -42,6 +42,11 @@ import {
 	requireSlug,
 	withCustomerAccount,
 } from "./customer-class-checkout.routes.js";
+import {
+	buildCustomerPendingCheckoutRoutes,
+	CUSTOMER_PENDING_CHECKOUT_ROUTE_SECURITY,
+	type CustomerPendingCheckoutRoutesOptions,
+} from "./customer-pending-checkout.routes.js";
 
 const REG_BASE = "/festivals/:festivalShortName/registration";
 const REG_ITEM = "/class-registrations/:registrationId";
@@ -74,6 +79,7 @@ const CUSTOMER_REGISTRATION_CORE_SECURITY = [
 ] as const satisfies readonly CoLocatedRouteSecurity[];
 
 export const CUSTOMER_REGISTRATION_ROUTE_SECURITY = [
+	...CUSTOMER_PENDING_CHECKOUT_ROUTE_SECURITY,
 	...CUSTOMER_REGISTRATION_CORE_SECURITY.slice(0, 4),
 	...CUSTOMER_CLASS_CHECKOUT_ROUTE_SECURITY,
 	...CUSTOMER_REGISTRATION_CORE_SECURITY.slice(4),
@@ -87,7 +93,8 @@ export {
 	handleClassCheckoutStatus,
 };
 
-export interface CustomerRegistrationRoutesOptions {
+export interface CustomerRegistrationRoutesOptions
+	extends CustomerPendingCheckoutRoutesOptions {
 	customerAccountService?: CustomerAccountService;
 	classCheckoutService?: ClassCheckoutService;
 	dropTransferService?: DropTransferService;
@@ -465,6 +472,7 @@ export function buildCustomerRegistrationRoutes(
 ) {
 	const { customerAccountService: cas, classCheckoutService: ccs } = options;
 	return new Hono<CustomerEnv>()
+		.route("/", buildCustomerPendingCheckoutRoutes(options))
 		.route("/", buildRegistrationSearchRoutes(cas))
 		.route("/", buildRegistrationListRoutes(cas))
 		.route("/", buildCustomerClassCheckoutRoutes(options))

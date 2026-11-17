@@ -93,6 +93,9 @@ export function useFestivalRegistrationPage(
 	props: FestivalClassRegistrationPageProps,
 ) {
 	const customerIdentity = useCustomerIdentity();
+	const pendingCheckout = customerIdentity.pendingCheckout;
+	const isRegistrationBlocked = () =>
+		customerIdentity.isCustomerSessionLoading() || pendingCheckout.isBlocked();
 	const workspace = props.app.parentRegistration.workspace(
 		props.slug,
 		props.festivalSlug,
@@ -150,7 +153,7 @@ export function useFestivalRegistrationPage(
 	});
 	setupRestartDiscoveryEffect({
 		view,
-		authenticated,
+		authenticated: () => authenticated() && !isRegistrationBlocked(),
 		slug: props.slug,
 		festivalSlug: props.festivalSlug,
 		setDiscoveredRestart: signals.setDiscoveredRestart,
@@ -339,6 +342,7 @@ export function useFestivalRegistrationPage(
 		setCapacityChanged: signals.setCapacityChanged,
 		getFormRevision: () => formRevision,
 		isDisposed: () => disposed,
+		isRegistrationBlocked,
 		setAllowLeave: (val) => {
 			allowLeave = val;
 		},
@@ -365,10 +369,57 @@ export function useFestivalRegistrationPage(
 			completeHandoff = fn;
 		},
 		getCompleteHandoff: () => completeHandoff,
+		isRegistrationBlocked,
+		refreshPendingCheckout: pendingCheckout.invalidateAndRefresh,
+		onCheckoutHandoff: (submission) =>
+			pendingCheckout.markHandoff(
+				`${props.festivalSlug}:${submission.idempotencyKey}`,
+				() => cart.completeCheckout(submission),
+			),
 	});
 
 	return {
 		view,
+		pendingCheckout,
+		isRegistrationBlocked,
+		handleResumePendingCheckout: async () => {
+			if (pendingCheckout.ownerSlug() !== props.slug) return;
+			const submission = cart.checkoutSubmission();
+			const reference = pendingCheckout.checkout()?.recoveryReference;
+			const csrfToken = getCsrf();
+			const result = await pendingCheckout.resumeWithProof(
+				submission?.idempotencyKey,
+			);
+			if (
+				disposed ||
+				!result ||
+				getCsrf() !== csrfToken ||
+				pendingCheckout.ownerSlug() !== props.slug
+			)
+				return;
+			if (result.resolved) {
+				if (
+					submission &&
+					cart.checkoutSubmission() === submission &&
+					result.submissionMatched === true
+				) {
+					cart.completeCheckout(submission);
+				}
+				return;
+			}
+			if (pendingCheckout.checkout()?.recoveryReference !== reference) return;
+			if (
+				submission &&
+				cart.checkoutSubmission() === submission &&
+				result.submissionMatched === true
+			) {
+				pendingCheckout.markHandoff(
+					`${props.festivalSlug}:${submission.idempotencyKey}`,
+					() => cart.completeCheckout(submission),
+				);
+			}
+			if (result.checkoutUrl) window.location.assign(result.checkoutUrl);
+		},
 		registerPath,
 		authenticated,
 		festival,

@@ -15,6 +15,7 @@ export * from "./errors.js";
 export * from "./festival-registration-window.js";
 export * from "./membership-status.js";
 export * from "./organization.js";
+export * from "./pending-class-checkout.js";
 export * from "./profile.js";
 export * from "./purchase-eligibility.js";
 export * from "./registration.js";

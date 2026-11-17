@@ -147,7 +147,7 @@ const LIST_PAID_ORDERS_SINCE_QUERY = `
 		orders(
 			first: $first
 			query: $query
-			sortKey: PROCESSED_AT
+			sortKey: UPDATED_AT
 			reverse: true
 		) {
 			nodes { ${PAID_ORDER_FIELDS} }
@@ -248,7 +248,9 @@ export class ShopifyOrdersAdminClient implements ShopifyPaidOrderReader {
 			LIST_PAID_ORDERS_SINCE_QUERY,
 			{
 				first,
-				query: `financial_status:paid processed_at:>='${normalizedSinceIso}'`,
+				// A balance can be paid well after order creation/processing. Query
+				// updates so reconciliation can recover its missing paid webhook.
+				query: `financial_status:paid updated_at:>='${normalizedSinceIso}'`,
 			},
 		);
 		return {

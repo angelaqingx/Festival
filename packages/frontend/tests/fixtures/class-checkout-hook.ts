@@ -1,9 +1,48 @@
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
-import type { ClassCheckoutRestartRegistration } from "@festival/common";
+import type {
+	ClassCheckoutRestartRegistration,
+	PendingClassCheckoutResponse,
+} from "@festival/common";
 
 const solid = await import("solid-js/dist/solid.js");
 mock.module("solid-js", () => solid);
+const { createPendingCheckoutState } = await import(
+	"../../src/domains/customer/pending-checkout-state.js"
+);
+let pendingResponse: PendingClassCheckoutResponse = { checkout: null };
+let pendingReadOverride:
+	| (() => Promise<PendingClassCheckoutResponse>)
+	| undefined;
+let pendingReads = 0;
+let waitForCheckoutResponse: (() => Promise<void>) | undefined;
+let resumeSubmissionMatched: boolean | undefined;
+let waitForResumeResponse: (() => Promise<void>) | undefined;
+const pendingResumes: string[][] = [];
+const pendingCheckout = createPendingCheckoutState({
+	read: async () => {
+		pendingReads++;
+		return pendingReadOverride ? pendingReadOverride() : pendingResponse;
+	},
+	resume: async (slug, reference, csrf, submissionKey) => {
+		pendingResumes.push([
+			slug,
+			reference,
+			csrf,
+			...(submissionKey ? [submissionKey] : []),
+		]);
+		const submissionMatched = resumeSubmissionMatched;
+		if (waitForResumeResponse) await waitForResumeResponse();
+		return {
+			checkoutUrl: "https://shop.example/checkout",
+			...(submissionKey && submissionMatched !== undefined
+				? { submissionMatched }
+				: {}),
+		};
+	},
+});
+pendingCheckout.bindOwner("org", "csrf");
+await pendingCheckout.refresh();
 let beforeLeave: ((event: { preventDefault: () => void }) => void) | undefined;
 mock.module("@solidjs/router", () => ({
 	useBeforeLeave: (handler: typeof beforeLeave) => {
@@ -16,6 +55,7 @@ mock.module("../../src/domains/customer/CustomerIdentityContext.js", () => ({
 		isCustomerSessionLoading: () => false,
 		refreshCustomerSession: async () => {},
 		setCustomerSession: () => {},
+		pendingCheckout,
 	}),
 }));
 
@@ -166,6 +206,7 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
 			key: new Headers(init?.headers).get("Idempotency-Key"),
 			payload: JSON.parse(String(init?.body)),
 		});
+		if (waitForCheckoutResponse) await waitForCheckoutResponse();
 		if (
 			["expired-current", "expired-merged"].includes(mode) &&
 			requests.length === 1
@@ -224,6 +265,75 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
 				},
 				409,
 			);
+		if (
+			[
+				"pending-proof-resume",
+				"pending-unmatched-resume",
+				"pending-proof-resolved",
+				"pending-unmatched-resolved",
+				"pending-unproven-resolved",
+				"pending-owner-changed",
+				"pending-exists",
+			].includes(mode)
+		) {
+			pendingResponse = {
+				checkout: {
+					state: "ready",
+					recoveryReference,
+					festivalShortName: [
+						"pending-unmatched-resume",
+						"pending-unmatched-resolved",
+						"pending-exists",
+					].includes(mode)
+						? "other-festival"
+						: checkoutFestival,
+					registrationCount: 1,
+					registrations: [{ ...line, lineId: "durable-submitted-line" }],
+					resumeAllowed: true,
+					reasonCode: "checkout_ready",
+					verifiedAtIso: "2026-11-15T12:00:00.000Z",
+				},
+			};
+			if (mode === "pending-exists") {
+				return json(
+					{
+						error: "An unfinished checkout already exists.",
+						code: "pending_checkout_exists",
+					},
+					409,
+				);
+			}
+			throw new Error("Response lost after dispatch");
+		}
+		if (["pending-recovery-error", "pending-network-error"].includes(mode)) {
+			pendingResponse = {
+				checkout: {
+					state: "needs_review",
+					recoveryReference,
+					festivalShortName: checkoutFestival,
+					registrationCount: 1,
+					registrations: [restoredLine],
+					resumeAllowed: false,
+					reasonCode: "checkout_creation_unknown",
+					verifiedAtIso: null,
+				},
+			};
+			if (mode === "pending-network-error")
+				throw new Error("Response lost after dispatch");
+			return json(
+				{
+					error: "This checkout needs recovery before it can continue.",
+					code: "checkout_recovery_required",
+					recovery: {
+						status: "recovery_required",
+						recoveryReference,
+						reasonCode: "checkout_creation_unknown",
+						retryAllowed: false,
+					},
+				},
+				409,
+			);
+		}
 		if (mode === "network" && requests.length === 1)
 			throw new Error("Response lost");
 		if (mode === "pre-dispatch-expiry" && requests.length === 1)
@@ -427,13 +537,300 @@ if (mode === "sold-out-cart-waitlist") {
 	process.exit(0);
 }
 await new Promise((resolve) => setTimeout(resolve, 0));
+if (
+	[
+		"pending-proof-resolved",
+		"pending-unmatched-resolved",
+		"pending-unproven-resolved",
+		"pending-owner-changed",
+	].includes(mode)
+) {
+	await state.handleCartCheckout();
+	await pendingCheckout.refresh();
+	const submission = cart.checkoutSubmission();
+	assert.ok(submission);
+	cart.items().push({ ...line, childId: "new-child", lineId: "unsent" });
+	const resumed = Promise.withResolvers<void>();
+	const resumeResponse = Promise.withResolvers<void>();
+	resumeSubmissionMatched =
+		mode === "pending-unproven-resolved"
+			? undefined
+			: mode !== "pending-unmatched-resolved";
+	waitForResumeResponse = () => {
+		resumed.resolve();
+		return resumeResponse.promise;
+	};
+	const resumeAttempt = state.handleResumePendingCheckout();
+	await resumed.promise;
+	if (mode === "pending-owner-changed") {
+		pendingCheckout.bindOwner("org", "replacement-owner-csrf");
+	} else {
+		pendingResponse = { checkout: null };
+		await pendingCheckout.refresh();
+	}
+	assert.equal(
+		cart.itemCount(),
+		2,
+		"a null read alone cannot discard an uncertain local submission",
+	);
+	assert.equal(cart.checkoutSubmission(), submission);
+	resumeResponse.resolve();
+	await resumeAttempt;
+	assert.deepEqual(pendingResumes, [
+		["org", recoveryReference, "csrf", submission.idempotencyKey],
+	]);
+	assert.deepEqual(
+		assigned,
+		[],
+		"resolved or superseded checkout links must not be opened",
+	);
+	assert.equal(pendingCheckout.isResuming(), false);
+	if (mode === "pending-proof-resolved") {
+		assert.deepEqual(
+			cart.items().map((item) => item.lineId),
+			["unsent"],
+		);
+		assert.equal(cart.checkoutSubmission(), null);
+	} else {
+		assert.equal(
+			cart.itemCount(),
+			2,
+			"missing or unrelated proof cannot consume the draft",
+		);
+		assert.equal(cart.checkoutSubmission(), submission);
+	}
+	assert.equal(requests.length, 1);
+	dispose?.();
+	console.log("CHECKOUT_HOOK_OK");
+	process.exit(0);
+}
+if (["pending-proof-resume", "pending-unmatched-resume"].includes(mode)) {
+	await state.handleCartCheckout();
+	await pendingCheckout.refresh();
+	const submission = cart.checkoutSubmission();
+	assert.ok(submission);
+	assert.equal(pendingCheckout.checkout()?.state, "ready");
+	assert.equal(
+		cart.itemCount(),
+		1,
+		"an uncertain error does not clear the submitted draft",
+	);
+	cart.items().push({ ...line, childId: "new-child", lineId: "unsent" });
+	resumeSubmissionMatched = mode === "pending-proof-resume";
+	await state.handleResumePendingCheckout();
+	assert.deepEqual(pendingResumes, [
+		["org", recoveryReference, "csrf", submission.idempotencyKey],
+	]);
+	assert.deepEqual(assigned, ["https://shop.example/checkout"]);
+	assert.equal(
+		pendingCheckout.isResuming(),
+		false,
+		"proof handoff cannot leave resume stuck",
+	);
+	assert.equal(cart.checkoutSubmission(), submission);
+	assert.equal(cart.itemCount(), 2);
+	pendingResponse = { checkout: null };
+	await pendingCheckout.refresh();
+	if (resumeSubmissionMatched) {
+		assert.deepEqual(
+			cart.items().map((item) => item.lineId),
+			["unsent"],
+		);
+		assert.equal(cart.checkoutSubmission(), null);
+	} else {
+		assert.equal(
+			cart.itemCount(),
+			2,
+			"an unrelated checkout cannot consume this browser's draft",
+		);
+		assert.equal(cart.checkoutSubmission(), submission);
+	}
+	dispose?.();
+	console.log("CHECKOUT_HOOK_OK");
+	process.exit(0);
+}
+if (mode === "pending-exists") {
+	const originalItems = structuredClone(cart.items());
+	const originalKey = cart.getCheckoutIdempotencyKey();
+	await state.handleCartCheckout();
+	assert.equal(state.isSubmittingCheckout(), false);
+	assert.equal(
+		cart.checkoutSubmission(),
+		null,
+		"confirmed pre-dispatch conflict releases the local freeze",
+	);
+	assert.deepEqual(
+		cart.items(),
+		originalItems,
+		"pre-dispatch conflict preserves all draft selections",
+	);
+	assert.equal(
+		storedCheckoutKeys.size,
+		0,
+		"the rejected local submission key is retired",
+	);
+	await pendingCheckout.refresh();
+	assert.equal(state.isRegistrationBlocked(), true);
+	assert.equal(pendingCheckout.checkout()?.festivalShortName, "other-festival");
+	assert.notEqual(cart.getCheckoutIdempotencyKey(), originalKey);
+	await state.handleCartCheckout();
+	assert.equal(requests.length, 1);
+	assert.deepEqual(assigned, []);
+	dispose?.();
+	console.log("CHECKOUT_HOOK_OK");
+	process.exit(0);
+}
+if (["pending-recovery-error", "pending-network-error"].includes(mode)) {
+	const earlierVerification =
+		Promise.withResolvers<PendingClassCheckoutResponse>();
+	const verification = Promise.withResolvers<PendingClassCheckoutResponse>();
+	const dispatched = Promise.withResolvers<void>();
+	const dispatchResponse = Promise.withResolvers<void>();
+	waitForCheckoutResponse = () => {
+		dispatched.resolve();
+		return dispatchResponse.promise;
+	};
+	let verificationReads = 0;
+	pendingReadOverride = () =>
+		++verificationReads === 1
+			? earlierVerification.promise
+			: verification.promise;
+	const beforeReads = pendingReads;
+	assert.equal(pendingCheckout.checkout(), null);
+	assert.equal(state.isRegistrationBlocked(), false);
+	const attempt = state.handleCartCheckout();
+	await dispatched.promise;
+	const earlierRead = pendingCheckout.refresh();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.equal(pendingReads, beforeReads + 1);
+	dispatchResponse.resolve();
+	await attempt;
+	assert.equal(requests.length, 1);
+	assert.equal(state.isSubmittingCheckout(), false);
+	assert.notEqual(cart.checkoutSubmission(), null);
+	assert.equal(cart.itemCount(), 1);
+	assert.equal(
+		pendingReads,
+		beforeReads + 2,
+		"a checkout error starts verification after its dispatch outcome",
+	);
+	earlierVerification.resolve({ checkout: null });
+	await earlierRead;
+	assert.equal(cart.itemCount(), 1);
+	assert.notEqual(cart.checkoutSubmission(), null);
+	assert.equal(pendingCheckout.isChecking(), true);
+	assert.equal(
+		state.isRegistrationBlocked(),
+		true,
+		"an older empty verification cannot unlock the new checkout outcome",
+	);
+	await state.handleCartCheckout();
+	assert.equal(
+		requests.length,
+		1,
+		"the verification gate prevents another checkout request",
+	);
+	if (mode === "pending-network-error") {
+		verification.reject(new Error("Shopify status could not be reached"));
+		await pendingCheckout.refresh();
+		assert.equal(pendingCheckout.phase(), "error");
+		assert.equal(state.isRegistrationBlocked(), true);
+		assert.notEqual(cart.checkoutSubmission(), null);
+		pendingReadOverride = undefined;
+		await pendingCheckout.refresh();
+	} else {
+		verification.resolve(pendingResponse);
+		await pendingCheckout.refresh();
+	}
+	assert.equal(pendingCheckout.checkout()?.state, "needs_review");
+	assert.equal(state.isRegistrationBlocked(), true);
+	assert.equal(cart.itemCount(), 1);
+	assert.notEqual(cart.checkoutSubmission(), null);
+	assert.equal(requests.length, 1);
+	assert.deepEqual(assigned, []);
+	dispose?.();
+	console.log("CHECKOUT_HOOK_OK");
+	process.exit(0);
+}
+if (mode === "pending-checkout") {
+	const existingDraft = structuredClone(cart.items());
+	pendingResponse = {
+		checkout: {
+			state: "ready",
+			recoveryReference,
+			festivalShortName: "other-festival",
+			registrationCount: 2,
+			registrations: [restoredLine, restoredSecondLine],
+			resumeAllowed: true,
+			reasonCode: "checkout_ready",
+			verifiedAtIso: "2026-11-15T12:00:00.000Z",
+		},
+	};
+	await pendingCheckout.refresh();
+	assert.equal(state.isRegistrationBlocked(), true);
+	assert.equal(state.pendingCheckout.checkout()?.registrationCount, 2);
+	assert.equal(
+		state.pendingCheckout.checkout()?.festivalShortName,
+		"other-festival",
+	);
+	assert.deepEqual(
+		cart.items(),
+		existingDraft,
+		"a restored submitted cart is not merged into the local draft",
+	);
+	await state.handleCartCheckout();
+	await state.handleRestoreCheckout();
+	state.handleRestartCheckout();
+	assert.equal(requests.length, 0);
+	assert.equal(restartCalls, 0);
+	await state.handleResumePendingCheckout();
+	assert.deepEqual(pendingResumes, [["org", recoveryReference, "csrf"]]);
+	assert.deepEqual(assigned, ["https://shop.example/checkout"]);
+	assert.equal(requests.length, 0, "resume does not submit another checkout");
+	const originalPending = pendingResponse.checkout;
+	assert.ok(originalPending);
+	pendingResponse = {
+		checkout: {
+			...originalPending,
+			state: "partially_paid",
+			resumeAllowed: false,
+			payment: {
+				receivedAmount: "40.00",
+				outstandingAmount: "60.00",
+				currencyCode: "USD",
+			},
+		},
+	};
+	await pendingCheckout.refresh();
+	await state.handleCartCheckout();
+	await state.handleResumePendingCheckout();
+	assert.equal(state.isRegistrationBlocked(), true);
+	assert.equal(pendingResumes.length, 1);
+	assert.equal(requests.length, 0);
+	assert.deepEqual(cart.items(), existingDraft);
+	dispose?.();
+	console.log("CHECKOUT_HOOK_OK");
+	process.exit(0);
+}
 if (expiredRestart) {
 	const originalItems = structuredClone(cart.items());
 	await state.handleCartCheckout();
+	if (assigned.length === 0) await pendingCheckout.refresh();
 	assert.equal(requests.length, 1);
 	if (["expired-reload", "expired-submitted-reload"].includes(mode)) {
 		assert.deepEqual(assigned, ["https://shop.example/checkout"]);
 		events.dispatchEvent(new Event("pagehide"));
+		assert.equal(
+			cart.itemCount(),
+			originalItems.length,
+			"handoff preserves submitted selections",
+		);
+		assert.equal(
+			state.isRegistrationBlocked(),
+			true,
+			"unverified handoff blocks registration",
+		);
+		await pendingCheckout.refresh();
 		assert.equal(cart.itemCount(), 0);
 		assert.equal(storedCheckoutKeys.size, 0);
 		dispose?.();
@@ -495,6 +892,7 @@ if (expiredRestart) {
 		assert.equal(requests[1].key, replacementKey);
 		if (mode === "expired-submitted-reload") {
 			events.dispatchEvent(new Event("pagehide"));
+			await pendingCheckout.refresh();
 			dispose?.();
 			assigned.length = 0;
 			const anotherApplication = createParentRegistrationState();
@@ -587,6 +985,9 @@ if (mode === "restore-checkout") {
 if (mode === "network")
 	assert.equal(state.checkoutRestartReference(), recoveryReference);
 await state.handleCartCheckout();
+// Legacy retry scenarios continue only after the new discovery guard has verified
+// its fixture's empty server result. The pending-error scenarios above retain it.
+if (assigned.length === 0) await pendingCheckout.refresh();
 assert.equal(requests.length, 1);
 assert.equal(cart.itemCount(), 1);
 
@@ -738,6 +1139,10 @@ assert.throws(() => cart.removeItem(cart.items()[0].lineId));
 // A programmatic mutation outside normal controls must not make cleanup erase an unsent line.
 cart.items().push({ ...line, childId: "new-child", lineId: "unsent" });
 events.dispatchEvent(new Event("pagehide"));
+assert.equal(cart.itemCount(), 2, "navigation alone does not complete payment");
+assert.notEqual(cart.checkoutSubmission(), null);
+assert.equal(state.isRegistrationBlocked(), true);
+await pendingCheckout.refresh();
 assert.deepEqual(
 	cart.items().map((item) => item.lineId),
 	["unsent"],

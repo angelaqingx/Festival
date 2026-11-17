@@ -16,10 +16,12 @@ import { MembershipCheckoutService } from "../checkout/membership-checkout-servi
 import { PostgresCheckoutRecoveryRepository } from "../checkout/postgres-checkout-recovery-repository.js";
 import { PostgresCheckoutRepository } from "../checkout/postgres-checkout-repository.js";
 import { ShopifyMembershipCheckoutClient } from "../checkout/shopify-membership-checkout-client.js";
+import { ShopifyPendingCheckoutOrders } from "../checkout/shopify-pending-checkout-orders.js";
 import type { ClassEntitlementRepository } from "../commerce/class-entitlement-repository.js";
 import type { MembershipCommerceRepository } from "../commerce/membership-commerce-repository.js";
 import type { AppEnv } from "../config/env.js";
 import type { CustomerAccountRepository } from "../customer/customer-account-repository.js";
+import { PendingClassCheckoutService } from "../domains/class-checkout/pending-class-checkout-service.js";
 import { DropTransferService } from "../registration/drop-transfer-service.js";
 import {
 	InMemoryRegistrationChangeRepository,
@@ -47,6 +49,7 @@ export interface ClassCheckoutRepositories {
 export interface ClassCheckoutComposition extends ClassCheckoutRepositories {
 	membershipCheckoutService: MembershipCheckoutService | undefined;
 	classCheckoutService: ClassCheckoutService | undefined;
+	pendingClassCheckoutService: PendingClassCheckoutService | undefined;
 	dropTransferService: DropTransferService | undefined;
 	checkoutRecoveryService: CheckoutRecoveryService;
 	waitlistService: WaitlistService | undefined;
@@ -147,6 +150,21 @@ function createCheckoutServices(params: {
 					repertoireRepository,
 				)
 			: undefined);
+	const pendingClassCheckoutService =
+		options.pendingClassCheckoutService ??
+		(secretKeyring && customerAccountRepository
+			? new PendingClassCheckoutService({
+					checkout: checkoutRepository,
+					organizations: repository,
+					catalog: repository,
+					customers: customerAccountRepository,
+					storefront: new ShopifyMembershipCheckoutClient(
+						repository,
+						secretKeyring,
+					),
+					orders: new ShopifyPendingCheckoutOrders(repository, secretKeyring),
+				})
+			: undefined);
 	const checkoutRecoveryService =
 		options.checkoutRecoveryService ??
 		new CheckoutRecoveryService({
@@ -162,6 +180,7 @@ function createCheckoutServices(params: {
 	return {
 		membershipCheckoutService,
 		classCheckoutService,
+		pendingClassCheckoutService,
 		checkoutRecoveryService,
 	};
 }

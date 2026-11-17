@@ -8,6 +8,7 @@ import { createSignal, For, Show } from "solid-js";
 import type { FestivalAppController } from "../app/useFestivalAppController.js";
 import { Button } from "../components/Button.js";
 import { FestivalRepertoireModal } from "../components/FestivalRepertoireModal.js";
+import { useOptionalCustomerIdentity } from "../domains/customer/CustomerIdentityContext.js";
 import {
 	dropCustomerRegistration,
 	getCustomerOrders,
@@ -60,6 +61,7 @@ export function CustomerAccountOrdersPage(props: {
 	app: FestivalAppController;
 	slug: string;
 }) {
+	const customerIdentity = useOptionalCustomerIdentity();
 	const [orders, setOrders] = createSignal<CustomerOrderSummary[]>([]);
 	const [registrations, setRegistrations] = createSignal<
 		RegistrationItemRecord[]
@@ -99,6 +101,9 @@ export function CustomerAccountOrdersPage(props: {
 		try {
 			const response = await listCustomerClassRegistrations(props.slug);
 			setRegistrations(response.registrations);
+			if (customerIdentity?.pendingCheckout.ownerSlug() === props.slug) {
+				void customerIdentity.pendingCheckout.refresh();
+			}
 		} catch {
 			// Handled gracefully in UI
 		}

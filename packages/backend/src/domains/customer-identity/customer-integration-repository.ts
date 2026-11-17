@@ -79,6 +79,35 @@ export class PostgresCustomerIntegrationRepository
 		return integrationRowToRecord(updatedRow);
 	}
 
+	async recordIntegrationHealth(
+		organizationId: string,
+		expectedIntegrationVersion: number,
+		observation: Parameters<
+			CustomerIntegrationRepository["recordIntegrationHealth"]
+		>[2],
+	): Promise<boolean> {
+		await this.ensureReady();
+		const discovery = observation.kind === "discovery_verified";
+		const rows = await sql.unsafe(
+			`UPDATE ${this.schema}.shopify_customer_account_integrations
+			SET readiness = CASE WHEN $3 THEN 'ready' ELSE readiness END,
+				can_read_orders = CASE WHEN $3 THEN can_read_orders ELSE $4 END,
+				verified_at = CASE WHEN $3 THEN $5::timestamptz ELSE verified_at END,
+				last_error = CASE WHEN $3 THEN NULL ELSE last_error END,
+				updated_at = NOW()
+			WHERE organization_id = $1 AND integration_version = $2
+			RETURNING organization_id`,
+			[
+				organizationId,
+				expectedIntegrationVersion,
+				discovery,
+				observation.kind === "order_access" ? observation.canReadOrders : null,
+				discovery ? observation.verifiedAtIso : null,
+			],
+		);
+		return rows.length === 1;
+	}
+
 	async setIntegrationReadiness(
 		organizationId: string,
 		input: {

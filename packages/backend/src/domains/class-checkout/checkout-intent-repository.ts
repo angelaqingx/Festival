@@ -19,6 +19,7 @@ import {
 	findIntentByIdQuery,
 	getCartQuery,
 	hasActiveProcessingIntentQuery,
+	hasUnresolvedIssuedClassIntentQuery,
 	loadCartByReference,
 	markCheckoutStartedTx,
 	markIntentFailedQuery,
@@ -35,6 +36,7 @@ import type {
 	ClassCheckoutReplayState,
 	CreateCheckoutIntentInput,
 } from "./checkout-types.js";
+import { listPendingClassCheckoutsQuery } from "./pending-checkout-queries.js";
 import {
 	getRegistrationMetadataByEntitlementIdQuery,
 	insertRegistrationMetadataQuery,
@@ -70,6 +72,16 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
 		idempotencyKey: string;
 	}): Promise<CheckoutIntentRecord | null> {
 		return queryIntentByKey(sql, this.schema, input, false);
+	}
+
+	async listPendingClassCheckouts(organizationId: string, customerId: string) {
+		return listPendingClassCheckoutsQuery(
+			sql,
+			this.schema,
+			organizationId,
+			customerId,
+			this.classExecutions,
+		);
 	}
 
 	async getOutcome(input: {
@@ -195,7 +207,13 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
 	): Promise<boolean> {
 		if (
 			intentType === "class_entry" &&
-			(await this.classExecutions.findBlocking(organizationId, customerId))
+			((await this.classExecutions.findBlocking(organizationId, customerId)) ||
+				(await hasUnresolvedIssuedClassIntentQuery(
+					sql,
+					this.schema,
+					organizationId,
+					customerId,
+				)))
 		) {
 			return true;
 		}

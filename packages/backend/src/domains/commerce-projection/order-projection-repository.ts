@@ -107,7 +107,7 @@ export class PostgresOrderProjectionRepository
 		input: ShopifyOrderProjectionInput,
 	): Promise<ShopifyOrderProjection> {
 		const rows = (await sql.unsafe(
-			`INSERT INTO ${this.schema}.shopify_order_projections (organization_id, shopify_order_gid, shopify_customer_gid, correlation_id, fully_paid_at, currency_code, created_at, updated_at) VALUES ($1,$2,$3,$4,$5::timestamptz,$6,$7::timestamptz,$7::timestamptz) ON CONFLICT (organization_id, shopify_order_gid) DO UPDATE SET shopify_customer_gid = EXCLUDED.shopify_customer_gid, correlation_id = EXCLUDED.correlation_id, fully_paid_at = EXCLUDED.fully_paid_at, currency_code = EXCLUDED.currency_code, updated_at = EXCLUDED.updated_at RETURNING organization_id, shopify_order_gid, shopify_customer_gid, correlation_id, fully_paid_at::text, currency_code, created_at::text, updated_at::text`,
+			`INSERT INTO ${this.schema}.shopify_order_projections (organization_id, shopify_order_gid, shopify_customer_gid, correlation_id, fully_paid_at, currency_code, created_at, updated_at) VALUES ($1,$2,$3,$4,$5::timestamptz,$6,$7::timestamptz,$7::timestamptz) ON CONFLICT (organization_id, shopify_order_gid) DO UPDATE SET shopify_customer_gid = EXCLUDED.shopify_customer_gid, correlation_id = EXCLUDED.correlation_id, fully_paid_at = COALESCE(${this.schema}.shopify_order_projections.fully_paid_at, EXCLUDED.fully_paid_at), currency_code = EXCLUDED.currency_code, updated_at = EXCLUDED.updated_at RETURNING organization_id, shopify_order_gid, shopify_customer_gid, correlation_id, fully_paid_at::text, currency_code, created_at::text, updated_at::text`,
 			[
 				input.organizationId,
 				input.shopifyOrderGid,

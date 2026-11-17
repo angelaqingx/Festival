@@ -105,7 +105,7 @@ export function unissuedInvalidCartRestartDecision(
 	value: ClassCheckoutExecution,
 	intentStatus: string,
 	events: readonly ClassCheckoutExecutionEvent[],
-	timing?: { expiresAtIso: string; nowIso: string },
+	_timing?: { expiresAtIso: string; nowIso: string },
 ): { replacementKey: string } | "restartable" | null {
 	if (
 		events.some(
@@ -118,26 +118,16 @@ export function unissuedInvalidCartRestartDecision(
 	if (
 		intentStatus === "superseded" &&
 		value.state === "rejected" &&
-		["checkout_restarted_unissued", "checkout_restarted_expired"].includes(
-			value.resultCode ?? "",
-		)
+		["checkout_restarted_unissued"].includes(value.resultCode ?? "")
 	) {
 		const restart = events.find(
 			(event) => event.eventType === "customer_restarted_unissued",
 		);
 		return restart ? { replacementKey: restart.id } : null;
 	}
-	if (
-		value.checkpoint === "attached" &&
-		Boolean(value.shopifyCartId) &&
-		["ready", "checkout_started"].includes(intentStatus) &&
-		(["ready", "retryable", "completed"].includes(value.state) ||
-			(value.state === "recovery_required" &&
-				value.resultCode === "checkout_expired")) &&
-		timing &&
-		Date.parse(timing.expiresAtIso) <= Date.parse(timing.nowIso)
-	)
-		return "restartable";
+	// An issued Shopify checkout may still accept payment after Festival's local
+	// deadline. Only the historical never-issued invalid-cart path can restart.
+	if (value.checkpoint === "attached") return null;
 	if (!hasUnissuedInvalidCartEvidence(value, events)) return null;
 	return intentStatus === "creating" &&
 		["running", "retryable", "recovery_required"].includes(value.state)

@@ -93,7 +93,7 @@ export function buildProjectionInput(
 		shopifyOrderGid: order.id,
 		shopifyCustomerGid: order.customerGid,
 		correlationId,
-		fullyPaidAtIso: order.fullyPaidAtIso,
+		fullyPaidAtIso: order.fullyPaid ? order.fullyPaidAtIso : undefined,
 		currencyCode: order.currencyCode,
 		updatedAtIso,
 	};

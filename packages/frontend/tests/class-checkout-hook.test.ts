@@ -4,6 +4,16 @@ import { fileURLToPath } from "node:url";
 const scenarios = {
 	"class-checkout-hook.ts": [
 		"handoff",
+		"pending-checkout",
+		"pending-recovery-error",
+		"pending-network-error",
+		"pending-proof-resume",
+		"pending-unmatched-resume",
+		"pending-proof-resolved",
+		"pending-unmatched-resolved",
+		"pending-unproven-resolved",
+		"pending-owner-changed",
+		"pending-exists",
 		"network",
 		"recovery",
 		"cross-festival-recovery",

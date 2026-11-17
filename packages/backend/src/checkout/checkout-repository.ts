@@ -12,6 +12,8 @@ import type {
 	ClassCheckoutClaim,
 	CreateCheckoutIntentInput,
 } from "../domains/class-checkout/index.js";
+import { PENDING_CLASS_CHECKOUT_LIMIT } from "../domains/class-checkout/pending-checkout-queries.js";
+import type { PendingClassCheckoutCandidates } from "../domains/class-checkout/pending-checkout-types.js";
 import { withInMemoryCapacityLock } from "../repo/in-memory-capacity-lock.js";
 import type { InMemoryClassCheckoutExecutionRepository } from "./class-checkout-execution.js";
 import { withInMemoryCheckoutAdmissionLock } from "./in-memory-checkout-admission-lock.js";
@@ -108,6 +110,61 @@ export class InMemoryCheckoutRepository implements CheckoutRepository {
 		idempotencyKey: string;
 	}) {
 		return findInMemoryIntentByKey(this.store(), input);
+	}
+
+	async listPendingClassCheckouts(
+		organizationId: string,
+		customerId: string,
+	): Promise<PendingClassCheckoutCandidates> {
+		const candidates: PendingClassCheckoutCandidates["candidates"] = [];
+		for (const intent of this.intents.values()) {
+			if (
+				intent.organizationId !== organizationId ||
+				intent.customerId !== customerId ||
+				intent.intentType !== "class_entry" ||
+				intent.status === "approved"
+			)
+				continue;
+			const execution = await this.classExecutions.get(
+				organizationId,
+				intent.id,
+			);
+			if (
+				intent.status === "superseded" &&
+				!intent.cartReference &&
+				execution &&
+				execution.checkpoint !== "attached" &&
+				[
+					"checkout_restarted_unissued",
+					"abandoned_unknown",
+					"checkout_abandoned",
+				].includes(execution.resultCode ?? "")
+			)
+				continue;
+			if (
+				intent.cartReference ||
+				(execution && execution.checkpoint !== "prepared") ||
+				(["creating", "ready", "checkout_started"].includes(intent.status) &&
+					Date.parse(intent.expiresAtIso) > this.now().getTime() &&
+					execution?.state !== "rejected")
+			) {
+				candidates.push({
+					intent: structuredClone(intent),
+					execution,
+					cart: structuredClone(
+						(intent.cartReference && this.carts.get(intent.cartReference)) ||
+							null,
+					),
+				});
+			}
+		}
+		candidates.sort((a, b) =>
+			b.intent.createdAtIso.localeCompare(a.intent.createdAtIso),
+		);
+		return {
+			candidates: candidates.slice(0, PENDING_CLASS_CHECKOUT_LIMIT),
+			complete: candidates.length <= PENDING_CLASS_CHECKOUT_LIMIT,
+		};
 	}
 
 	async getOutcome(input: {

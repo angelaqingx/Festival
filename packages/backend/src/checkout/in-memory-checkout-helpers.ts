@@ -100,10 +100,18 @@ export async function createInMemoryCheckoutIntent(
 	if (existing) return computeInMemoryIntentOutcome(store, existing);
 	if (
 		record.intentType === "class_entry" &&
-		(await store.classExecutions.findBlocking(
-			record.organizationId,
-			record.customerId,
-		))
+		([...store.intents.values()].some(
+			(intent) =>
+				intent.organizationId === record.organizationId &&
+				intent.customerId === record.customerId &&
+				intent.intentType === "class_entry" &&
+				intent.status !== "approved" &&
+				!!intent.cartReference,
+		) ||
+			(await store.classExecutions.findBlocking(
+				record.organizationId,
+				record.customerId,
+			)))
 	) {
 		return { kind: "in_progress" };
 	}

@@ -27,6 +27,8 @@ export * from "./drop-transfer-service.js";
 export * from "./drop-transfer-validation.js";
 export * from "./events.js";
 export * from "./membership-checkout-service.js";
+export * from "./pending-checkout-types.js";
+export * from "./pending-class-checkout-service.js";
 export * from "./ports.js";
 export * from "./registration-change-repository.js";
 export * from "./registration-metadata-queries.js";
