@@ -29,7 +29,7 @@ import type {
 	UpsertTeacherProfileInput,
 } from "./organization-repository.js";
 import {
-	profileEditRequiresReapproval,
+	resolveParticipantProfileApprovalStatus,
 	resolveTeacherProfileApprovalStatus,
 } from "./profile-moderation.js";
 import {
@@ -166,21 +166,17 @@ export function inMemUpsertAccompanistProfile(
 			p.customer_id === params.customerId,
 	);
 	const nowIso = state.now().toISOString();
+	const approvalStatus = resolveParticipantProfileApprovalStatus(
+		existing?.approval_status,
+		publicDirectoryOptIn,
+	);
 	if (existing) {
 		const updated: AccompanistProfileRecord = {
 			...existing,
 			display_name: displayName,
 			public_directory_opt_in: publicDirectoryOptIn,
 			division_ids: divisionIds,
-			approval_status: profileEditRequiresReapproval(
-				{
-					displayName: existing.display_name,
-					divisionIds: existing.division_ids,
-				},
-				{ displayName, divisionIds },
-			)
-				? "pending"
-				: existing.approval_status,
+			approval_status: approvalStatus,
 			updated_at: nowIso,
 		};
 		state.accompanistProfiles.set(existing.id, updated);
@@ -192,7 +188,7 @@ export function inMemUpsertAccompanistProfile(
 		customer_id: params.customerId,
 		display_name: displayName,
 		public_directory_opt_in: publicDirectoryOptIn,
-		approval_status: "pending",
+		approval_status: approvalStatus,
 		division_ids: divisionIds,
 		created_at: nowIso,
 		updated_at: nowIso,
@@ -288,7 +284,8 @@ function listPublicDirectoryAccompanists(
 			(p) =>
 				p.organization_id === organizationId &&
 				p.public_directory_opt_in &&
-				p.approval_status === "approved",
+				p.approval_status === "approved" &&
+				activeAccompanistIds.has(p.customer_id),
 		)
 		.sort(compareProfilesByName)
 		.map((ap) =>
@@ -300,7 +297,7 @@ function listPublicDirectoryAccompanists(
 					organizationId,
 					ap.division_ids,
 				),
-				isActiveMember: activeAccompanistIds.has(ap.customer_id),
+				isActiveMember: true,
 			}),
 		);
 }

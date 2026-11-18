@@ -16,7 +16,7 @@ import type {
 	UpsertTeacherProfileInput,
 } from "./organization-repository-types.js";
 import {
-	profileEditRequiresReapproval,
+	resolveParticipantProfileApprovalStatus,
 	resolveTeacherProfileApprovalStatus,
 } from "./profile-moderation.js";
 
@@ -123,37 +123,6 @@ export async function assertValidDivisionIdsSql(
 	return uniqueIds;
 }
 
-async function lockedAccompanistRequiresReapproval(
-	tx: SqlRunner,
-	schema: string,
-	next: {
-		organizationId: string;
-		customerId: string;
-		displayName: string;
-		divisionIds: string[];
-	},
-): Promise<boolean> {
-	const existingRows = (await tx.unsafe(
-		`SELECT id, display_name FROM ${schema}.accompanist_profiles
-		 WHERE organization_id = $1 AND customer_id = $2 FOR UPDATE`,
-		[next.organizationId, next.customerId],
-	)) as Array<{ id: string; display_name: string }>;
-	const existing = existingRows[0];
-	if (!existing) return true;
-	const divisionRows = (await tx.unsafe(
-		`SELECT division_id FROM ${schema}.accompanist_profile_divisions
-		 WHERE accompanist_profile_id = $1 AND organization_id = $2`,
-		[existing.id, next.organizationId],
-	)) as Array<{ division_id: string }>;
-	return profileEditRequiresReapproval(
-		{
-			displayName: existing.display_name,
-			divisionIds: divisionRows.map((row) => row.division_id),
-		},
-		next,
-	);
-}
-
 export async function upsertTeacherProfileTx(
 	tx: SqlRunner,
 	schema: string,
@@ -213,20 +182,23 @@ export async function upsertAccompanistProfileTx(
 	publicDirectoryOptIn: boolean,
 	divisionIds: string[],
 ): Promise<string> {
-	const requiresReapproval = await lockedAccompanistRequiresReapproval(
-		tx,
-		schema,
-		{ ...params, displayName, divisionIds },
+	const initialApprovalStatus = resolveParticipantProfileApprovalStatus(
+		null,
+		publicDirectoryOptIn,
 	);
 	const upserted = (await tx.unsafe(
 		`INSERT INTO ${schema}.accompanist_profiles (
 			id, organization_id, customer_id, display_name, public_directory_opt_in, approval_status, created_at, updated_at
 		 )
-		 VALUES ($1, $2, $3, $4, $5, 'pending', NOW(), NOW())
+		 VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
 		 ON CONFLICT (organization_id, customer_id) DO UPDATE SET
 			display_name = EXCLUDED.display_name,
 			public_directory_opt_in = EXCLUDED.public_directory_opt_in,
-			approval_status = CASE WHEN $6::boolean THEN 'pending' ELSE ${schema}.accompanist_profiles.approval_status END,
+			approval_status = CASE
+				WHEN ${schema}.accompanist_profiles.approval_status = 'rejected' THEN 'rejected'
+				WHEN EXCLUDED.public_directory_opt_in THEN 'approved'
+				ELSE ${schema}.accompanist_profiles.approval_status
+			END,
 			updated_at = NOW()
 		 RETURNING id`,
 		[
@@ -235,7 +207,7 @@ export async function upsertAccompanistProfileTx(
 			params.customerId,
 			displayName,
 			publicDirectoryOptIn,
-			requiresReapproval,
+			initialApprovalStatus,
 		],
 	)) as Array<{ id: string }>;
 	const id = upserted[0].id;
@@ -305,6 +277,7 @@ export async function queryPublicDirectoryAccompanists(
 		 JOIN ${schema}.organizations o ON o.id = e.organization_id
 		 WHERE e.organization_id = $1 AND e.entitlement_class = 'accompanist_membership'
 		   AND e.revoked_at IS NULL
+		   AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date)
 		   AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date
 		   AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date`,
 		[organizationId],
@@ -323,12 +296,14 @@ export async function queryPublicDirectoryAccompanists(
 		 ORDER BY lower(ap.display_name) COLLATE "C" ASC, ap.display_name COLLATE "C" ASC, ap.id COLLATE "C" ASC`,
 		[organizationId],
 	)) as DirectoryProfileRow[];
-	return rows.map((row) =>
-		validatePublicDirectoryProfileDto({
-			displayName: row.display_name,
-			role: "Accompanist",
-			approvedDivisions: parseApprovedDivisions(row.divisions),
-			isActiveMember: activeIds.has(row.customer_id),
-		}),
-	);
+	return rows
+		.filter((r) => activeIds.has(r.customer_id))
+		.map((row) =>
+			validatePublicDirectoryProfileDto({
+				displayName: row.display_name,
+				role: "Accompanist",
+				approvedDivisions: parseApprovedDivisions(row.divisions),
+				isActiveMember: true,
+			}),
+		);
 }

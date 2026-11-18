@@ -17,7 +17,10 @@ import {
 	membershipStatusSignature,
 	resolveMembershipAcquisitionState,
 } from "./customerMembershipStatus.js";
-import { hasActiveTeacherMembership } from "./teacherDirectoryHelpers.js";
+import {
+	hasActiveAccompanistMembership,
+	hasActiveTeacherMembership,
+} from "./teacherDirectoryHelpers.js";
 
 function membershipDisplayName(entitlementClass: string): string {
 	const name = entitlementClass.split("_", 1)[0] ?? "";
@@ -390,6 +393,15 @@ export function CustomerAccountMembershipsPage(props: {
 					<FestivalMembershipsSection store={store} />
 					<Show when={hasActiveTeacherMembership(store.memberships())}>
 						<CustomerTeacherDirectoryCard
+							slug={props.slug}
+							csrfToken={session.csrfToken}
+							memberships={store.memberships()}
+						/>
+					</Show>
+					<Show when={hasActiveAccompanistMembership(store.memberships())}>
+						{/* biome-ignore lint/a11y/useValidAriaRole: role selects the participant directory card variant, not a DOM ARIA role. */}
+						<CustomerTeacherDirectoryCard
+							role="accompanist"
 							slug={props.slug}
 							csrfToken={session.csrfToken}
 							memberships={store.memberships()}

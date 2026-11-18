@@ -134,10 +134,11 @@ export function withAccompanistLifecycle(
 ): AccompanistMembershipGrant {
 	const organization = state.organizations.get(grant.organizationId);
 	if (!organization) throw new Error("Organization not found.");
+	const supersededOn = state.entitlementSupersededOn.get(grant.id);
 	const status = state.entitlementRevocations.has(grant.id)
 		? "revoked"
 		: deriveEntitlementLifecycle(
-				grant,
+				{ ...grant, ...(supersededOn ? { supersededOn } : {}) },
 				calendarDateInTimezone(
 					state.now().toISOString(),
 					organization.timezone,

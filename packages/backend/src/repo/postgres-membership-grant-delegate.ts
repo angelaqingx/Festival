@@ -77,7 +77,9 @@ class PostgresAccompanistGrantDelegate {
 			 LEFT JOIN ${this.schema}.membership_identity_emails identity ON identity.organization_id=e.organization_id AND identity.customer_id=e.customer_id
 			 LEFT JOIN ${this.schema}.membership_entitlement_divisions ed ON ed.entitlement_id=e.id
 			 WHERE e.organization_id=$1 AND e.customer_id=$2 AND e.entitlement_class='accompanist_membership'
-			   AND e.revoked_at IS NULL AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date
+			   AND e.revoked_at IS NULL
+			   AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date)
+			   AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date
 			   AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date
 			 GROUP BY e.id,identity.normalized_email,p.product_name_snapshot,d.contact_name,d.contact_email,d.contact_city,d.contact_phone,o.timezone
 			 ORDER BY e.created_at ASC, e.id ASC LIMIT 1`,
@@ -100,9 +102,10 @@ class PostgresAccompanistGrantDelegate {
 					COALESCE(jsonb_agg(jsonb_build_object('divisionId',ed.division_id,'divisionName',ed.division_name_snapshot)) FILTER (WHERE ed.division_id IS NOT NULL),'[]') AS divisions,
 					e.starts_on::text,e.ends_on::text,
 					CASE WHEN e.revoked_at IS NOT NULL THEN 'revoked'
+						 WHEN e.superseded_on IS NOT NULL AND e.superseded_on <= (NOW() AT TIME ZONE o.timezone)::date THEN 'superseded'
 						 WHEN e.starts_on > (NOW() AT TIME ZONE o.timezone)::date THEN 'scheduled'
 						 WHEN e.ends_on <= (NOW() AT TIME ZONE o.timezone)::date THEN 'expired' ELSE 'active' END AS status,
-					(e.revoked_at IS NULL AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date) AS is_current,
+					(e.revoked_at IS NULL AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date) AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date) AS is_current,
 					e.created_at
 			 FROM ${this.schema}.membership_entitlements e
 			 JOIN ${this.schema}.organizations o ON o.id=e.organization_id
@@ -113,7 +116,7 @@ class PostgresAccompanistGrantDelegate {
 			 WHERE e.organization_id=$1 AND e.entitlement_class='accompanist_membership'
 			   AND ($2::text IS NULL OR e.customer_id=$2)
 			   AND ($3::text IS NULL OR identity.normalized_email=$3)
-			   AND ($4::boolean = FALSE OR (e.revoked_at IS NULL AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date))
+			   AND ($4::boolean = FALSE OR (e.revoked_at IS NULL AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date) AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date))
 			 GROUP BY e.id,identity.normalized_email,p.product_name_snapshot,d.contact_name,d.contact_email,d.contact_city,d.contact_phone,o.timezone
 			 ORDER BY e.created_at,e.id`,
 			[

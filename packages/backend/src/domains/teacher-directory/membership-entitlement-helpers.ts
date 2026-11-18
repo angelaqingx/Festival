@@ -23,7 +23,6 @@ const ALLOWED_ACCOMPANIST_FIELDS = new Set([
 	"city",
 	"phone",
 	"divisionIds",
-	"staffAccessConsent",
 ]);
 
 export function verifiedShopifyIdentityEmail(
@@ -59,9 +58,6 @@ export function parseAccompanistAcquirePayload(raw: unknown): {
 		Object.keys(payload).some((key) => !ALLOWED_ACCOMPANIST_FIELDS.has(key))
 	) {
 		throw new AppError("Accompanist form contains unsupported fields.", 400);
-	}
-	if (payload.staffAccessConsent !== true) {
-		throw new AppError("Staff access consent is required.", 400);
 	}
 	let contact: AccompanistContactSnapshot;
 	try {

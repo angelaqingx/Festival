@@ -182,7 +182,6 @@ export const AcquireAccompanistMembershipPayloadSchema = v.strictObject({
 	city: nonEmptyText("Accompanist city", 255),
 	phone: nonEmptyText("Accompanist phone", 255),
 	divisionIds: v.array(nonEmptyText("Division ID", 200)),
-	staffAccessConsent: v.literal(true, "Staff access consent is required."),
 });
 
 export const AcquireAccompanistMembershipRouteBodySchema = v.strictObject({
@@ -196,7 +195,6 @@ export const AcquireAccompanistMembershipRouteBodySchema = v.strictObject({
 	city: v.optional(nonEmptyText("Accompanist city", 255)),
 	phone: v.optional(nonEmptyText("Accompanist phone", 255)),
 	divisionIds: v.array(nonEmptyText("Division ID", 200)),
-	staffAccessConsent: v.literal(true, "Staff access consent is required."),
 });
 
 export const InvalidateCheckoutIntentBodySchema = v.object({

@@ -1,7 +1,10 @@
 import type {
+	AccompanistProfileRecord,
 	PublicDirectoryProfileDto,
 	TeacherProfileRecord,
+	UpdateAdminAccompanistProfileApprovalInput,
 	UpdateAdminTeacherProfileApprovalInput,
+	UpsertCustomerAccompanistProfileInput,
 	UpsertCustomerTeacherProfileInput,
 } from "@festival/common";
 import { hc } from "hono/client";
@@ -15,10 +18,13 @@ import {
 } from "./client.js";
 
 export type {
+	AccompanistProfileRecord,
 	ProfileApprovalStatus,
 	PublicDirectoryProfileDto,
 	TeacherProfileRecord,
+	UpdateAdminAccompanistProfileApprovalInput,
 	UpdateAdminTeacherProfileApprovalInput,
+	UpsertCustomerAccompanistProfileInput,
 	UpsertCustomerTeacherProfileInput,
 } from "@festival/common";
 
@@ -119,6 +125,77 @@ export async function updateAdminTeacherProfileApproval(
 		json: { approvalStatus: input.approvalStatus },
 	});
 	return unwrapRpcResponse<TeacherProfileRecord>(
+		response,
+		directoryUrl(endpoint.$path({ param }), true),
+	);
+}
+
+export async function getCustomerAccompanistProfile(
+	orgSlug: string,
+): Promise<AccompanistProfileRecord | null> {
+	const param = { orgSlug: encodeURIComponent(orgSlug) };
+	const endpoint = createDirectoryClient({ useApiBase: false }).customer.orgs[
+		":orgSlug"
+	].profiles.accompanist;
+	try {
+		return await rpcCall<AccompanistProfileRecord>(
+			endpoint.$get({ param }),
+			directoryUrl(endpoint.$path({ param }), false),
+		);
+	} catch (error) {
+		if (error instanceof ApiError && error.status === 404) {
+			return null;
+		}
+		throw error;
+	}
+}
+
+export async function upsertCustomerAccompanistProfile(
+	orgSlug: string,
+	csrfToken: string,
+	input: UpsertCustomerAccompanistProfileInput,
+): Promise<AccompanistProfileRecord> {
+	const param = { orgSlug: encodeURIComponent(orgSlug) };
+	const endpoint = createDirectoryClient({
+		useApiBase: false,
+		extraHeaders: { "X-CSRF-Token": csrfToken },
+	}).customer.orgs[":orgSlug"].profiles.accompanist;
+	return rpcCall<AccompanistProfileRecord>(
+		endpoint.$put({ param, json: input }),
+		directoryUrl(endpoint.$path({ param }), false),
+	);
+}
+
+export async function listAdminAccompanistProfiles(
+	idToken: string,
+	orgSlug: string,
+): Promise<AccompanistProfileRecord[]> {
+	const param = { orgSlug: encodeURIComponent(orgSlug) };
+	const endpoint = createDirectoryClient({ useApiBase: true, idToken }).admin
+		.orgs[":orgSlug"].profiles.accompanists;
+	return rpcCall<AccompanistProfileRecord[]>(
+		endpoint.$get({ param }),
+		directoryUrl(endpoint.$path({ param }), true),
+	);
+}
+
+export async function updateAdminAccompanistProfileApproval(
+	idToken: string,
+	orgSlug: string,
+	input: UpdateAdminAccompanistProfileApprovalInput,
+): Promise<AccompanistProfileRecord> {
+	const client = createDirectoryClient({ useApiBase: true, idToken });
+	const param = {
+		orgSlug: encodeURIComponent(orgSlug),
+		profileId: encodeURIComponent(input.profileId),
+	};
+	const endpoint =
+		client.admin.orgs[":orgSlug"].profiles.accompanists[":profileId"].approval;
+	const response = await endpoint.$patch({
+		param,
+		json: { approvalStatus: input.approvalStatus },
+	});
+	return unwrapRpcResponse<AccompanistProfileRecord>(
 		response,
 		directoryUrl(endpoint.$path({ param }), true),
 	);

@@ -16,7 +16,9 @@
 - Fresh Docker PostgreSQL 17 volume bootstrap (`#386`, `#391`).
 - Cross-session pending Shopify class checkout discovery, live cart and order financial-state verification, same-owner resume endpoints, navbar cart badge routing, and Customer Account sign-in readiness decoupling (`#410`, `#413`).
 - Bounded customer token refresh concurrency bulkhead (`RefreshConcurrencyLimiter`) with per-session coalescing ahead of `sql.reserve()`, `push: [main]` and `integration.yml` PostgreSQL 17 CI parity, and tiered `500`/`2,000`-line source file-size ratchet (`S15`, `#407`, `#216`, `#414`).
+- `Acquire Memberships` action row (`Annual Teacher` and `Annual Accompanist`) on `/org/:slug/account/memberships` with fail-closed per-class ownership blocking and `pageshow` return revalidation (`S17`, `#417`, `#422`).
 - Admin Concerto Repertoire CSV management (`S20`, `#359`): blank UTF-8 template download, current catalog CSV export, dry-run diff preview (`added`, `updated`, `unchanged`, `removed`, and row/field validation errors), explicit header-only clear-all confirmation, and single-transaction atomic replacement preserving canonical works, non-concerto classifications, contributors, and historical registrations.
+- Public Accompanist Directory parity with `#361`: self-service opt-in on `$0` accompanist registration and Account Memberships, auto-approved opted-in listings with sticky Admin `'rejected'` hides, active-membership directory gating, and unified Teacher + Accompanist Admin moderation (`S18`, `#416`).
 
 ### Changed
 
@@ -29,6 +31,7 @@
 - Scoped `AdminUsersPage` roster to the active Firebase UID and organization (`#387`, `#392`).
 - Keyed the parent registration workspace to `(org, festival)` (`#390`, `#395`).
 - Scoped `CustomerIdentityContext` session refresh effect and `isCurrentRequest()` freshness guard to an `activeOrgSlug` memo while preserving `refreshOnReturn`, and removed the unused `ClassRegistrationProvider` wrapper on `/org/:slug/checkout-recovery/:token` (`S16`, `#385`, `#393`).
+- Removed copy-pasted `staffAccessConsent` gate and Privacy Policy prompt from `$0` accompanist membership registration across shared schemas, backend routes/services, and `AccompanistMembershipPage` (`S18`, `#416`).
 
 ### Fixed
 

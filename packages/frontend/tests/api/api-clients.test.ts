@@ -1,4 +1,9 @@
 import { describe, expect, it } from "bun:test";
+import type {
+	AccompanistProfileRecord,
+	UpdateAdminTeacherProfileApprovalInput as ApprovalAcc,
+	UpsertCustomerTeacherProfileInput as UpsertAcc,
+} from "@festival/common";
 import { getBootstrap } from "../../src/lib/api/auth.js";
 import { listRooms } from "../../src/lib/api/catalog.js";
 import {
@@ -11,6 +16,7 @@ import {
 	getCustomerSession,
 	logoutCustomer,
 } from "../../src/lib/api/customer.js";
+import * as directoryApi from "../../src/lib/api/directory.js";
 import { getCustomerTeacherProfile } from "../../src/lib/api/directory.js";
 import { getAdminUsers, listStaffRoster } from "../../src/lib/api/org-admin.js";
 import { startClassCheckout } from "../../src/lib/api/registration.js";
@@ -62,6 +68,7 @@ describe("split Hono RPC frontend API modules and barrel", () => {
 			"exportConcertoRepertoireCsv",
 			"getAdminEntitlementReport",
 			"getBootstrap",
+			"getCustomerAccompanistProfile",
 			"getCustomerFestivalAvailability",
 			"getCustomerSession",
 			"getMembershipProducts",
@@ -69,6 +76,7 @@ describe("split Hono RPC frontend API modules and barrel", () => {
 			"getVolunteerRoles",
 			"importConcertoRepertoireCsv",
 			"listAccompanists",
+			"listAdminAccompanistProfiles",
 			"listDivisions",
 			"listRegistrationTeachers",
 			"logoutCustomer",
@@ -76,11 +84,21 @@ describe("split Hono RPC frontend API modules and barrel", () => {
 			"renderTemplate",
 			"saveCustomerFestivalAvailability",
 			"startClassCheckout",
+			"updateAdminAccompanistProfileApproval",
+			"upsertCustomerAccompanistProfile",
 			"validateCreateBillingAdjustmentInput",
 		] as const;
 		for (const name of expectedExports) {
 			expect((apiBarrel as Record<string, unknown>)[name]).toBeDefined();
 		}
+		const directorySource = await Bun.file(
+			new URL("../../src/lib/api/directory.ts", import.meta.url),
+		).text();
+		expect(directorySource).toContain("AccompanistProfileRecord");
+		expect(directorySource).toContain("UpsertCustomerAccompanistProfileInput");
+		expect(directorySource).toContain(
+			"UpdateAdminAccompanistProfileApprovalInput",
+		);
 	});
 
 	it("preserves canonical header casing, credentials, and error payloads in createRpcFetch and unwrapRpcResponse", async () => {
@@ -147,8 +165,11 @@ describe("split Hono RPC frontend API modules and barrel", () => {
 				await listStaffRoster("tok-1", "org one");
 				await getCustomerSession("org one");
 				await acquireAccompanistMembership("org one", "csrf-1", {
+					name: "Ava Piano",
+					email: "ava@example.test",
+					city: "Seattle",
+					phone: "555-0100",
 					divisionIds: ["d-1"],
-					staffAccessConsent: true,
 				});
 			},
 		);
@@ -166,6 +187,117 @@ describe("split Hono RPC frontend API modules and barrel", () => {
 		expect(
 			(calls[6]?.init?.headers as Record<string, string>)["X-CSRF-Token"],
 		).toBe("csrf-1");
+		const accompanistBody = JSON.parse(String(calls[6]?.init?.body ?? "{}"));
+		expect(accompanistBody).toEqual({
+			name: "Ava Piano",
+			email: "ava@example.test",
+			city: "Seattle",
+			phone: "555-0100",
+			divisionIds: ["d-1"],
+		});
+		expect(accompanistBody).not.toHaveProperty("staffAccessConsent");
+	});
+
+	it("maps customer and admin accompanist directory RPC endpoints with CSRF, Bearer auth, and 404 null handling", async () => {
+		type R = AccompanistProfileRecord;
+		const dir = directoryApi as unknown as {
+			getCustomerAccompanistProfile?: (s: string) => Promise<R | null>;
+			upsertCustomerAccompanistProfile?: (
+				s: string,
+				csrf: string,
+				i: UpsertAcc,
+			) => Promise<R>;
+			listAdminAccompanistProfiles?: (t: string, s: string) => Promise<R[]>;
+			updateAdminAccompanistProfileApproval?: (
+				t: string,
+				s: string,
+				i: ApprovalAcc,
+			) => Promise<R>;
+		};
+		for (const fn of [
+			dir.getCustomerAccompanistProfile,
+			dir.upsertCustomerAccompanistProfile,
+			dir.listAdminAccompanistProfiles,
+			dir.updateAdminAccompanistProfileApproval,
+		])
+			expect(typeof fn).toBe("function");
+		const iso = "2026-09-01T00:00:00.000Z";
+		const record: R = {
+			id: "acc-1",
+			organization_id: "org-1",
+			customer_id: "cust-1",
+			display_name: "Ava Piano",
+			public_directory_opt_in: true,
+			approval_status: "approved",
+			division_ids: ["d-1"],
+			created_at: iso,
+			updated_at: iso,
+		};
+		const upsertInput: UpsertAcc = {
+			displayName: "Ava Piano",
+			publicDirectoryOptIn: true,
+			divisionIds: ["d-1"],
+		};
+		const calls: Array<{ url: string; init?: RequestInit }> = [];
+		await withMockFetch(
+			(url, init) => {
+				calls.push({ url, init });
+				if (calls.length === 2)
+					return Response.json({ error: "Not found" }, { status: 404 });
+				if (calls.length === 4) return Response.json([record]);
+				if (calls.length === 5)
+					return Response.json({ ...record, approval_status: "rejected" });
+				return Response.json(record);
+			},
+			async () => {
+				expect(await dir.getCustomerAccompanistProfile?.("pafe")).toEqual(
+					record,
+				);
+				expect(await dir.getCustomerAccompanistProfile?.("pafe")).toBeNull();
+				expect(
+					await dir.upsertCustomerAccompanistProfile?.(
+						"pafe",
+						"csrf-acc",
+						upsertInput,
+					),
+				).toEqual(record);
+				expect(
+					await dir.listAdminAccompanistProfiles?.("tok-admin", "pafe"),
+				).toEqual([record]);
+				const mod = await dir.updateAdminAccompanistProfileApproval?.(
+					"tok-admin",
+					"pafe",
+					{ profileId: "acc-1", approvalStatus: "rejected" },
+				);
+				expect(mod.approval_status).toBe("rejected");
+			},
+		);
+		const custPath = "/api/customer/orgs/pafe/profiles/accompanist";
+		const admPath = "/api/admin/orgs/pafe/profiles/accompanists";
+		const hdr = (i: number) =>
+			(calls[i]?.init?.headers ?? {}) as Record<string, string>;
+		expect([calls[0]?.url, calls[0]?.init?.credentials]).toEqual([
+			custPath,
+			"include",
+		]);
+		expect([
+			calls[2]?.url,
+			calls[2]?.init?.method,
+			hdr(2)["X-CSRF-Token"],
+		]).toEqual([custPath, "PUT", "csrf-acc"]);
+		expect(JSON.parse(String(calls[2]?.init?.body))).toEqual(upsertInput);
+		expect([calls[3]?.url, hdr(3).Authorization]).toEqual([
+			admPath,
+			"Bearer tok-admin",
+		]);
+		expect([
+			calls[4]?.url,
+			calls[4]?.init?.method,
+			hdr(4).Authorization,
+		]).toEqual([`${admPath}/acc-1/approval`, "PATCH", "Bearer tok-admin"]);
+		expect(JSON.parse(String(calls[4]?.init?.body))).toEqual({
+			approvalStatus: "rejected",
+		});
 	});
 
 	it("returns null on 404 for getCustomerTeacherProfile and normalizes checkout payloads", async () => {

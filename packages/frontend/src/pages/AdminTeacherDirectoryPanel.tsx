@@ -1,28 +1,30 @@
-import type { TeacherProfileRecord } from "@festival/common";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { FestivalAppController } from "../app/useFestivalAppController.js";
 import { Button } from "../components/Button.js";
 import {
 	ApiError,
 	getAdminDivisions,
+	listAdminAccompanistProfiles,
 	listAdminTeacherProfiles,
+	updateAdminAccompanistProfileApproval,
 	updateAdminTeacherProfileApproval,
 } from "../lib/api.js";
 import {
-	applyUpdatedTeacherProfile,
+	type AdminDirectoryModerationProfile,
+	applyUpdatedModerationProfile,
 	buildDivisionNameMap,
 	formatTeacherApprovalBadge,
 	formatTeacherModerationActionLabel,
 	nextAdminTeacherApprovalStatus,
 	resolveTeacherDivisionNames,
-	sortTeacherProfilesByName,
+	toAdminDirectoryModerationProfiles,
 } from "./adminTeacherDirectoryHelpers.js";
 
-function AdminTeacherProfileItem(props: {
-	profile: TeacherProfileRecord;
+function AdminDirectoryProfileItem(props: {
+	profile: AdminDirectoryModerationProfile;
 	divisionsById: ReadonlyMap<string, string>;
 	updating: boolean;
-	onToggleApproval: (profile: TeacherProfileRecord) => void;
+	onToggleApproval: (profile: AdminDirectoryModerationProfile) => void;
 }) {
 	const badge = () => formatTeacherApprovalBadge(props.profile.approval_status);
 	const divisionNames = () =>
@@ -30,25 +32,32 @@ function AdminTeacherProfileItem(props: {
 			props.profile.division_ids,
 			props.divisionsById,
 		);
+	const teacherColor = () =>
+		props.profile.role === "Teacher" ? props.profile.teacher_color : undefined;
 
 	return (
 		<article class="admin-membership-item">
 			<div>
 				<div class="directory-profile-header">
-					<span
-						class="directory-profile-color-indicator"
-						style={{ "background-color": props.profile.teacher_color }}
-						aria-hidden="true"
-					/>
+					<Show when={teacherColor()}>
+						{(color) => (
+							<span
+								class="directory-profile-color-indicator"
+								style={{ "background-color": color() }}
+								aria-hidden="true"
+							/>
+						)}
+					</Show>
 					<strong>{props.profile.display_name}</strong>
+					<span class="directory-division-tag">{props.profile.role}</span>
 					<span class={`directory-status-tag ${badge().badgeClass}`}>
 						{badge().label}
 					</span>
 				</div>
 				<p class="muted">
 					{props.profile.public_directory_opt_in
-						? "Teacher opted in"
-						: "Teacher opted out"}
+						? `${props.profile.role} opted in`
+						: `${props.profile.role} opted out`}
 					{" · "}
 					{divisionNames().length > 0
 						? divisionNames().join(", ")
@@ -74,11 +83,11 @@ function AdminTeacherProfileItem(props: {
 
 function createModerationStore(app: FestivalAppController) {
 	const [state, setState] = createSignal({
-		profiles: [] as TeacherProfileRecord[],
+		profiles: [] as AdminDirectoryModerationProfile[],
 		divisionsById: new Map<string, string>(),
 		loading: false,
 		error: "",
-		updatingId: null as string | null,
+		updatingKey: null as string | null,
 	});
 	const patch = (next: Partial<ReturnType<typeof state>>) =>
 		setState((cur) => ({ ...cur, ...next }));
@@ -94,13 +103,14 @@ async function loadModerationProfiles(store: ModerationStore) {
 	store.patch({ loading: true, error: "" });
 	try {
 		const token = await user.getIdToken();
-		const [listed, divResp] = await Promise.all([
+		const [teachers, accompanists, divResp] = await Promise.all([
 			listAdminTeacherProfiles(token, route.slug),
+			listAdminAccompanistProfiles(token, route.slug),
 			getAdminDivisions(token, route.slug).catch(() => ({ divisions: [] })),
 		]);
 		if (!store.disposed) {
 			store.patch({
-				profiles: sortTeacherProfilesByName(listed),
+				profiles: toAdminDirectoryModerationProfiles(teachers, accompanists),
 				divisionsById: buildDivisionNameMap(divResp.divisions),
 			});
 		}
@@ -110,38 +120,57 @@ async function loadModerationProfiles(store: ModerationStore) {
 				error:
 					err instanceof ApiError
 						? err.message
-						: "Teacher directory profiles could not be loaded.",
+						: "Directory profiles could not be loaded.",
 			});
 	} finally {
 		if (!store.disposed) store.patch({ loading: false });
 	}
 }
 
-async function toggleTeacherModeration(
+async function toggleProfileModeration(
 	store: ModerationStore,
-	target: TeacherProfileRecord,
+	target: AdminDirectoryModerationProfile,
 ) {
 	const route = store.app.route();
 	const user = store.app.firebaseUser();
+	const key = `${target.role}:${target.id}`;
 	if (
 		route.kind !== "org-admin-memberships" ||
 		!user ||
-		store.state().updatingId
+		store.state().updatingKey
 	)
 		return;
-	store.patch({ updatingId: target.id, error: "" });
+	store.patch({ updatingKey: key, error: "" });
 	try {
-		const updated = await updateAdminTeacherProfileApproval(
-			await user.getIdToken(),
-			route.slug,
-			{
-				profileId: target.id,
-				approvalStatus: nextAdminTeacherApprovalStatus(target.approval_status),
-			},
-		);
+		const token = await user.getIdToken();
+		const payload = {
+			profileId: target.id,
+			approvalStatus: nextAdminTeacherApprovalStatus(target.approval_status),
+		};
+		const updated: AdminDirectoryModerationProfile =
+			target.role === "Teacher"
+				? {
+						...(await updateAdminTeacherProfileApproval(
+							token,
+							route.slug,
+							payload,
+						)),
+						role: "Teacher",
+					}
+				: {
+						...(await updateAdminAccompanistProfileApproval(
+							token,
+							route.slug,
+							payload,
+						)),
+						role: "Accompanist",
+					};
 		if (!store.disposed)
 			store.patch({
-				profiles: applyUpdatedTeacherProfile(store.state().profiles, updated),
+				profiles: applyUpdatedModerationProfile(
+					store.state().profiles,
+					updated,
+				),
 			});
 	} catch (err) {
 		if (!store.disposed)
@@ -149,10 +178,10 @@ async function toggleTeacherModeration(
 				error:
 					err instanceof ApiError
 						? err.message
-						: "Teacher approval status could not be updated.",
+						: "Profile approval status could not be updated.",
 			});
 	} finally {
-		if (!store.disposed) store.patch({ updatingId: null });
+		if (!store.disposed) store.patch({ updatingKey: null });
 	}
 }
 
@@ -167,7 +196,10 @@ function ModerationPanelHeader(props: {
 				<h2 id="admin-teacher-directory-title">
 					Public Teacher Directory Moderation
 				</h2>
-				<p>Review teacher listings and hide or reinstate in one click.</p>
+				<p>
+					Review teacher and accompanist listings and hide or reinstate in one
+					click.
+				</p>
 			</div>
 			<div class="admin-membership-header-actions">
 				<Button
@@ -204,7 +236,7 @@ export function AdminTeacherDirectoryPanel(props: {
 			/>
 			<Show when={s().loading}>
 				<p class="muted" role="status">
-					Loading teacher directory profiles…
+					Loading directory profiles…
 				</p>
 			</Show>
 			<Show when={s().error}>
@@ -215,17 +247,17 @@ export function AdminTeacherDirectoryPanel(props: {
 			<Show when={!s().loading}>
 				<Show
 					when={s().profiles.length > 0}
-					fallback={<p class="muted">No teacher directory profiles yet.</p>}
+					fallback={<p class="muted">No directory profiles yet.</p>}
 				>
 					<div class="admin-membership-list">
 						<For each={s().profiles}>
 							{(profile) => (
-								<AdminTeacherProfileItem
+								<AdminDirectoryProfileItem
 									profile={profile}
 									divisionsById={s().divisionsById}
-									updating={s().updatingId === profile.id}
+									updating={s().updatingKey === `${profile.role}:${profile.id}`}
 									onToggleApproval={(t) =>
-										void toggleTeacherModeration(store, t)
+										void toggleProfileModeration(store, t)
 									}
 								/>
 							)}
