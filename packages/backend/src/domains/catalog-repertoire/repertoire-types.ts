@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
 	CanonicalWork,
 	RepertoireFlagReason,
@@ -100,6 +101,72 @@ export interface RawRepertoireSnapshot {
 	repertoireWorkId?: string | null;
 }
 
+export interface ConcertoCatalogWorkSnapshot {
+	workId: string;
+	title: string;
+	normalizedTitle: string;
+	composerId: string | null;
+	composer: string;
+	normalizedComposer: string;
+	imslpUrl: string | null;
+	isConcerto: boolean;
+}
+
+export interface ConcertoCatalogAddedOperation {
+	kind: "insert" | "attach_existing";
+	rowNumber: number;
+	existingWorkId: string | null;
+	title: string;
+	normalizedTitle: string;
+	composer: string;
+	normalizedComposer: string;
+	imslpUrl: string | null;
+}
+
+export interface ConcertoCatalogUpdatedOperation {
+	rowNumber: number;
+	workId: string;
+	title: string;
+	normalizedTitle: string;
+	composer: string;
+	normalizedComposer: string;
+	imslpUrl: string | null;
+}
+
+export interface ConcertoCatalogMutationPlan {
+	added: ConcertoCatalogAddedOperation[];
+	updated: ConcertoCatalogUpdatedOperation[];
+	unchangedWorkIds: string[];
+	removedWorkIds: string[];
+}
+
+export interface ConcertoCatalogAppliedMutations {
+	addedWorkIds: string[];
+	updatedWorkIds: string[];
+	unchangedWorkIds: string[];
+	removedWorkIds: string[];
+}
+
+export interface ConcertoCatalogTxRepository {
+	loadOrgWorkSnapshot(): Promise<ConcertoCatalogWorkSnapshot[]>;
+	applyMutationPlan(
+		plan: ConcertoCatalogMutationPlan,
+	): Promise<ConcertoCatalogAppliedMutations>;
+}
+
+export interface PreviewConcertoCatalogCsvInput {
+	organizationId: string;
+	csvText: string;
+}
+
+export interface ImportConcertoCatalogCsvInput {
+	organizationId: string;
+	slug?: string;
+	csvText: string;
+	expectedCatalogDigest: string;
+	confirmClearAll?: boolean;
+}
+
 export interface RepertoireCatalogRepository {
 	searchCatalogWorks(input: SearchCatalogWorksInput): Promise<CanonicalWork[]>;
 	getCatalogWorkById(
@@ -107,6 +174,13 @@ export interface RepertoireCatalogRepository {
 		workId: string,
 	): Promise<CanonicalWork | null>;
 	addCatalogWork(input: AddCatalogWorkInput): Promise<CanonicalWork>;
+	listCatalogConcertoSnapshot(
+		organizationId: string,
+	): Promise<ConcertoCatalogWorkSnapshot[]>;
+	runConcertoCatalogCsvTransaction<T>(
+		organizationId: string,
+		operation: (txRepo: ConcertoCatalogTxRepository) => Promise<T>,
+	): Promise<T>;
 }
 
 export interface RepertoireSubmissionRepository {
@@ -225,4 +299,32 @@ function toOptionalIsoValue(value: unknown): string | null {
 	if (value instanceof Date) return value.toISOString();
 	if (typeof value === "string" && value.length > 0) return value;
 	return null;
+}
+
+export const compareCCollation = (a: string, b: string): number =>
+	Buffer.compare(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
+
+export const sortConcertoSnapshot = (
+	items: readonly ConcertoCatalogWorkSnapshot[],
+): ConcertoCatalogWorkSnapshot[] =>
+	[...items].sort(
+		(a, b) =>
+			compareCCollation(a.title.toLowerCase(), b.title.toLowerCase()) ||
+			compareCCollation(a.title, b.title) ||
+			compareCCollation(a.workId, b.workId),
+	);
+
+export function computeConcertoCatalogDigest(
+	snapshot: readonly ConcertoCatalogWorkSnapshot[],
+): string {
+	const payload = JSON.stringify(
+		sortConcertoSnapshot(snapshot).map((w) => [
+			w.workId,
+			w.title,
+			w.composer,
+			w.imslpUrl,
+			w.isConcerto,
+		]),
+	);
+	return `sha256:${createHash("sha256").update(payload).digest("hex")}`;
 }

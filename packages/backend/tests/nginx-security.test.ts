@@ -240,6 +240,21 @@ describe("repository nginx security policy", () => {
 			expect(proxiesRoute(locations, "POST", resumePath)).toBe(true);
 			expect(proxiesRoute(locations, "GET", resumePath)).toBe(false);
 			expect(proxiesRoute(locations, "PATCH", resumePath)).toBe(false);
+			const concertoBase =
+				"/api/organizations/festival/admin/concerto-repertoire";
+			for (const action of ["template", "export"]) {
+				const getPath = `${concertoBase}/${action}`;
+				expect(proxiesRoute(locations, "GET", getPath)).toBe(true);
+				expect(proxiesRoute(locations, "HEAD", getPath)).toBe(true);
+				expect(proxiesRoute(locations, "OPTIONS", getPath)).toBe(true);
+				expect(proxiesRoute(locations, "POST", getPath)).toBe(false);
+			}
+			for (const action of ["preview", "import"]) {
+				const postPath = `${concertoBase}/${action}`;
+				expect(proxiesRoute(locations, "POST", postPath)).toBe(true);
+				expect(proxiesRoute(locations, "OPTIONS", postPath)).toBe(true);
+				expect(proxiesRoute(locations, "GET", postPath)).toBe(false);
+			}
 			for (const route of privateRoutes) {
 				const block = selectLocation(locations, route.path);
 				expect(
@@ -384,6 +399,7 @@ describe("repository nginx security policy", () => {
 				"admin/customers",
 				"admin/customers/[^/]+/checkout-intents",
 				"admin/checkout-intents/[^/]+/(?:invalidate|recover)",
+				"admin/concerto-repertoire/",
 				"customer-auth/callback",
 				"customer-auth/start|customer/session|customer/orders|customer/membership-status",
 				"customer/membership-purchase/[^/]+",

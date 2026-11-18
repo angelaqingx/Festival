@@ -22,9 +22,11 @@ import {
 	EnrollVolunteerInputSchema,
 	EvaluateRegistrationEligibilityInputSchema,
 	FlagRepertoireReviewInputSchema,
+	ImportConcertoRepertoireCsvRequestSchema,
 	JoinWaitlistBodySchema,
 	LoginEventInputSchema,
 	NormalizeRepertoireReviewInputSchema,
+	PreviewConcertoRepertoireCsvRequestSchema,
 	RecoveryReviewDtoSchema,
 	RepertoirePieceSchema,
 	ResolveRepertoireFlagInputSchema,
@@ -218,6 +220,59 @@ describe("@festival/common valibot schemas", () => {
 				composer: "Fryderyk Chopin",
 			}).success,
 		).toBe(true);
+	});
+
+	it("validates concerto repertoire CSV preview and import request schemas", () => {
+		expect(
+			v.safeParse(PreviewConcertoRepertoireCsvRequestSchema, {
+				csvText: "work_id,title,composer,imslp_url\n",
+			}).success,
+		).toBe(true);
+		expect(
+			v.safeParse(PreviewConcertoRepertoireCsvRequestSchema, {
+				csvText: "",
+			}).success,
+		).toBe(true);
+		expect(
+			v.safeParse(PreviewConcertoRepertoireCsvRequestSchema, {}).success,
+		).toBe(false);
+		expect(
+			v.safeParse(PreviewConcertoRepertoireCsvRequestSchema, {
+				csvText: 42,
+			}).success,
+		).toBe(false);
+
+		expect(
+			v.safeParse(ImportConcertoRepertoireCsvRequestSchema, {
+				csvText: "work_id,title,composer,imslp_url\n",
+				expectedCatalogDigest: "sha256:abc123",
+			}).success,
+		).toBe(true);
+		expect(
+			v.safeParse(ImportConcertoRepertoireCsvRequestSchema, {
+				csvText: "work_id,title,composer,imslp_url\n",
+				expectedCatalogDigest: "sha256:abc123",
+				confirmClearAll: true,
+			}).success,
+		).toBe(true);
+		expect(
+			v.safeParse(ImportConcertoRepertoireCsvRequestSchema, {
+				csvText: "work_id,title,composer,imslp_url\n",
+				expectedCatalogDigest: "   ",
+			}).success,
+		).toBe(false);
+		expect(
+			v.safeParse(ImportConcertoRepertoireCsvRequestSchema, {
+				csvText: "work_id,title,composer,imslp_url\n",
+			}).success,
+		).toBe(false);
+		expect(
+			v.safeParse(ImportConcertoRepertoireCsvRequestSchema, {
+				csvText: "work_id,title,composer,imslp_url\n",
+				expectedCatalogDigest: "sha256:abc123",
+				confirmClearAll: "yes",
+			}).success,
+		).toBe(false);
 	});
 
 	it("validates customer schemas (children, profile, availability)", () => {

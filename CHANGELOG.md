@@ -16,6 +16,7 @@
 - Fresh Docker PostgreSQL 17 volume bootstrap (`#386`, `#391`).
 - Cross-session pending Shopify class checkout discovery, live cart and order financial-state verification, same-owner resume endpoints, navbar cart badge routing, and Customer Account sign-in readiness decoupling (`#410`, `#413`).
 - Bounded customer token refresh concurrency bulkhead (`RefreshConcurrencyLimiter`) with per-session coalescing ahead of `sql.reserve()`, `push: [main]` and `integration.yml` PostgreSQL 17 CI parity, and tiered `500`/`2,000`-line source file-size ratchet (`S15`, `#407`, `#216`, `#414`).
+- Admin Concerto Repertoire CSV management (`S20`, `#359`): blank UTF-8 template download, current catalog CSV export, dry-run diff preview (`added`, `updated`, `unchanged`, `removed`, and row/field validation errors), explicit header-only clear-all confirmation, and single-transaction atomic replacement preserving canonical works, non-concerto classifications, contributors, and historical registrations.
 
 ### Changed
 

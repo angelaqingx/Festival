@@ -46,6 +46,7 @@ import type { CustomerAccountRepository } from "./customer/customer-account-repo
 import type { CustomerAccountService } from "./customer/customer-account-service.js";
 import type { CustomerAvailabilityRepository } from "./customer/customer-availability-repository.js";
 import type { CustomerAvailabilityService } from "./customer/customer-availability-service.js";
+import type { RepertoireService } from "./domains/catalog-repertoire/index.js";
 import type { PendingClassCheckoutService } from "./domains/class-checkout/pending-class-checkout-service.js";
 import { DomainCacheInvalidator } from "./lib/domain-cache-invalidator.js";
 import type { DropTransferService } from "./registration/drop-transfer-service.js";
@@ -88,6 +89,7 @@ export interface CreateAppOptions {
 	membershipStatusService?: MembershipStatusService;
 	volunteerRepository?: VolunteerRepository;
 	repertoireRepository?: RepertoireRepository;
+	repertoireService?: RepertoireService;
 	checkoutRecoveryRepository?: CheckoutRecoveryRepository;
 	checkoutRecoveryService?: CheckoutRecoveryService;
 	customClaimsWriter?: CustomClaimsWriter;

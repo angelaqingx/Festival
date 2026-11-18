@@ -19,11 +19,21 @@ import type {
 	UnclaimReviewItemInput,
 } from "../domains/catalog-repertoire/index.js";
 
+export interface InMemoryWorkContributorRecord {
+	organizationId: string;
+	workId: string;
+	contributorId: string;
+	role: string;
+	position: number;
+}
+
 export interface InMemoryRepertoireState {
 	readonly rawSnapshots: Map<string, RawRepertoireSnapshot>;
 	readonly reviewItems: Map<string, RepertoireReviewItem>;
 	readonly canonicalWorks: Map<string, CanonicalWork>;
 	readonly canonicalContributors: Map<string, CanonicalContributor>;
+	readonly workContributors: Map<string, InMemoryWorkContributorRecord[]>;
+	readonly orgLocks: Map<string, Promise<unknown>>;
 }
 
 export function createInMemoryRepertoireState(): InMemoryRepertoireState {
@@ -32,7 +42,30 @@ export function createInMemoryRepertoireState(): InMemoryRepertoireState {
 		reviewItems: new Map(),
 		canonicalWorks: new Map(),
 		canonicalContributors: new Map(),
+		workContributors: new Map(),
+		orgLocks: new Map(),
 	};
+}
+
+export function inMemSetWorkContributor(
+	state: InMemoryRepertoireState,
+	record: InMemoryWorkContributorRecord,
+): void {
+	const current = state.workContributors.get(record.workId) ?? [];
+	const filtered = current.filter(
+		(entry) =>
+			entry.position !== record.position &&
+			!(
+				record.position === 1 &&
+				record.role === "Composer" &&
+				entry.contributorId === record.contributorId &&
+				entry.role === "Composer" &&
+				entry.position > 1
+			),
+	);
+	filtered.push({ ...record });
+	filtered.sort((a, b) => a.position - b.position);
+	state.workContributors.set(record.workId, filtered);
 }
 
 export function inMemSyncReviewQueue(
@@ -263,6 +296,13 @@ export function inMemFindOrAddWork(
 		updatedAtIso: new Date().toISOString(),
 	};
 	state.canonicalWorks.set(work.id, work);
+	inMemSetWorkContributor(state, {
+		organizationId,
+		workId: work.id,
+		contributorId: composer.id,
+		role: "Composer",
+		position: 1,
+	});
 	return work;
 }
 

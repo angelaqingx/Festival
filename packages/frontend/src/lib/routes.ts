@@ -150,6 +150,11 @@ const ROUTE_PATTERNS: readonly RoutePattern[] = [
 	slugRoute(["org", ":slug", "admin", "accompanists"], "org-admin-roster"),
 	slugRoute(["org", ":slug", "admin", "volunteers"], "org-admin-volunteers"),
 	slugRoute(["org", ":slug", "admin", "rooms"], "org-admin-rooms"),
+	slugRoute(
+		[ORG_PREFIX, ":slug", "admin", "concerto-repertoire"],
+		"org-admin-concerto-repertoire",
+		true,
+	),
 	slugRoute([ORG_PREFIX, ":slug", "music-review"], "org-music-review", true),
 	slugRoute(
 		[ORG_PREFIX, ":slug", "admin", "music-review"],

@@ -4,6 +4,7 @@ import { Button } from "../components/Button.js";
 import { useVolunteers } from "../domains/volunteers/VolunteersContext.js";
 import {
 	buildOrgAdminCheckoutRecoveryPath,
+	buildOrgAdminConcertoRepertoirePath,
 	buildOrgAdminDivisionsPath,
 	buildOrgAdminFestivalsPath,
 	buildOrgAdminIntegrationsPath,
@@ -242,6 +243,25 @@ export function AdminHomePage(props: AdminHomePageProps) {
 				>
 					<strong>Checkout Recovery</strong>
 					<span>Recover and manage interrupted checkout sessions.</span>
+				</button>
+				<button
+					type="button"
+					class="admin-workflow-card concerto-repertoire-card"
+					disabled={!props.app.isAdminMember()}
+					data-preload-path={buildOrgAdminConcertoRepertoirePath(
+						props.app.slug,
+					)}
+					onClick={() => {
+						if (!props.app.isAdminMember()) return;
+						props.app.navigate(
+							buildOrgAdminConcertoRepertoirePath(props.app.slug),
+						);
+					}}
+				>
+					<strong>Concerto Repertoire</strong>
+					<span>
+						Download templates, preview CSV diffs, and replace concerto catalog.
+					</span>
 				</button>
 			</div>
 		</section>

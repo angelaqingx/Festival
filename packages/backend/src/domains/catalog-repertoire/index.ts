@@ -9,6 +9,13 @@ export {
 	type UpdateFestivalClassConfigurationInput,
 } from "./catalog-mappers.js";
 export {
+	ConcertoCatalogCsvService,
+	compareCCollation,
+	computeConcertoCatalogDigest,
+	planConcertoCatalogCsv,
+	sortConcertoSnapshot,
+} from "./concerto-catalog-csv-service.js";
+export {
 	type DivisionFestivalRepository,
 	PostgresDivisionFestivalRepository,
 } from "./division-festival-repository.js";
@@ -28,8 +35,16 @@ export type {
 	AddCatalogWorkInput,
 	ClaimReviewItemInput,
 	ClaimReviewOutcome,
+	ConcertoCatalogAddedOperation,
+	ConcertoCatalogAppliedMutations,
+	ConcertoCatalogMutationPlan,
+	ConcertoCatalogTxRepository,
+	ConcertoCatalogUpdatedOperation,
+	ConcertoCatalogWorkSnapshot,
 	FlagReviewItemInput,
+	ImportConcertoCatalogCsvInput,
 	NormalizeAndApproveInput,
+	PreviewConcertoCatalogCsvInput,
 	RawRepertoireSnapshot,
 	RepertoireCatalogRepository,
 	RepertoireRepository,

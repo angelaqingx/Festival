@@ -5,6 +5,7 @@ export * from "./catalog.js";
 export * from "./class-checkout-recovery.js";
 export * from "./commerce.js";
 export * from "./communication.js";
+export * from "./concerto-repertoire-csv.js";
 export * from "./customer.js";
 export * from "./customer-account.js";
 export * from "./directory.js";

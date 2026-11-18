@@ -429,3 +429,5 @@ export async function addRepertoireCatalogWork(
 		endpoint.$path({ param }),
 	);
 }
+
+export * from "./concerto-catalog.js";

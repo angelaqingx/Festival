@@ -2848,3 +2848,64 @@ button.availability-hour-slot.is-unavailable {
 	padding: 0.4rem 0.9rem;
 	font-size: 0.88rem;
 }
+
+.concerto-repertoire-panel {
+	max-width: 960px;
+}
+
+.concerto-csv-section {
+	display: grid;
+	gap: 0.75rem;
+}
+
+.concerto-csv-section h3,
+.concerto-csv-section h4,
+.concerto-csv-note {
+	margin: 0;
+}
+
+.concerto-csv-note {
+	color: var(--bullet-soft-ink);
+	font-size: 0.9rem;
+}
+
+.concerto-csv-textarea {
+	width: 100%;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 0.88rem;
+}
+
+.concerto-csv-errors-table .listing-table-header,
+.concerto-csv-errors-table .listing-table-row {
+	grid-template-columns: 5.5rem 7.5rem minmax(0, 1fr);
+}
+
+.concerto-csv-added-table .listing-table-header,
+.concerto-csv-added-table .listing-table-row {
+	grid-template-columns: 5.5rem minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.4fr);
+}
+
+.concerto-csv-updated-table .listing-table-header,
+.concerto-csv-updated-table .listing-table-row {
+	grid-template-columns: 5.5rem minmax(7rem, 0.8fr) minmax(0, 2fr);
+}
+
+.concerto-csv-catalog-table .listing-table-header,
+.concerto-csv-catalog-table .listing-table-row {
+	grid-template-columns:
+		minmax(7rem, 0.9fr) minmax(0, 1.3fr) minmax(0, 1fr)
+		minmax(0, 1.2fr);
+}
+
+.concerto-csv-change-list {
+	display: grid;
+	gap: 0.25rem;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.concerto-csv-cell-detail,
+.concerto-csv-change-item {
+	font-size: 0.88rem;
+	overflow-wrap: anywhere;
+}

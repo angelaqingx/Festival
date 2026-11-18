@@ -109,6 +109,7 @@ export * from "./api/auth.js";
 export * from "./api/catalog.js";
 export { ApiError } from "./api/client.js";
 export * from "./api/commerce.js";
+export * from "./api/concerto-catalog.js";
 export * from "./api/customer.js";
 export * from "./api/directory.js";
 export * from "./api/org-admin.js";
