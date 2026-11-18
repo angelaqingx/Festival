@@ -25,6 +25,7 @@ export class AccompanistMembershipService {
 			entitlements: organizations,
 			products: organizations,
 			organizations,
+			directory: organizations,
 			now:
 				now ??
 				(organizations as { now?: () => Date }).now ??

@@ -147,6 +147,63 @@ export function inMemUpdateTeacherProfileApproval(
 	return { ...updated, division_ids: [...updated.division_ids] };
 }
 
+function invalidDivisionError(message: string): AppError {
+	return Object.assign(new AppError(message, 400, "invalid_division"), {
+		statusCode: 400 as const,
+	});
+}
+
+function assertActiveDivisionIds(
+	state: InMemoryOrgState,
+	organizationId: string,
+	divisionIds: string[],
+): string[] {
+	let uniqueIds: string[];
+	try {
+		uniqueIds = [...new Set(validateDivisionIds(divisionIds))];
+	} catch (error) {
+		throw invalidDivisionError(
+			error instanceof Error ? error.message : "Invalid division IDs.",
+		);
+	}
+	if (uniqueIds.length === 0) {
+		throw invalidDivisionError("At least one active division is required.");
+	}
+	for (const divId of uniqueIds) {
+		const div = state.divisions.get(divId);
+		if (!div || div.organizationId !== organizationId || !div.isActive) {
+			throw invalidDivisionError(
+				"One or more divisions do not belong to the organization or are inactive.",
+			);
+		}
+	}
+	return uniqueIds.sort(compareCodePoint);
+}
+
+export function inMemUpdateTeacherProfileDivisions(
+	state: InMemoryOrgState,
+	input: {
+		organizationId: string;
+		profileId: string;
+		divisionIds: string[];
+	},
+): TeacherProfileRecord | null {
+	const divisionIds = assertActiveDivisionIds(
+		state,
+		input.organizationId,
+		input.divisionIds,
+	);
+	const match = state.teacherProfiles.get(input.profileId);
+	if (!match || match.organization_id !== input.organizationId) return null;
+	const updated: TeacherProfileRecord = {
+		...match,
+		division_ids: divisionIds,
+		updated_at: state.now().toISOString(),
+	};
+	state.teacherProfiles.set(input.profileId, updated);
+	return { ...updated, division_ids: [...updated.division_ids] };
+}
+
 export function inMemUpsertAccompanistProfile(
 	state: InMemoryOrgState,
 	params: UpsertAccompanistProfileInput,

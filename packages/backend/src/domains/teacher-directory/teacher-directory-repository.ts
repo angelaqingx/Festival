@@ -15,18 +15,20 @@ import {
 	resolveTeacherProfileApprovalStatus,
 } from "../../infra/s10-infra.js";
 import {
-	type AccompanistProfileRow,
-	mapAccompanistProfileRow,
-	mapTeacherProfileRow,
-	type TeacherProfileRow,
-} from "./mappers.js";
-import {
+	assertActiveDivisionIdsQuery,
 	assertValidDivisionIdsQuery,
+	listActiveTeachersForDivisionQuery,
 	persistAccompanistProfileTx,
 	persistTeacherProfileTx,
+	queryAccompanistProfileByCustomer,
+	queryAccompanistProfileById,
 	queryAccompanistProfiles,
 	queryPublicDirectoryAccompanists,
 	queryPublicDirectoryTeachers,
+	queryTeacherProfileByCustomer,
+	queryTeacherProfileById,
+	queryTeacherProfiles,
+	updateTeacherProfileDivisionsTx,
 } from "./teacher-directory-queries.js";
 import type {
 	TeacherDirectoryRepository,
@@ -53,23 +55,11 @@ export class PostgresTeacherDirectoryRepository
 		divisionId: string,
 	): Promise<Array<{ id: string; name: string }>> {
 		await this.ensureReady();
-		const rows = (await sql.unsafe(
-			`SELECT DISTINCT c.id, COALESCE(c.name, '') AS name
-			FROM ${this.schema}.membership_entitlements e
-			JOIN ${this.schema}.organizations o ON o.id = e.organization_id
-			JOIN ${this.schema}.membership_entitlement_divisions ed ON ed.entitlement_id = e.id
-			JOIN ${this.schema}.festival_customers c ON c.id = e.customer_id AND c.organization_id = e.organization_id
-			WHERE e.organization_id = $1
-			  AND e.entitlement_class = 'teacher_membership'
-			  AND ed.division_id = $2
-			  AND e.revoked_at IS NULL
-			  AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date)
-			  AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date
-			  AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date
-			ORDER BY name, c.id`,
-			[organizationId, divisionId],
-		)) as Array<{ id: string; name: string }>;
-		return rows.map((row) => ({ id: row.id, name: row.name }));
+		return listActiveTeachersForDivisionQuery(
+			this.schema,
+			organizationId,
+			divisionId,
+		);
 	}
 
 	async getTeacherProfile(
@@ -77,17 +67,11 @@ export class PostgresTeacherDirectoryRepository
 		customerId: string,
 	): Promise<TeacherProfileRecord | null> {
 		await this.ensureReady();
-		const rows = (await sql.unsafe(
-			`SELECT tp.id, tp.organization_id, tp.customer_id, tp.display_name, tp.public_directory_opt_in, tp.approval_status, tp.created_at::text, tp.updated_at::text, c.mailing_address->>'postalCode' AS zip_code,
-				COALESCE(jsonb_agg(tpd.division_id ORDER BY tpd.division_id) FILTER (WHERE tpd.division_id IS NOT NULL), '[]'::jsonb) AS division_ids
-			FROM ${this.schema}.teacher_profiles tp
-			LEFT JOIN ${this.schema}.festival_customers c ON c.id = tp.customer_id AND c.organization_id = tp.organization_id
-			LEFT JOIN ${this.schema}.teacher_profile_divisions tpd ON tpd.teacher_profile_id = tp.id AND tpd.organization_id = tp.organization_id
-			WHERE tp.organization_id = $1 AND tp.customer_id = $2
-			GROUP BY tp.id, tp.organization_id, tp.customer_id, tp.display_name, tp.public_directory_opt_in, tp.approval_status, tp.created_at, tp.updated_at, c.mailing_address`,
-			[organizationId, customerId],
-		)) as TeacherProfileRow[];
-		return rows[0] ? mapTeacherProfileRow(rows[0]) : null;
+		return queryTeacherProfileByCustomer(
+			this.schema,
+			organizationId,
+			customerId,
+		);
 	}
 
 	async getTeacherProfileById(
@@ -95,17 +79,7 @@ export class PostgresTeacherDirectoryRepository
 		profileId: string,
 	): Promise<TeacherProfileRecord | null> {
 		await this.ensureReady();
-		const rows = (await sql.unsafe(
-			`SELECT tp.id, tp.organization_id, tp.customer_id, tp.display_name, tp.public_directory_opt_in, tp.approval_status, tp.created_at::text, tp.updated_at::text, c.mailing_address->>'postalCode' AS zip_code,
-				COALESCE(jsonb_agg(tpd.division_id ORDER BY tpd.division_id) FILTER (WHERE tpd.division_id IS NOT NULL), '[]'::jsonb) AS division_ids
-			FROM ${this.schema}.teacher_profiles tp
-			LEFT JOIN ${this.schema}.festival_customers c ON c.id = tp.customer_id AND c.organization_id = tp.organization_id
-			LEFT JOIN ${this.schema}.teacher_profile_divisions tpd ON tpd.teacher_profile_id = tp.id AND tpd.organization_id = tp.organization_id
-			WHERE tp.organization_id = $1 AND tp.id = $2
-			GROUP BY tp.id, tp.organization_id, tp.customer_id, tp.display_name, tp.public_directory_opt_in, tp.approval_status, tp.created_at, tp.updated_at, c.mailing_address`,
-			[organizationId, profileId],
-		)) as TeacherProfileRow[];
-		return rows[0] ? mapTeacherProfileRow(rows[0]) : null;
+		return queryTeacherProfileById(this.schema, organizationId, profileId);
 	}
 
 	async upsertTeacherProfile(
@@ -155,22 +129,31 @@ export class PostgresTeacherDirectoryRepository
 		return this.getTeacherProfileById(organizationId, profileId);
 	}
 
+	async updateTeacherProfileDivisions(
+		organizationId: string,
+		profileId: string,
+		divisionIds: string[],
+	): Promise<TeacherProfileRecord | null> {
+		await this.ensureReady();
+		const validDivisionIds = await assertActiveDivisionIdsQuery(
+			this.schema,
+			organizationId,
+			divisionIds,
+		);
+		const updated = await updateTeacherProfileDivisionsTx(this.schema, {
+			organizationId,
+			profileId,
+			divisionIds: validDivisionIds,
+		});
+		if (!updated) return null;
+		return this.getTeacherProfileById(organizationId, profileId);
+	}
+
 	async listTeacherProfiles(
 		organizationId: string,
 	): Promise<TeacherProfileRecord[]> {
 		await this.ensureReady();
-		const rows = (await sql.unsafe(
-			`SELECT tp.id, tp.organization_id, tp.customer_id, tp.display_name, tp.public_directory_opt_in, tp.approval_status, tp.created_at::text, tp.updated_at::text, c.mailing_address->>'postalCode' AS zip_code,
-				COALESCE(jsonb_agg(tpd.division_id ORDER BY tpd.division_id) FILTER (WHERE tpd.division_id IS NOT NULL), '[]'::jsonb) AS division_ids
-			FROM ${this.schema}.teacher_profiles tp
-			LEFT JOIN ${this.schema}.festival_customers c ON c.id = tp.customer_id AND c.organization_id = tp.organization_id
-			LEFT JOIN ${this.schema}.teacher_profile_divisions tpd ON tpd.teacher_profile_id = tp.id AND tpd.organization_id = tp.organization_id
-			WHERE tp.organization_id = $1
-			GROUP BY tp.id, tp.organization_id, tp.customer_id, tp.display_name, tp.public_directory_opt_in, tp.approval_status, tp.created_at, tp.updated_at, c.mailing_address
-			ORDER BY lower(tp.display_name) COLLATE "C" ASC, tp.display_name COLLATE "C" ASC, tp.id COLLATE "C" ASC`,
-			[organizationId],
-		)) as TeacherProfileRow[];
-		return rows.map(mapTeacherProfileRow);
+		return queryTeacherProfiles(this.schema, organizationId);
 	}
 
 	async getAccompanistProfile(
@@ -178,18 +161,11 @@ export class PostgresTeacherDirectoryRepository
 		customerId: string,
 	): Promise<AccompanistProfileRecord | null> {
 		await this.ensureReady();
-		const rows = (await sql.unsafe(
-			`SELECT ap.id, ap.organization_id, ap.customer_id, ap.display_name, ap.public_directory_opt_in, ap.approval_status, ap.created_at::text, ap.updated_at::text, c.phone, COALESCE(identity.normalized_email, c.email) AS email, c.mailing_address->>'postalCode' AS zip_code,
-				COALESCE(jsonb_agg(apd.division_id ORDER BY apd.division_id) FILTER (WHERE apd.division_id IS NOT NULL), '[]'::jsonb) AS division_ids
-			FROM ${this.schema}.accompanist_profiles ap
-			LEFT JOIN ${this.schema}.festival_customers c ON c.id = ap.customer_id AND c.organization_id = ap.organization_id
-			LEFT JOIN ${this.schema}.membership_identity_emails identity ON identity.organization_id = ap.organization_id AND identity.customer_id = ap.customer_id
-			LEFT JOIN ${this.schema}.accompanist_profile_divisions apd ON apd.accompanist_profile_id = ap.id AND apd.organization_id = ap.organization_id
-			WHERE ap.organization_id = $1 AND ap.customer_id = $2
-			GROUP BY ap.id, ap.organization_id, ap.customer_id, ap.display_name, ap.public_directory_opt_in, ap.approval_status, ap.created_at, ap.updated_at, c.phone, identity.normalized_email, c.email, c.mailing_address`,
-			[organizationId, customerId],
-		)) as AccompanistProfileRow[];
-		return rows[0] ? mapAccompanistProfileRow(rows[0]) : null;
+		return queryAccompanistProfileByCustomer(
+			this.schema,
+			organizationId,
+			customerId,
+		);
 	}
 
 	async getAccompanistProfileById(
@@ -197,18 +173,7 @@ export class PostgresTeacherDirectoryRepository
 		profileId: string,
 	): Promise<AccompanistProfileRecord | null> {
 		await this.ensureReady();
-		const rows = (await sql.unsafe(
-			`SELECT ap.id, ap.organization_id, ap.customer_id, ap.display_name, ap.public_directory_opt_in, ap.approval_status, ap.created_at::text, ap.updated_at::text, c.phone, COALESCE(identity.normalized_email, c.email) AS email, c.mailing_address->>'postalCode' AS zip_code,
-				COALESCE(jsonb_agg(apd.division_id ORDER BY apd.division_id) FILTER (WHERE apd.division_id IS NOT NULL), '[]'::jsonb) AS division_ids
-			FROM ${this.schema}.accompanist_profiles ap
-			LEFT JOIN ${this.schema}.festival_customers c ON c.id = ap.customer_id AND c.organization_id = ap.organization_id
-			LEFT JOIN ${this.schema}.membership_identity_emails identity ON identity.organization_id = ap.organization_id AND identity.customer_id = ap.customer_id
-			LEFT JOIN ${this.schema}.accompanist_profile_divisions apd ON apd.accompanist_profile_id = ap.id AND apd.organization_id = ap.organization_id
-			WHERE ap.organization_id = $1 AND ap.id = $2
-			GROUP BY ap.id, ap.organization_id, ap.customer_id, ap.display_name, ap.public_directory_opt_in, ap.approval_status, ap.created_at, ap.updated_at, c.phone, identity.normalized_email, c.email, c.mailing_address`,
-			[organizationId, profileId],
-		)) as AccompanistProfileRow[];
-		return rows[0] ? mapAccompanistProfileRow(rows[0]) : null;
+		return queryAccompanistProfileById(this.schema, organizationId, profileId);
 	}
 
 	async upsertAccompanistProfile(

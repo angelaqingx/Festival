@@ -16,6 +16,12 @@ async function setup() {
 		name: "Other",
 		slug: "other",
 	});
+	const defaultDivision = await repository.createDivision({
+		organizationId: org.id,
+		displayName: "Piano",
+		normalizedName: "piano",
+	});
+	const divisionsByOrg = new Map([[org.id, defaultDivision]]);
 	const sessionAccess = { organizationId: org.id, customerId: "customer-1" };
 	const customerAccountService = {
 		formAccess: async () => sessionAccess,
@@ -33,7 +39,6 @@ async function setup() {
 	const payload = {
 		displayName: "Participant",
 		publicDirectoryOptIn: true,
-		divisionIds: [],
 	};
 
 	async function grant(
@@ -47,11 +52,15 @@ async function setup() {
 	) {
 		const organizationId = options.organizationId ?? org.id;
 		const customerId = options.customerId ?? sessionAccess.customerId;
-		const division = await repository.createDivision({
-			organizationId,
-			displayName: "Piano",
-			normalizedName: "piano",
-		});
+		let division = divisionsByOrg.get(organizationId);
+		if (!division) {
+			division = await repository.createDivision({
+				organizationId,
+				displayName: "Piano",
+				normalizedName: "piano",
+			});
+			divisionsByOrg.set(organizationId, division);
+		}
 		const startsOn = options.startsOn ?? "2026-05-15";
 		const endsOn = options.endsOn ?? "2026-06-15";
 		if (role === "accompanist") {
@@ -105,6 +114,7 @@ async function setup() {
 		repository,
 		org,
 		otherOrg,
+		defaultDivision,
 		grant,
 		supersede(entitlementId: string, supersededOn: string) {
 			(
@@ -120,7 +130,10 @@ async function setup() {
 			const body = { ...payload, publicDirectoryOptIn };
 			return role === "teacher"
 				? service.upsertTeacherProfile(context, body)
-				: service.upsertAccompanistProfile(context, body);
+				: service.upsertAccompanistProfile(context, {
+						...body,
+						divisionIds: [defaultDivision.id],
+					});
 		},
 		async read(role: Role) {
 			return role === "teacher"
@@ -192,6 +205,7 @@ describe("Participant profile membership prerequisite", () => {
 				customer_id: "customer-1",
 				public_directory_opt_in: true,
 				approval_status: "approved",
+				division_ids: [fixture.defaultDivision.id],
 			});
 			expect(await fixture.read(role)).toEqual(profile);
 		});

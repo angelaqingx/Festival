@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from "bun:test";
 import type {
 	AccompanistProfileRecord,
 	CustomerMembershipStatusEntry,
+	MembershipDivisionSelectionPolicy,
 	PublicOrganizationDivision,
 	TeacherProfileRecord,
-	UpsertCustomerTeacherProfileInput as UpsertTeacherInput,
 } from "@festival/common";
 import * as apiMod from "../src/lib/api.js";
 import { ApiError } from "../src/lib/api.js";
@@ -15,6 +15,22 @@ import * as customerHelpersMod from "../src/pages/teacherDirectoryHelpers.js";
 type ModerationProfile =
 	| (TeacherProfileRecord & { role: "Teacher" })
 	| (AccompanistProfileRecord & { role: "Accompanist" });
+
+type DirectoryApiModule = Omit<
+	typeof apiMod,
+	"upsertCustomerTeacherProfile"
+> & {
+	upsertCustomerTeacherProfile?: (
+		orgSlug: string,
+		csrfToken: string,
+		input: { displayName: string; publicDirectoryOptIn: boolean },
+	) => Promise<TeacherProfileRecord>;
+	updateAdminTeacherProfileDivisions?: (
+		idToken: string,
+		orgSlug: string,
+		input: { profileId: string; divisionIds: string[] },
+	) => Promise<TeacherProfileRecord>;
+};
 
 type TeacherDirectoryHelpersModule = typeof customerHelpersMod & {
 	hasActiveAccompanistMembership?: (
@@ -30,6 +46,19 @@ type TeacherDirectoryHelpersModule = typeof customerHelpersMod & {
 			"public_directory_opt_in"
 		> | null,
 	) => boolean;
+	formatAccompanistDivisionPolicyHint?: (
+		policy: MembershipDivisionSelectionPolicy,
+	) => string;
+	isAccompanistDivisionCheckboxDisabled?: (
+		policy: MembershipDivisionSelectionPolicy,
+		selectedIds: readonly string[],
+		divisionId: string,
+	) => boolean;
+	toggleAccompanistDivisionSelection?: (
+		policy: MembershipDivisionSelectionPolicy,
+		selectedIds: readonly string[],
+		divisionId: string,
+	) => string[];
 };
 
 type AdminTeacherDirectoryHelpersModule = typeof adminHelpersMod & {
@@ -82,7 +111,11 @@ function createMemoryStorage(): StorageLike {
 
 const readSource = (relativePath: string) =>
 	Bun.file(new URL(relativePath, import.meta.url)).text();
-const loadApi = async () => apiMod;
+const readOptionalSource = async (relativePath: string) => {
+	const file = Bun.file(new URL(relativePath, import.meta.url));
+	return (await file.exists()) ? file.text() : "";
+};
+const loadApi = async () => apiMod as unknown as DirectoryApiModule;
 const loadCustomerHelpers = async () =>
 	customerHelpersMod as TeacherDirectoryHelpersModule;
 const loadAdminHelpers = async () =>
@@ -130,14 +163,13 @@ describe("customer teacher directory API client helpers", () => {
 });
 
 describe("customer upsert and admin teacher directory API client helpers", () => {
-	it("upsertCustomerTeacherProfile sends PUT with credentials, X-CSRF-Token, and JSON body", async () => {
+	it("upsertCustomerTeacherProfile sends PUT with credentials, X-CSRF-Token, and JSON body without divisionIds", async () => {
 		const api = await loadApi();
 		let capturedUrl = "";
 		let capturedInit: RequestInit | undefined;
-		const payload: UpsertTeacherInput = {
+		const payload = {
 			displayName: "Clara Schumann",
 			publicDirectoryOptIn: true,
-			divisionIds: ["11111111-1111-4111-8111-111111111111"],
 		};
 		const expected = sampleTeacherRecord();
 		globalThis.fetch = (async (
@@ -159,7 +191,9 @@ describe("customer upsert and admin teacher directory API client helpers", () =>
 		const headers = capturedInit?.headers as Record<string, string>;
 		expect(headers["X-CSRF-Token"]).toBe("csrf-123");
 		expect(headers.Authorization).toBeUndefined();
-		expect(JSON.parse(String(capturedInit?.body))).toEqual(payload);
+		const parsedBody = JSON.parse(String(capturedInit?.body));
+		expect(parsedBody).toEqual(payload);
+		expect(parsedBody).not.toHaveProperty("divisionIds");
 		expect(saved).toEqual(expected);
 	});
 });
@@ -202,6 +236,41 @@ describe("admin teacher directory API client helpers", () => {
 		).toBe("Bearer id-token-1");
 		expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({
 			approvalStatus: "rejected",
+		});
+	});
+
+	it("updateAdminTeacherProfileDivisions sends PATCH with Bearer token and single-division body", async () => {
+		const api = await loadApi();
+		expect(typeof api.updateAdminTeacherProfileDivisions).toBe("function");
+		let capturedUrl = "";
+		let capturedInit: RequestInit | undefined;
+		const nextDivId = "22222222-2222-4222-8222-222222222222";
+		const reassigned = sampleTeacherRecord({ division_ids: [nextDivId] });
+
+		globalThis.fetch = (async (
+			input: RequestInfo | URL,
+			init?: RequestInit,
+		) => {
+			capturedUrl = String(input);
+			capturedInit = init;
+			return Response.json(reassigned, { status: 200 });
+		}) as typeof fetch;
+
+		const updated = await api.updateAdminTeacherProfileDivisions?.(
+			"id-token-1",
+			"pafe",
+			{ profileId: "prof-1", divisionIds: [nextDivId] },
+		);
+		expect(updated).toEqual(reassigned);
+		expect(capturedUrl).toBe(
+			"/api/admin/orgs/pafe/profiles/teachers/prof-1/divisions",
+		);
+		expect(capturedInit?.method).toBe("PATCH");
+		expect(
+			(capturedInit?.headers as Record<string, string>).Authorization,
+		).toBe("Bearer id-token-1");
+		expect(JSON.parse(String(capturedInit?.body))).toEqual({
+			divisionIds: [nextDivId],
 		});
 	});
 });
@@ -299,6 +368,51 @@ describe("customer teacher profile state and visibility helpers", () => {
 				}),
 			),
 		).toBe("hidden_by_admin");
+	});
+
+	it("enforces accompanist division policy hints, checkbox disabling, and toggle transitions", async () => {
+		const h = await loadCustomerHelpers();
+		expect(typeof h.formatAccompanistDivisionPolicyHint).toBe("function");
+		expect(typeof h.isAccompanistDivisionCheckboxDisabled).toBe("function");
+		expect(typeof h.toggleAccompanistDivisionSelection).toBe("function");
+		if (
+			!h.formatAccompanistDivisionPolicyHint ||
+			!h.isAccompanistDivisionCheckboxDisabled ||
+			!h.toggleAccompanistDivisionSelection
+		)
+			return;
+		const hint = h.formatAccompanistDivisionPolicyHint;
+		const dis = h.isAccompanistDivisionCheckboxDisabled;
+		const tog = h.toggleAccompanistDivisionSelection;
+
+		const [h1, h2, hAll] = [
+			hint("exactly_one"),
+			hint("one_to_two"),
+			hint("one_to_all"),
+		];
+		expect(h1).toMatch(/1|one/i);
+		expect(h2).toMatch(/2|two/i);
+		expect(hAll.length).toBeGreaterThan(0);
+		expect(new Set([h1, h2, hAll]).size).toBe(3);
+
+		expect(dis("exactly_one", ["d1"], "d2")).toBe(false);
+		expect(dis("exactly_one", ["d1", "d2"], "d3")).toBe(true);
+		expect(dis("exactly_one", ["d1", "d2"], "d1")).toBe(false);
+		expect(tog("exactly_one", ["d1"], "d2")).toEqual(["d2"]);
+		expect(tog("exactly_one", ["d1"], "d1")).toEqual(["d1"]);
+		expect(tog("exactly_one", ["d1", "d2"], "d1")).toEqual(["d2"]);
+		expect(tog("exactly_one", ["d1", "d2"], "d3")).toEqual(["d1", "d2"]);
+
+		expect(dis("one_to_two", ["d1"], "d2")).toBe(false);
+		expect(dis("one_to_two", ["d1", "d2"], "d3")).toBe(true);
+		expect(dis("one_to_two", ["d1", "d2"], "d1")).toBe(false);
+		expect(tog("one_to_two", ["d1"], "d2")).toEqual(["d1", "d2"]);
+		expect(tog("one_to_two", ["d1", "d2"], "d3")).toEqual(["d1", "d2"]);
+		expect(tog("one_to_two", ["d1", "d2"], "d1")).toEqual(["d2"]);
+
+		expect(dis("one_to_all", ["d1", "d2"], "d3")).toBe(false);
+		expect(tog("one_to_all", ["d1", "d2"], "d3")).toEqual(["d1", "d2", "d3"]);
+		expect(tog("one_to_all", ["d1", "d2", "d3"], "d2")).toEqual(["d1", "d3"]);
 	});
 });
 
@@ -453,16 +567,21 @@ describe("UI wiring contracts for teacher and accompanist directory opt-in and a
 		expect(cardSource).toContain("upsertCustomerTeacherProfile");
 		expect(cardSource).toContain("getCustomerAccompanistProfile");
 		expect(cardSource).toContain("upsertCustomerAccompanistProfile");
+		expect(cardSource).toContain("getAccompanistMembershipForm");
 		expect(cardSource).toContain("clearPendingTeacherDirectoryOptIn");
 	});
 
-	it("mounts AdminTeacherDirectoryPanel with Teacher + Accompanist list and approval moderation", async () => {
+	it("mounts AdminTeacherDirectoryPanel with Teacher + Accompanist list, approval moderation, and Teacher-only division reassignment", async () => {
 		const adminPage = await readSource(
 			"../src/pages/AdminMembershipProductsPage.tsx",
 		);
 		const panelSource = await readSource(
 			"../src/pages/AdminTeacherDirectoryPanel.tsx",
 		);
+		const editorSource = await readOptionalSource(
+			"../src/pages/AdminTeacherDivisionEditor.tsx",
+		);
+		const combinedPanelSource = `${panelSource}\n${editorSource}`;
 		expect(adminPage).toContain("AdminTeacherDirectoryPanel");
 		expect(panelSource).toContain("listAdminTeacherProfiles");
 		expect(panelSource).toContain("listAdminAccompanistProfiles");
@@ -471,5 +590,8 @@ describe("UI wiring contracts for teacher and accompanist directory opt-in and a
 		expect(panelSource).toContain("nextAdminTeacherApprovalStatus");
 		expect(panelSource).toContain("toAdminDirectoryModerationProfiles");
 		expect(panelSource).toContain("applyUpdatedModerationProfile");
+		expect(combinedPanelSource).toContain("updateAdminTeacherProfileDivisions");
+		expect(combinedPanelSource).toContain("<select");
+		expect(combinedPanelSource).toMatch(/role\s*===\s*"Teacher"/);
 	});
 });

@@ -2,7 +2,8 @@ import { describe, expect, it } from "bun:test";
 import type {
 	AccompanistProfileRecord,
 	UpdateAdminTeacherProfileApprovalInput as ApprovalAcc,
-	UpsertCustomerTeacherProfileInput as UpsertAcc,
+	TeacherProfileRecord,
+	UpsertCustomerAccompanistProfileInput as UpsertAcc,
 } from "@festival/common";
 import { getBootstrap } from "../../src/lib/api/auth.js";
 import { listRooms } from "../../src/lib/api/catalog.js";
@@ -85,6 +86,7 @@ describe("split Hono RPC frontend API modules and barrel", () => {
 			"saveCustomerFestivalAvailability",
 			"startClassCheckout",
 			"updateAdminAccompanistProfileApproval",
+			"updateAdminTeacherProfileDivisions",
 			"upsertCustomerAccompanistProfile",
 			"validateCreateBillingAdjustmentInput",
 		] as const;
@@ -99,6 +101,10 @@ describe("split Hono RPC frontend API modules and barrel", () => {
 		expect(directorySource).toContain(
 			"UpdateAdminAccompanistProfileApprovalInput",
 		);
+		expect(directorySource).toContain(
+			"UpdateAdminTeacherProfileDivisionsInput",
+		);
+		expect(directorySource).toContain("UpdateTeacherProfileDivisionsBody");
 	});
 
 	it("preserves canonical header casing, credentials, and error payloads in createRpcFetch and unwrapRpcResponse", async () => {
@@ -297,6 +303,57 @@ describe("split Hono RPC frontend API modules and barrel", () => {
 		]).toEqual([`${admPath}/acc-1/approval`, "PATCH", "Bearer tok-admin"]);
 		expect(JSON.parse(String(calls[4]?.init?.body))).toEqual({
 			approvalStatus: "rejected",
+		});
+	});
+
+	it("maps updateAdminTeacherProfileDivisions PATCH endpoint with URL encoding, Bearer auth, and divisionIds body", async () => {
+		const dir = directoryApi as unknown as {
+			updateAdminTeacherProfileDivisions?: (
+				idToken: string,
+				orgSlug: string,
+				input: { profileId: string; divisionIds: string[] },
+			) => Promise<TeacherProfileRecord>;
+		};
+		expect(typeof dir.updateAdminTeacherProfileDivisions).toBe("function");
+		const iso = "2026-09-01T00:00:00.000Z";
+		const teacherRecord: TeacherProfileRecord = {
+			id: "prof/1",
+			organization_id: "org-1",
+			customer_id: "cust-1",
+			display_name: "Clara Schumann",
+			teacher_color: "#1D4ED8",
+			public_directory_opt_in: true,
+			approval_status: "approved",
+			division_ids: ["div-2"],
+			created_at: iso,
+			updated_at: iso,
+		};
+		let capturedUrl = "";
+		let capturedInit: RequestInit | undefined;
+		await withMockFetch(
+			(url, init) => {
+				capturedUrl = url;
+				capturedInit = init;
+				return Response.json(teacherRecord);
+			},
+			async () => {
+				const updated = await dir.updateAdminTeacherProfileDivisions?.(
+					"tok-admin",
+					"org one",
+					{ profileId: "prof/1", divisionIds: ["div-2"] },
+				);
+				expect(updated).toEqual(teacherRecord);
+			},
+		);
+		const headers = new Headers(capturedInit?.headers);
+		expect(capturedUrl).toBe(
+			"/api/admin/orgs/org%20one/profiles/teachers/prof%2F1/divisions",
+		);
+		expect(capturedInit?.method).toBe("PATCH");
+		expect(capturedInit?.credentials).toBe("include");
+		expect(headers.get("Authorization")).toBe("Bearer tok-admin");
+		expect(JSON.parse(String(capturedInit?.body))).toEqual({
+			divisionIds: ["div-2"],
 		});
 	});
 

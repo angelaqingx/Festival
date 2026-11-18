@@ -1,6 +1,7 @@
 import type {
 	AccompanistProfileRecord,
 	CustomerMembershipStatusEntry,
+	MembershipDivisionSelectionPolicy,
 	PublicOrganizationDivision,
 	TeacherProfileRecord,
 } from "@festival/common";
@@ -227,4 +228,57 @@ export function toggleDivisionSelection(
 	if (checked) next.add(divisionId);
 	else next.delete(divisionId);
 	return [...next];
+}
+
+const ACCOMPANIST_POLICY_HINTS: Record<
+	MembershipDivisionSelectionPolicy,
+	string
+> = {
+	exactly_one: "Select exactly 1 division.",
+	one_to_two: "Select 1 or 2 divisions.",
+	one_to_all: "Select 1 or more divisions.",
+};
+
+export function formatAccompanistDivisionPolicyHint(
+	policy: MembershipDivisionSelectionPolicy,
+): string {
+	return ACCOMPANIST_POLICY_HINTS[policy];
+}
+
+export function isAccompanistDivisionCheckboxDisabled(
+	policy: MembershipDivisionSelectionPolicy,
+	selectedIds: readonly string[],
+	divisionId: string,
+): boolean {
+	const isSelected = selectedIds.includes(divisionId);
+	if (policy === "exactly_one") {
+		if (selectedIds.length > 1) return !isSelected;
+		return selectedIds.length === 1 && isSelected;
+	}
+	if (policy === "one_to_two") {
+		return !isSelected && selectedIds.length >= 2;
+	}
+	return false;
+}
+
+export function toggleAccompanistDivisionSelection(
+	policy: MembershipDivisionSelectionPolicy,
+	selectedIds: readonly string[],
+	divisionId: string,
+): string[] {
+	const unique = [...new Set(selectedIds)];
+	const isSelected = unique.includes(divisionId);
+	if (policy === "exactly_one") {
+		if (unique.length > 1) {
+			return isSelected ? unique.filter((id) => id !== divisionId) : unique;
+		}
+		return isSelected ? unique : [divisionId];
+	}
+	if (isSelected) {
+		return unique.filter((id) => id !== divisionId);
+	}
+	if (policy === "one_to_two" && unique.length >= 2) {
+		return unique;
+	}
+	return [...unique, divisionId];
 }

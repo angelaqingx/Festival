@@ -1,5 +1,6 @@
 import {
 	UpdateProfileApprovalBodySchema,
+	UpdateTeacherProfileDivisionsBodySchema,
 	UpsertCustomerTeacherProfileInputSchema,
 	UpsertParticipantProfileInputSchema,
 } from "@festival/common";
@@ -69,6 +70,11 @@ export const PARTICIPANT_PROFILE_ROUTE_SECURITY = [
 	profileRoute(
 		"PATCH",
 		"/admin/orgs/:orgSlug/profiles/teachers/:profileId/approval",
+		{ authenticationClass: "admin" },
+	),
+	profileRoute(
+		"PATCH",
+		"/admin/orgs/:orgSlug/profiles/teachers/:profileId/divisions",
 		{ authenticationClass: "admin" },
 	),
 	profileRoute("GET", "/admin/orgs/:orgSlug/profiles/accompanists", {
@@ -212,6 +218,23 @@ function buildAdminTeacherProfileRoutes(
 				withNoStoreJson(c, () => {
 					const t = getRequiredTenant(c);
 					return profileService.updateTeacherProfileApproval(
+						t.organization.id,
+						requireParam(c, "profileId"),
+						c.req.valid("json"),
+						t.identity.uid,
+					);
+				}),
+		)
+		.patch(
+			"/admin/orgs/:orgSlug/profiles/teachers/:profileId/divisions",
+			auth,
+			tenant,
+			admin,
+			jsonValidator(UpdateTeacherProfileDivisionsBodySchema),
+			(c) =>
+				withNoStoreJson(c, () => {
+					const t = getRequiredTenant(c);
+					return profileService.updateTeacherProfileDivisions(
 						t.organization.id,
 						requireParam(c, "profileId"),
 						c.req.valid("json"),

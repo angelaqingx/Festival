@@ -44,6 +44,7 @@ import type {
 	StaffMembershipRosterResult,
 	TeacherDirectoryCommerceDecisionsPort,
 	TeacherDirectoryOrganizationPort,
+	TeacherDirectoryRepository,
 } from "./types.js";
 
 const ACCOMPANIST_MEMBERSHIP_DISPLAY_NAME = "Accompanist Membership";
@@ -69,6 +70,10 @@ export interface MembershipEntitlementServiceDeps {
 	organizations: Pick<
 		TeacherDirectoryOrganizationPort,
 		"getOrganizationTimezone" | "listDivisions"
+	>;
+	directory?: Pick<
+		TeacherDirectoryRepository,
+		"getTeacherProfile" | "listTeacherProfiles"
 	>;
 	commerce?: TeacherDirectoryCommerceDecisionsPort;
 	now?: () => Date;
@@ -143,29 +148,47 @@ export class MembershipEntitlementService {
 		if (!this.deps.commerce) {
 			throw new AppError("Membership commerce port is not configured.", 503);
 		}
-		const [timezone, grants, accompanistGrants, decisions, offering] =
-			await Promise.all([
-				this.deps.organizations.getOrganizationTimezone(organizationId),
-				this.deps.entitlements.listEntitlementGrantSnapshots(
-					organizationId,
-					customerId,
-				),
-				this.deps.entitlements.listAccompanistMembershipGrants({
-					organizationId,
-					customerId,
-				}),
-				this.deps.commerce.listCustomerDecisions(organizationId, customerId),
-				this.deps.products.findMembershipProductRecordByClass(
-					organizationId,
-					"teacher_membership",
-				),
-			]);
+		const [
+			timezone,
+			grants,
+			accompanistGrants,
+			decisions,
+			offering,
+			teacherProfile,
+		] = await Promise.all([
+			this.deps.organizations.getOrganizationTimezone(organizationId),
+			this.deps.entitlements.listEntitlementGrantSnapshots(
+				organizationId,
+				customerId,
+			),
+			this.deps.entitlements.listAccompanistMembershipGrants({
+				organizationId,
+				customerId,
+			}),
+			this.deps.commerce.listCustomerDecisions(organizationId, customerId),
+			this.deps.products.findMembershipProductRecordByClass(
+				organizationId,
+				"teacher_membership",
+			),
+			this.deps.directory
+				? this.deps.directory.getTeacherProfile(organizationId, customerId)
+				: Promise.resolve(null),
+		]);
+		const orgDivisions =
+			teacherProfile !== null
+				? await this.deps.organizations.listDivisions(organizationId, false)
+				: undefined;
 		const today = calendarDateInTimezone(this.now().toISOString(), timezone);
 		const displayName = offering?.productNameSnapshot ?? "Teacher Membership";
 		return {
 			memberships: [
 				...mapValidationDecisions(decisions, displayName),
-				...mapTeacherStatusEntries(grants, displayName, today),
+				...mapTeacherStatusEntries(grants, {
+					displayName,
+					today,
+					teacherProfile,
+					orgDivisions,
+				}),
 				...mapAccompanistStatusEntries(accompanistGrants, today),
 			],
 		};
@@ -235,12 +258,14 @@ export class MembershipEntitlementService {
 				organizationId,
 				today,
 			),
-			loadActiveTeacherRoster(
-				this.deps.entitlements,
-				this.deps.products,
+			loadActiveTeacherRoster({
+				entitlements: this.deps.entitlements,
+				products: this.deps.products,
+				organizations: this.deps.organizations,
+				directory: this.deps.directory,
 				organizationId,
 				today,
-			),
+			}),
 		]);
 		return {
 			roster: [...accompanists, ...teachers].sort(sortRosterEntries),

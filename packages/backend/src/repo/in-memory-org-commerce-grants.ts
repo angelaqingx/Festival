@@ -290,18 +290,74 @@ export function inMemFindMembershipCustomerContacts(
 	return result;
 }
 
+export function inMemFindActiveTeacherEntitlementGrant(
+	state: InMemoryOrgState,
+	input: {
+		organizationId: string;
+		customerId: string;
+		divisionId: string;
+	},
+): EntitlementGrantSnapshot | null {
+	const profile = [...state.teacherProfiles.values()].find(
+		(p) =>
+			p.organization_id === input.organizationId &&
+			p.customer_id === input.customerId,
+	);
+	if (profile && !profile.division_ids.includes(input.divisionId)) {
+		return null;
+	}
+	const found = [...state.entitlementGrants.values()]
+		.filter(
+			(g) =>
+				g.organizationId === input.organizationId &&
+				g.customerId === input.customerId &&
+				g.entitlementClass === TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS &&
+				(profile ? true : g.divisionId === input.divisionId),
+		)
+		.sort(
+			(a, b) =>
+				a.createdAtIso.localeCompare(b.createdAtIso) ||
+				a.id.localeCompare(b.id),
+		)
+		.map((g) => withTeacherLifecycle(state, g))
+		.find((g) => g.status === "active");
+	if (!found) return null;
+	if (!profile) return found;
+	const div = state.divisions.get(input.divisionId);
+	return {
+		...found,
+		divisionId: input.divisionId,
+		divisionNameSnapshot:
+			div?.organizationId === input.organizationId
+				? div.displayName
+				: found.divisionNameSnapshot,
+	};
+}
+
 export function inMemListActiveTeachersForDivision(
 	state: InMemoryOrgState,
 	organizationId: string,
 	divisionId: string,
 ): Array<{ id: string; name: string }> {
+	const profilesByCustomer = new Map<string, readonly string[]>();
+	for (const p of state.teacherProfiles.values()) {
+		if (p.organization_id === organizationId) {
+			profilesByCustomer.set(p.customer_id, p.division_ids);
+		}
+	}
 	const activeGrants = [...state.entitlementGrants.values()]
-		.filter(
-			(g) =>
-				g.organizationId === organizationId &&
-				g.divisionId === divisionId &&
-				g.entitlementClass === TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
-		)
+		.filter((g) => {
+			if (
+				g.organizationId !== organizationId ||
+				g.entitlementClass !== TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS
+			) {
+				return false;
+			}
+			const profileDivisions = profilesByCustomer.get(g.customerId);
+			return profileDivisions !== undefined
+				? profileDivisions.includes(divisionId)
+				: g.divisionId === divisionId;
+		})
 		.map((g) => withTeacherLifecycle(state, g))
 		.filter((g) => g.status === "active");
 	const seen = new Set<string>();

@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { randomUUID } from "node:crypto";
 import {
+	AppError,
 	addCalendarDays,
 	FORBIDDEN_PUBLIC_DIRECTORY_FIELDS,
 	getDeterministicTeacherColor,
 	type ProfileApprovalStatus,
 	TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
+	type TeacherProfileRecord,
 	validatePublicDirectoryProfileDto,
 } from "@festival/common";
 import { sql } from "bun";
@@ -28,6 +30,41 @@ const VALID_DIV_1 = "11111111-1111-4111-8111-111111111111";
 const VALID_DIV_2 = "22222222-2222-4222-8222-222222222222";
 const currentSchema = currentPostgresFixture("prof_repo");
 const integrationTest = process.env.POSTGRES_INTEGRATION_URL ? it : it.skip;
+
+type UpdateTeacherDivisionsRepo = {
+	updateTeacherProfileDivisions(
+		organizationId: string,
+		profileId: string,
+		divisionIds: string[],
+	): Promise<TeacherProfileRecord | null>;
+};
+
+function callUpdateTeacherDivisions(
+	target: PostgresTeacherDirectoryRepository,
+	organizationId: string,
+	profileId: string,
+	divisionIds: string[],
+): Promise<TeacherProfileRecord | null> {
+	return (
+		target as unknown as UpdateTeacherDivisionsRepo
+	).updateTeacherProfileDivisions(organizationId, profileId, divisionIds);
+}
+
+async function expectInvalidDivisionRejection(
+	promise: Promise<unknown>,
+): Promise<void> {
+	let caught: unknown;
+	try {
+		await promise;
+	} catch (error) {
+		caught = error;
+	}
+	expect(caught).toBeInstanceOf(AppError);
+	expect(caught).toMatchObject({
+		statusCode: 400,
+		code: "invalid_division",
+	});
+}
 
 async function setupDirectoryFixture(schema: string) {
 	const orgRepo = new PostgresOrganizationRepository(schema);
@@ -345,6 +382,103 @@ describe("PostgresTeacherDirectoryRepository - Integration", () => {
 						expect(raw[forbidden]).toBeUndefined();
 					}
 				}
+			} finally {
+				await resetPostgresFixture(schema);
+			}
+		},
+	);
+
+	integrationTest(
+		"updateTeacherProfileDivisions updates divisions atomically, preserves approval_status, isolates tenants, and rejects foreign or inactive divisions",
+		async () => {
+			const schema = await currentSchema();
+			try {
+				const f = await setupDirectoryFixture(schema);
+				const inactiveDiv = await f.orgRepo.createDivision({
+					organizationId: f.orgAId,
+					displayName: "Inactive Brass",
+					normalizedName: "inactive brass",
+				});
+				await sql.unsafe(
+					`UPDATE ${schema}.organization_divisions SET is_active = FALSE WHERE id = $1`,
+					[inactiveDiv.id],
+				);
+				const approved = await f.directory.upsertTeacherProfile({
+					organizationId: f.orgAId,
+					customerId: await f.seedCustomer("cust-div-app"),
+					displayName: "Approved Teacher",
+					publicDirectoryOptIn: true,
+					divisionIds: [f.div1Id],
+				});
+				const pending = await f.directory.upsertTeacherProfile({
+					organizationId: f.orgAId,
+					customerId: await f.seedCustomer("cust-div-pend"),
+					displayName: "Pending Teacher",
+					publicDirectoryOptIn: false,
+					divisionIds: [f.div1Id],
+				});
+				const rejectedSeed = await f.directory.upsertTeacherProfile({
+					organizationId: f.orgAId,
+					customerId: await f.seedCustomer("cust-div-rej"),
+					displayName: "Rejected Teacher",
+					publicDirectoryOptIn: true,
+					divisionIds: [f.div1Id],
+				});
+				await f.directory.updateTeacherProfileApproval(
+					f.orgAId,
+					rejectedSeed.id,
+					"rejected",
+				);
+
+				for (const [profileId, status] of [
+					[approved.id, "approved"],
+					[pending.id, "pending"],
+					[rejectedSeed.id, "rejected"],
+				] as const satisfies ReadonlyArray<[string, ProfileApprovalStatus]>) {
+					const updated = await callUpdateTeacherDivisions(
+						f.directory,
+						f.orgAId,
+						profileId,
+						[f.div2Id],
+					);
+					expect(updated?.division_ids).toEqual([f.div2Id]);
+					expect(updated?.approval_status).toBe(status);
+					const reloaded = await f.directory.getTeacherProfileById(
+						f.orgAId,
+						profileId,
+					);
+					expect(reloaded?.division_ids).toEqual([f.div2Id]);
+					expect(reloaded?.approval_status).toBe(status);
+				}
+
+				expect(
+					await callUpdateTeacherDivisions(
+						f.directory,
+						f.orgAId,
+						randomUUID(),
+						[f.div2Id],
+					),
+				).toBeNull();
+				expect(
+					await callUpdateTeacherDivisions(f.directory, f.orgBId, approved.id, [
+						f.foreignDivId,
+					]),
+				).toBeNull();
+
+				await expectInvalidDivisionRejection(
+					callUpdateTeacherDivisions(f.directory, f.orgAId, approved.id, [
+						f.foreignDivId,
+					]),
+				);
+				await expectInvalidDivisionRejection(
+					callUpdateTeacherDivisions(f.directory, f.orgAId, approved.id, [
+						inactiveDiv.id,
+					]),
+				);
+				expect(
+					(await f.directory.getTeacherProfileById(f.orgAId, approved.id))
+						?.division_ids,
+				).toEqual([f.div2Id]);
 			} finally {
 				await resetPostgresFixture(schema);
 			}
@@ -787,5 +921,12 @@ describe("PostgresTeacherDirectoryRepository - Profile Queries", () => {
 			"approved",
 		);
 		expect(updated?.approval_status).toBe("approved");
+	});
+
+	it("updateTeacherProfileDivisions rejects foreign or inactive divisions with 400 invalid_division", async () => {
+		unsafeSpy.mockResolvedValueOnce([]);
+		await expectInvalidDivisionRejection(
+			callUpdateTeacherDivisions(repo, "org-1", "prof-t-1", [VALID_DIV_1]),
+		);
 	});
 });

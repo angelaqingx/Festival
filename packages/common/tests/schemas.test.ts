@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import * as v from "valibot";
+import * as commonSchemas from "../src/index.js";
 import {
 	AcceptInviteInputSchema,
 	AcquireAccompanistMembershipPayloadSchema,
@@ -44,7 +45,9 @@ import {
 	UpdateCustomerProfilePayloadSchema,
 	UpdateRegistrationAgeDateInputSchema,
 	UpdateRegistrationMetadataInputSchema,
+	UpsertCustomerAccompanistProfileInputSchema,
 	UpsertCustomerTeacherProfileInputSchema,
+	UpsertParticipantProfileInputSchema,
 	VolunteerCoverageGapsResponseSchema,
 	VolunteerShiftListingSchema,
 	WithdrawWaitlistBodySchema,
@@ -358,16 +361,47 @@ describe("@festival/common valibot schemas", () => {
 			v.safeParse(UpsertCustomerTeacherProfileInputSchema, {
 				displayName: "Dr. Clara Schumann",
 				publicDirectoryOptIn: true,
-				divisionIds: ["div_piano"],
 			}).success,
 		).toBe(true);
 		expect(
 			v.safeParse(UpsertCustomerTeacherProfileInputSchema, {
-				displayName: "",
+				displayName: "Dr. Clara Schumann",
 				publicDirectoryOptIn: true,
-				divisionIds: [],
+				divisionIds: ["div_piano"],
 			}).success,
 		).toBe(false);
+		expect(
+			v.safeParse(UpsertCustomerTeacherProfileInputSchema, {
+				displayName: "Dr. Clara Schumann",
+				publicDirectoryOptIn: true,
+				unexpectedField: "not-allowed",
+			}).success,
+		).toBe(false);
+		expect(
+			v.safeParse(UpsertCustomerTeacherProfileInputSchema, {
+				displayName: "",
+				publicDirectoryOptIn: true,
+			}).success,
+		).toBe(false);
+
+		for (const schema of [
+			UpsertCustomerAccompanistProfileInputSchema,
+			UpsertParticipantProfileInputSchema,
+		]) {
+			expect(
+				v.safeParse(schema, {
+					displayName: "Mr. Johannes Brahms",
+					publicDirectoryOptIn: true,
+					divisionIds: ["div_piano"],
+				}).success,
+			).toBe(true);
+			expect(
+				v.safeParse(schema, {
+					displayName: "Mr. Johannes Brahms",
+					publicDirectoryOptIn: true,
+				}).success,
+			).toBe(false);
+		}
 
 		expect(
 			v.safeParse(UpdateAdminTeacherProfileApprovalInputSchema, {
@@ -393,6 +427,74 @@ describe("@festival/common valibot schemas", () => {
 				divisions: [{ divisionId: "div_1", divisionName: "Piano" }],
 			}).success,
 		).toBe(true);
+	});
+
+	it("validates admin teacher profile division update schemas", () => {
+		const schemasByName = commonSchemas as Record<string, unknown>;
+		const bodySchema = schemasByName.UpdateTeacherProfileDivisionsBodySchema as
+			| v.GenericSchema
+			| undefined;
+		const inputSchema =
+			schemasByName.UpdateAdminTeacherProfileDivisionsInputSchema as
+				| v.GenericSchema
+				| undefined;
+
+		expect(bodySchema).toBeDefined();
+		expect(inputSchema).toBeDefined();
+		if (!bodySchema || !inputSchema) {
+			return;
+		}
+
+		const validDivisionId = "11111111-1111-4111-8111-111111111111";
+
+		expect(
+			v.safeParse(bodySchema, {
+				divisionIds: [validDivisionId],
+			}).success,
+		).toBe(true);
+		expect(v.safeParse(bodySchema, { divisionIds: [] }).success).toBe(false);
+		expect(
+			v.safeParse(bodySchema, { divisionIds: ["id-1", "id-2"] }).success,
+		).toBe(false);
+		expect(v.safeParse(bodySchema, { divisionIds: [""] }).success).toBe(false);
+		expect(
+			v.safeParse(bodySchema, {
+				divisionIds: [validDivisionId],
+				extraKey: "nope",
+			}).success,
+		).toBe(false);
+
+		expect(
+			v.safeParse(inputSchema, {
+				profileId: "prof-1",
+				divisionIds: [validDivisionId],
+			}).success,
+		).toBe(true);
+		expect(
+			v.safeParse(inputSchema, {
+				profileId: "",
+				divisionIds: [validDivisionId],
+			}).success,
+		).toBe(false);
+		expect(
+			v.safeParse(inputSchema, {
+				profileId: "prof-1",
+				divisionIds: [],
+			}).success,
+		).toBe(false);
+		expect(
+			v.safeParse(inputSchema, {
+				profileId: "prof-1",
+				divisionIds: ["id-1", "id-2"],
+			}).success,
+		).toBe(false);
+		expect(
+			v.safeParse(inputSchema, {
+				profileId: "prof-1",
+				divisionIds: [validDivisionId],
+				extraKey: "nope",
+			}).success,
+		).toBe(false);
 	});
 
 	it("validates registration schemas (eligibility, checkout, metadata, repertoire pieces)", () => {

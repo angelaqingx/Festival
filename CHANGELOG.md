@@ -19,6 +19,7 @@
 - `Acquire Memberships` action row (`Annual Teacher` and `Annual Accompanist`) on `/org/:slug/account/memberships` with fail-closed per-class ownership blocking and `pageshow` return revalidation (`S17`, `#417`, `#422`).
 - Admin Concerto Repertoire CSV management (`S20`, `#359`): blank UTF-8 template download, current catalog CSV export, dry-run diff preview (`added`, `updated`, `unchanged`, `removed`, and row/field validation errors), explicit header-only clear-all confirmation, and single-transaction atomic replacement preserving canonical works, non-concerto classifications, contributors, and historical registrations.
 - Public Accompanist Directory parity with `#361`: self-service opt-in on `$0` accompanist registration and Account Memberships, auto-approved opted-in listings with sticky Admin `'rejected'` hides, active-membership directory gating, and unified Teacher + Accompanist Admin moderation (`S18`, `#416`).
+- Organization-Admin Teacher division editor and `PATCH /api/admin/orgs/:orgSlug/profiles/teachers/:profileId/divisions` endpoint (`D6`: strictly `1` active organization division) (`S19`, `#418`).
 
 ### Changed
 
@@ -32,6 +33,7 @@
 - Keyed the parent registration workspace to `(org, festival)` (`#390`, `#395`).
 - Scoped `CustomerIdentityContext` session refresh effect and `isCurrentRequest()` freshness guard to an `activeOrgSlug` memo while preserving `refreshOnReturn`, and removed the unused `ClassRegistrationProvider` wrapper on `/org/:slug/checkout-recovery/:token` (`S16`, `#385`, `#393`).
 - Removed copy-pasted `staffAccessConsent` gate and Privacy Policy prompt from `$0` accompanist membership registration across shared schemas, backend routes/services, and `AccompanistMembershipPage` (`S18`, `#416`).
+- Restricted post-creation Teacher division changes to Organization Admins (`400` on customer `PUT /profiles/teacher` `divisionIds`, server-side initial division seeding from active `teacher_membership` grants, read-only Teacher division display on Account Memberships), kept `orgs.membership_entitlement_divisions` immutable while resolving effective active Teacher division(s) from `orgs.teacher_profile_divisions` across membership status, teacher picker, registration eligibility, and active roster views, and enforced configured Accompanist division policies (`exactly_one`, `one_to_two`, `one_to_all`) across Accompanist profile saves and UI while preserving dual-role independence (`S19`, `#418`).
 
 ### Fixed
 

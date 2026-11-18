@@ -396,6 +396,7 @@ export function CustomerAccountMembershipsPage(props: {
 							slug={props.slug}
 							csrfToken={session.csrfToken}
 							memberships={store.memberships()}
+							onSaved={() => void refreshMembershipStatus(store)}
 						/>
 					</Show>
 					<Show when={hasActiveAccompanistMembership(store.memberships())}>
@@ -405,6 +406,7 @@ export function CustomerAccountMembershipsPage(props: {
 							slug={props.slug}
 							csrfToken={session.csrfToken}
 							memberships={store.memberships()}
+							onSaved={() => void refreshMembershipStatus(store)}
 						/>
 					</Show>
 				</>
