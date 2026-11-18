@@ -9,6 +9,7 @@ import {
 	addCalendarDays,
 	TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
 } from "@festival/common";
+import { sql } from "bun";
 import {
 	PostgresCustomerIntegrationRepository,
 	PostgresCustomerSessionRepository,
@@ -21,6 +22,7 @@ import {
 	PostgresTeacherDirectoryRepository,
 } from "../../../src/domains/teacher-directory/index.js";
 import { DomainCacheInvalidator } from "../../../src/lib/domain-cache-invalidator.js";
+import { InMemoryOrganizationRepository } from "../../../src/repo/in-memory-organization-repository.js";
 import { PostgresOrganizationRepository } from "../../../src/repo/postgres-organization-repository.js";
 import {
 	currentPostgresFixture,
@@ -63,20 +65,8 @@ describe("domains/teacher-directory", () => {
 									organizationId: "org-1",
 									customerId: "cust-1",
 									entitlementClass: TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
-									offeringId: "off-1",
-									durationDays: 365,
-									divisionId: "div-1",
-									divisionNameSnapshot: "Piano",
-									paidAmount: "50.00",
-									paidCurrencyCode: "USD",
-									checkoutIntentId: "ci-1",
-									shopifyOrderGid: "gid://shopify/Order/1",
-									shopifyOrderLineGid: "gid://shopify/Line/1",
-									startsOn: "2026-01-01",
-									endsOn: "2027-01-01",
 									status: "active",
-									createdAtIso: "2026-01-01T00:00:00.000Z",
-								},
+								} as EntitlementGrantSnapshot,
 							]
 						: [],
 				findCurrentAccompanistMembershipGrant: async () => null,
@@ -153,56 +143,44 @@ describe("domains/teacher-directory", () => {
 			},
 		});
 		service.onDomainEvent((e) => events.push(e));
+		const tCtx = { orgSlug: "fest", sessionId: "s-1", csrfToken: "c" };
+		const tBody = {
+			displayName: "Prof. Lee",
+			publicDirectoryOptIn: true,
+			divisionIds: ["11111111-1111-4111-8111-111111111111"],
+		};
 
 		await expect(
-			service.upsertTeacherProfile(
-				{ orgSlug: "fest", sessionId: "s-1", csrfToken: "c" },
-				{
-					displayName: "Prof. Lee",
-					publicDirectoryOptIn: true,
-					divisionIds: ["11111111-1111-4111-8111-111111111111"],
-				},
-			),
+			service.upsertTeacherProfile(tCtx, tBody),
 		).rejects.toMatchObject({
 			status: 403,
 			code: "active_membership_required",
 		});
 
 		activeGrant = true;
-		const saved = await service.upsertTeacherProfile(
-			{ orgSlug: "fest", sessionId: "s-1", csrfToken: "c" },
-			{
-				displayName: "Prof. Lee",
-				publicDirectoryOptIn: true,
-				divisionIds: ["11111111-1111-4111-8111-111111111111"],
-			},
-		);
-		expect(saved.approval_status).toBe("approved");
-
-		const unconsentedList = await service.listTeacherProfiles("org-1", "admin");
-		expect(unconsentedList[0]?.zip_code).toBeUndefined();
-
-		const toggled = await service.updateTeacherProfileApproval(
-			"org-1",
-			"prof-1",
-			{ approvalStatus: "rejected" },
-			"admin",
-		);
-		expect(toggled.approval_status).toBe("rejected");
-		expect(events).toEqual([
-			{
-				type: "TeacherDirectoryChanged",
-				organizationId: "org-1",
-				role: "teacher",
-				profileId: "prof-1",
-			},
-			{
-				type: "TeacherDirectoryChanged",
-				organizationId: "org-1",
-				role: "teacher",
-				profileId: "prof-1",
-			},
-		]);
+		expect(
+			(await service.upsertTeacherProfile(tCtx, tBody)).approval_status,
+		).toBe("approved");
+		expect(
+			(await service.listTeacherProfiles("org-1", "admin"))[0]?.zip_code,
+		).toBeUndefined();
+		expect(
+			(
+				await service.updateTeacherProfileApproval(
+					"org-1",
+					"prof-1",
+					{ approvalStatus: "rejected" },
+					"admin",
+				)
+			).approval_status,
+		).toBe("rejected");
+		const expectedEvent = {
+			type: "TeacherDirectoryChanged",
+			organizationId: "org-1",
+			role: "teacher",
+			profileId: "prof-1",
+		};
+		expect(events).toEqual([expectedEvent, expectedEvent]);
 	});
 
 	it("emits MembershipChanged on accompanist acquisition via DomainCacheInvalidator and local listener", async () => {
@@ -244,20 +222,19 @@ describe("domains/teacher-directory", () => {
 				findMembershipCustomerContacts: async () => new Map(),
 				listAccompanistMembershipGrants: async () => grants,
 				createAccompanistMembershipGrant: async (input) => {
-					const created: AccompanistMembershipGrant = {
+					const created = {
 						...input,
 						id: "acc-1",
 						status: "active",
 						isCurrent: true,
 						createdAtIso: "2026-09-12T12:00:00.000Z",
-					};
+					} as AccompanistMembershipGrant;
 					grants.push(created);
 					return created;
 				},
 			},
 		});
 		service.onDomainEvent((e) => localEvents.push(e));
-
 		const res = await service.acquireAccompanistMembership({
 			organizationId: "org-1",
 			organizationTimezone: "UTC",
@@ -269,7 +246,6 @@ describe("domains/teacher-directory", () => {
 				city: "Seattle",
 				phone: "+1 206 555 0100",
 				divisionIds: ["div-piano"],
-				staffAccessConsent: true,
 			},
 		});
 		expect(res.membership.status).toBe("active");
@@ -279,8 +255,109 @@ describe("domains/teacher-directory", () => {
 		]);
 	});
 
+	it("enforces #361 accompanist parity: active-grant opt-in gate, auto-approval, and sticky rejected status", async () => {
+		const repo = new InMemoryOrganizationRepository(
+			() => new Date("2026-06-01T12:00:00.000Z"),
+		);
+		const org = await repo.createOrganization({ name: "Fest", slug: "fest" });
+		const div1 = await repo.createDivision({
+			organizationId: org.id,
+			displayName: "Piano",
+			normalizedName: "piano",
+		});
+		const div2 = await repo.createDivision({
+			organizationId: org.id,
+			displayName: "Strings",
+			normalizedName: "strings",
+		});
+		let cid = "cust-acc-1";
+		let hasActiveAccompanist = false;
+		const service = new ParticipantDirectoryService({
+			organizations: repo,
+			directory: repo,
+			entitlements: {
+				listEntitlementGrantSnapshots: async () => [],
+				findCurrentAccompanistMembershipGrant: async () =>
+					hasActiveAccompanist
+						? ({
+								id: "acc-g1",
+								organizationId: org.id,
+								customerId: cid,
+								status: "active",
+								isCurrent: true,
+							} as AccompanistMembershipGrant)
+						: null,
+			},
+			customerAccess: {
+				customerReadAccess: async () => ({
+					organizationId: org.id,
+					customerId: cid,
+					sessionId: "s-acc",
+				}),
+				formAccess: async () => ({
+					organizationId: org.id,
+					organizationTimezone: "UTC",
+					customerId: cid,
+					name: "Ava",
+					email: "acc@example.com",
+					verifiedShopifyCustomerEmail: "acc@example.com",
+				}),
+			} as unknown as NonNullable<
+				ConstructorParameters<
+					typeof ParticipantDirectoryService
+				>[0]["customerAccess"]
+			>,
+		});
+		const ctx = { orgSlug: "fest", sessionId: "s-acc", csrfToken: "c" };
+		const save = (
+			displayName: string,
+			publicDirectoryOptIn: boolean,
+			divisionIds = [div1.id],
+		) =>
+			service.upsertAccompanistProfile(ctx, {
+				displayName,
+				publicDirectoryOptIn,
+				divisionIds,
+			});
+
+		await expect(save("Ava", true)).rejects.toMatchObject({
+			status: 403,
+			code: "active_membership_required",
+		});
+		hasActiveAccompanist = true;
+		const created = await save("Ava Accompanist", true);
+		expect(created.approval_status).toBe("approved");
+		expect(
+			(await save("Ava Renamed", true, [div1.id, div2.id])).approval_status,
+		).toBe("approved");
+
+		hasActiveAccompanist = false;
+		await expect(save("Ava Lapsed OptIn", true)).rejects.toMatchObject({
+			status: 403,
+			code: "active_membership_required",
+		});
+		expect(
+			(await save("Ava Lapsed OptOut", false)).public_directory_opt_in,
+		).toBe(false);
+
+		hasActiveAccompanist = true;
+		await service.updateAccompanistProfileApproval(
+			org.id,
+			created.id,
+			{ approvalStatus: "rejected" },
+			"admin",
+		);
+		expect((await save("Ava Renewed", true, [div2.id])).approval_status).toBe(
+			"rejected",
+		);
+
+		cid = "cust-acc-2";
+		expect((await save("Ben OptedOut", false)).approval_status).toBe("pending");
+		expect((await save("Ben OptedOut", true)).approval_status).toBe("approved");
+	});
+
 	integrationTest(
-		"persists teacher profiles, products, and entitlements across split Postgres repositories",
+		"persists teacher and accompanist profiles, products, and entitlements across split Postgres repositories",
 		async () => {
 			const schema = await currentSchema();
 			try {
@@ -294,32 +371,37 @@ describe("domains/teacher-directory", () => {
 					displayName: "Piano",
 					normalizedName: "piano",
 				});
-				const integrations = new PostgresCustomerIntegrationRepository(schema);
-				const sessions = new PostgresCustomerSessionRepository(schema);
-				await integrations.upsertIntegration({
+				await new PostgresCustomerIntegrationRepository(
+					schema,
+				).upsertIntegration({
 					organizationId: org.id,
 					storefrontDomain: "dir-org.myshopify.com",
 					clientId: "cid",
 					encryptedClientSecret: "enc",
 				});
+				const sessions = new PostgresCustomerSessionRepository(schema);
 				const now = new Date().toISOString();
-				const { customer } = await sessions.createCustomerSession({
-					sessionId: randomUUID(),
-					organizationId: org.id,
-					shopifyCustomerGid: "gid://shopify/Customer/td1",
-					encryptedTokens: "tok",
-					csrfToken: "csrf",
-					integrationVersion: 1,
-					createdAtIso: now,
-					lastSeenAtIso: now,
-					expiresAtIso: "2099-01-01T00:00:00.000Z",
-				});
+				const mkCust = async (gid: string) =>
+					(
+						await sessions.createCustomerSession({
+							sessionId: randomUUID(),
+							organizationId: org.id,
+							shopifyCustomerGid: gid,
+							encryptedTokens: "tok",
+							csrfToken: "csrf",
+							integrationVersion: 1,
+							createdAtIso: now,
+							lastSeenAtIso: now,
+							expiresAtIso: "2099-01-01T00:00:00.000Z",
+						})
+					).customer;
+				const customer = await mkCust("gid://shopify/Customer/td1");
+				const accCustomer = await mkCust("gid://shopify/Customer/td2");
 				const directory = new PostgresTeacherDirectoryRepository(schema);
 				const products = new PostgresMembershipProductRepository(schema);
 				const entitlements = new PostgresMembershipEntitlementRepository(
 					schema,
 				);
-
 				const offering = await products.createMembershipProductRecord({
 					organizationId: org.id,
 					entitlementClass: TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
@@ -329,9 +411,10 @@ describe("domains/teacher-directory", () => {
 					shopifyVariantGid: "gid://shopify/ProductVariant/td1",
 					productNameSnapshot: "Teacher Membership",
 				});
-				const startsOn = new Date(Date.now() - 10 * 86_400_000)
+				const startsOn = new Date(Date.now() - 86_400_000)
 					.toISOString()
 					.slice(0, 10);
+				const endsOn = addCalendarDays(startsOn, 365);
 				await entitlements.createEntitlementGrantSnapshot({
 					organizationId: org.id,
 					customerId: customer.id,
@@ -346,9 +429,25 @@ describe("domains/teacher-directory", () => {
 					shopifyOrderGid: "gid://shopify/Order/td-1",
 					shopifyOrderLineGid: "gid://shopify/LineItem/td-1",
 					startsOn,
-					endsOn: addCalendarDays(startsOn, 365),
+					endsOn,
 					status: "active",
 					verifiedIdentityEmail: "teacher@example.com",
+				});
+				const accGrant = await entitlements.createAccompanistMembershipGrant({
+					organizationId: org.id,
+					customerId: accCustomer.id,
+					normalizedEmail: "acc@example.com",
+					offeringNameSnapshot: "Accompanist Membership",
+					source: "accompanist_form",
+					contact: {
+						name: "Ava Accompanist",
+						email: "acc@example.com",
+						city: "Seattle",
+						phone: "206-555-0100",
+					},
+					divisions: [{ divisionId: div.id, divisionName: div.displayName }],
+					startsOn,
+					endsOn,
 				});
 				const saved = await directory.upsertTeacherProfile({
 					organizationId: org.id,
@@ -358,8 +457,39 @@ describe("domains/teacher-directory", () => {
 					divisionIds: [div.id],
 				});
 				expect(saved.approval_status).toBe("approved");
-				const publicList = await directory.getPublicDirectoryProfiles(org.id);
-				expect(publicList.map((p) => p.displayName)).toEqual(["Dr. Keys"]);
+				const accSaved = await directory.upsertAccompanistProfile({
+					organizationId: org.id,
+					customerId: accCustomer.id,
+					displayName: "Ava Accompanist",
+					publicDirectoryOptIn: true,
+					divisionIds: [div.id],
+				});
+				expect(accSaved.approval_status).toBe("approved");
+				const listNames = async () =>
+					(await directory.getPublicDirectoryProfiles(org.id)).map(
+						(p) => p.displayName,
+					);
+				expect(await listNames()).toEqual(["Dr. Keys", "Ava Accompanist"]);
+
+				await sql.unsafe(
+					`UPDATE ${schema}.membership_entitlements SET superseded_on = CURRENT_DATE WHERE id = $1`,
+					[accGrant.id],
+				);
+				expect(await listNames()).toEqual(["Dr. Keys"]);
+
+				await directory.updateAccompanistProfileApproval(
+					org.id,
+					accSaved.id,
+					"rejected",
+				);
+				const stillRejected = await directory.upsertAccompanistProfile({
+					organizationId: org.id,
+					customerId: accCustomer.id,
+					displayName: "Ava Edited",
+					publicDirectoryOptIn: true,
+					divisionIds: [div.id],
+				});
+				expect(stillRejected.approval_status).toBe("rejected");
 			} finally {
 				await resetPostgresFixture(schema);
 			}

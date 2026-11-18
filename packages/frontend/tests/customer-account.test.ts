@@ -127,7 +127,6 @@ interface DNode {
 	parent?: DNode;
 	kids: DNode[];
 }
-
 const mkNode = (tag: string, text = ""): DNode => ({
 	tag: tag.toLowerCase(),
 	text,
@@ -205,7 +204,6 @@ const solidDom = createRenderer<DNode>({
 	getNextSibling: (n) =>
 		n.parent ? n.parent.kids[n.parent.kids.indexOf(n) + 1] : undefined,
 });
-
 const SRC_DIR = fileURLToPath(new URL("../src/", import.meta.url));
 const EXTS = [".tsx", ".ts", "/index.tsx", "/index.ts"];
 const resolveSrc = (dir: string, spec: string) => {
@@ -266,7 +264,6 @@ interface HarnessOpts {
 	search?: string;
 	onNavigate?: (path: string) => void;
 }
-
 interface MockState {
 	auth: boolean;
 	list: CustomerMembershipStatusEntry[];
@@ -274,7 +271,6 @@ interface MockState {
 	reqs: number;
 	gate?: Promise<void>;
 }
-
 function createMockFetch(s: MockState): typeof fetch {
 	const json = Response.json;
 	const okSession = { authenticated: true, csrfToken: "c" };
@@ -289,14 +285,13 @@ function createMockFetch(s: MockState): typeof fetch {
 			if (s.mode === "error") return json({ error: "E" }, { status: 500 });
 			return json({ memberships: s.list });
 		}
-		if (u.endsWith("/customer/profiles/teacher"))
-			return json({}, { status: 404 });
+		if (u.includes("/profiles/teacher") || u.includes("/profiles/accompanist"))
+			return json({ error: "Not found" }, { status: 404 });
 		if (u.endsWith("/customer/profile")) return json({ profile: {} });
 		if (u.endsWith("/divisions")) return json({ divisions: [] });
 		throw new Error(`Unexpected URL: ${u}`);
 	}) as typeof fetch;
 }
-
 function createEnv(search: string, assigned: string[]) {
 	const location: Record<string, unknown> = {
 		assign: (p: string) => assigned.push(p),
@@ -416,7 +411,6 @@ describe("CustomerAccountMembershipsPage acquisition controls", () => {
 			expect(stylesCss).toMatch(r2);
 			expect(stylesCss).not.toMatch(r3);
 		}));
-
 	it("reflects all 4 ownership combinations plus loading, error, and checkoutProcessing fail-closed states", async () => {
 		const cases: Array<[HarnessOpts, [boolean, boolean]]> = [
 			[{ memberships: [] }, [false, false]],
@@ -433,7 +427,6 @@ describe("CustomerAccountMembershipsPage acquisition controls", () => {
 				expect(h.buttons().map(isDisabled)).toEqual(exp);
 			});
 	});
-
 	it("navigates via onNavigate or standalone location.assign when enabled and blocks mouse/keyboard when disabled", async () => {
 		const paths = ["/org/pafe/membership", "/org/pafe/accompanist-membership"];
 		const nav: string[] = [];
@@ -462,7 +455,6 @@ describe("CustomerAccountMembershipsPage acquisition controls", () => {
 			expect([blockedNav, h.assigned]).toEqual([[], []]);
 		});
 	});
-
 	it("refreshes acquisition state on persisted pageshow while failing closed in-flight and guarding cleanup/unauth", async () => {
 		const states = (h: HarnessCtx) => h.buttons().map(isDisabled);
 		await withHarness({ memberships: [] }, async (h) => {
@@ -482,7 +474,6 @@ describe("CustomerAccountMembershipsPage acquisition controls", () => {
 			expect(h.statusRequests()).toBe(0);
 		});
 	});
-
 	it("keeps acquisition buttons fail-closed while manual retry after initial 500 error is in-flight", () =>
 		withHarness({ statusMode: "error" }, async (h) => {
 			const states = () => h.buttons().map(isDisabled);
@@ -493,5 +484,15 @@ describe("CustomerAccountMembershipsPage acquisition controls", () => {
 			expect(states()).toEqual([true, true]);
 			await settleRetry();
 			expect(states()).toEqual([false, true]);
+		}));
+	it("renders Public Accompanist Directory for active accompanist while preserving h1 and section child order", () =>
+		withHarness({ memberships: [am("active")] }, async (h) => {
+			expect(textOf(h.docRoot)).toContain("Public Accompanist Directory");
+			expect(queryAll(h.docRoot, H1_SEL).map(textOf)).toEqual([
+				"Acquire Memberships",
+				"Memberships",
+			]);
+			const kids = elKids(queryAll(h.docRoot, SEC_SEL)[0] ?? mkNode("div"));
+			expect(kids.slice(0, 3).map((e) => e.tag)).toEqual(["h1", "div", "h1"]);
 		}));
 });

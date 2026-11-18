@@ -9,7 +9,7 @@ import {
 	validatePublicDirectoryProfileDto,
 } from "@festival/common";
 import { sql } from "bun";
-import { profileEditRequiresReapproval } from "../../infra/s10-infra.js";
+import { resolveParticipantProfileApprovalStatus } from "../../infra/s10-infra.js";
 import {
 	type AccompanistProfileRow,
 	type DirectoryProfileRow,
@@ -37,35 +37,6 @@ export async function assertValidDivisionIdsQuery(
 		);
 	}
 	return uniqueIds;
-}
-
-async function lockedAccompanistRequiresReapproval(
-	transaction: Pick<typeof sql, "unsafe">,
-	schema: string,
-	next: {
-		organizationId: string;
-		customerId: string;
-		displayName: string;
-		divisionIds: string[];
-	},
-): Promise<boolean> {
-	const existingRows = (await transaction.unsafe(
-		`SELECT id, display_name FROM ${schema}.accompanist_profiles WHERE organization_id = $1 AND customer_id = $2 FOR UPDATE`,
-		[next.organizationId, next.customerId],
-	)) as Array<{ id: string; display_name: string }>;
-	const existing = existingRows[0];
-	if (!existing) return true;
-	const divisionRows = (await transaction.unsafe(
-		`SELECT division_id FROM ${schema}.accompanist_profile_divisions WHERE accompanist_profile_id = $1 AND organization_id = $2`,
-		[existing.id, next.organizationId],
-	)) as Array<{ division_id: string }>;
-	return profileEditRequiresReapproval(
-		{
-			displayName: existing.display_name,
-			divisionIds: divisionRows.map((row) => row.division_id),
-		},
-		next,
-	);
 }
 
 export async function persistTeacherProfileTx(
@@ -126,33 +97,35 @@ export async function persistAccompanistProfileTx(
 		customerId: string;
 		displayName: string;
 		publicDirectoryOptIn: boolean;
-		divisionIds: string[];
+		initialApprovalStatus?: ProfileApprovalStatus;
+		divisionIds: readonly string[];
 	},
 ): Promise<string> {
-	const generatedId = randomUUID();
+	const initialApprovalStatus =
+		params.initialApprovalStatus ??
+		resolveParticipantProfileApprovalStatus(null, params.publicDirectoryOptIn);
 	const row = await sql.begin(async (transaction) => {
-		const requiresReapproval = await lockedAccompanistRequiresReapproval(
-			transaction,
-			schema,
-			params,
-		);
 		const upserted = (await transaction.unsafe(
 			`INSERT INTO ${schema}.accompanist_profiles (
 				id, organization_id, customer_id, display_name, public_directory_opt_in, approval_status, created_at, updated_at
-			) VALUES ($1, $2, $3, $4, $5, 'pending', NOW(), NOW())
+			) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
 			ON CONFLICT (organization_id, customer_id) DO UPDATE SET
 				display_name = EXCLUDED.display_name,
 				public_directory_opt_in = EXCLUDED.public_directory_opt_in,
-				approval_status = CASE WHEN $6::boolean THEN 'pending' ELSE ${schema}.accompanist_profiles.approval_status END,
+				approval_status = CASE
+					WHEN ${schema}.accompanist_profiles.approval_status = 'rejected' THEN 'rejected'
+					WHEN EXCLUDED.public_directory_opt_in THEN 'approved'
+					ELSE ${schema}.accompanist_profiles.approval_status
+				END,
 				updated_at = NOW()
 			RETURNING id`,
 			[
-				generatedId,
+				randomUUID(),
 				params.organizationId,
 				params.customerId,
 				params.displayName,
 				params.publicDirectoryOptIn,
-				requiresReapproval,
+				initialApprovalStatus,
 			],
 		)) as Array<{ id: string }>;
 		const profileId = upserted[0].id;
@@ -242,6 +215,7 @@ export async function queryPublicDirectoryAccompanists(
 		WHERE e.organization_id = $1
 		  AND e.entitlement_class = 'accompanist_membership'
 		  AND e.revoked_at IS NULL
+		  AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date)
 		  AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date
 		  AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date`,
 		[organizationId],
@@ -258,12 +232,14 @@ export async function queryPublicDirectoryAccompanists(
 		ORDER BY lower(ap.display_name) COLLATE "C" ASC, ap.display_name COLLATE "C" ASC, ap.id COLLATE "C" ASC`,
 		[organizationId],
 	)) as DirectoryProfileRow[];
-	return accompanistRows.map((row) =>
-		validatePublicDirectoryProfileDto({
-			displayName: row.display_name,
-			role: "Accompanist",
-			approvedDivisions: parseApprovedDivisions(row.divisions),
-			isActiveMember: activeIds.has(row.customer_id),
-		}),
-	);
+	return accompanistRows
+		.filter((row) => activeIds.has(row.customer_id))
+		.map((row) =>
+			validatePublicDirectoryProfileDto({
+				displayName: row.display_name,
+				role: "Accompanist",
+				approvedDivisions: parseApprovedDivisions(row.divisions),
+				isActiveMember: true,
+			}),
+		);
 }

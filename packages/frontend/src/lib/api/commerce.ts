@@ -139,7 +139,6 @@ export function acquireAccompanistMembership(
 		city: string;
 		phone: string;
 		divisionIds: string[];
-		staffAccessConsent: boolean;
 	},
 ) {
 	const ep = custRpc({ extraHeaders: { "X-CSRF-Token": csrfToken } })[
@@ -152,10 +151,7 @@ export function acquireAccompanistMembership(
 			endsOn: string;
 			status: string;
 		};
-	}>()(ep, {
-		param: sp(slug),
-		json: { ...input, staffAccessConsent: input.staffAccessConsent as true },
-	});
+	}>()(ep, { param: sp(slug), json: input });
 }
 
 export function getAccompanistMembershipForm(slug: string) {

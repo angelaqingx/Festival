@@ -187,13 +187,14 @@ describe("PostgresTeacherDirectoryRepository - Integration", () => {
 	);
 
 	integrationTest(
-		"rejects foreign divisions, enforces accompanist reapproval on edit, and isolates tenants",
+		"rejects foreign divisions, enforces accompanist #361 opt-in approval parity, and isolates tenants",
 		async () => {
 			const schema = await currentSchema();
 			try {
 				const f = await setupDirectoryFixture(schema);
 				const custTBad = await f.seedCustomer("cust-t-bad");
 				const custA1 = await f.seedCustomer("cust-a1");
+				const custA2 = await f.seedCustomer("cust-a2");
 				await expect(
 					f.directory.upsertTeacherProfile({
 						organizationId: f.orgAId,
@@ -211,12 +212,7 @@ describe("PostgresTeacherDirectoryRepository - Integration", () => {
 					publicDirectoryOptIn: true,
 					divisionIds: [f.div1Id],
 				});
-				expect(acc.approval_status).toBe("pending");
-				await f.directory.updateAccompanistProfileApproval(
-					f.orgAId,
-					acc.id,
-					"approved",
-				);
+				expect(acc.approval_status).toBe("approved");
 				const optToggle = await f.directory.upsertAccompanistProfile({
 					organizationId: f.orgAId,
 					customerId: custA1,
@@ -230,9 +226,41 @@ describe("PostgresTeacherDirectoryRepository - Integration", () => {
 					customerId: custA1,
 					displayName: "Accompanist Renamed",
 					publicDirectoryOptIn: true,
+					divisionIds: [f.div1Id, f.div2Id],
+				});
+				expect(edited.approval_status).toBe("approved");
+
+				await f.directory.updateAccompanistProfileApproval(
+					f.orgAId,
+					acc.id,
+					"rejected",
+				);
+				const stickyRejected = await f.directory.upsertAccompanistProfile({
+					organizationId: f.orgAId,
+					customerId: custA1,
+					displayName: "Accompanist Bypass",
+					publicDirectoryOptIn: true,
 					divisionIds: [f.div1Id],
 				});
-				expect(edited.approval_status).toBe("pending");
+				expect(stickyRejected.approval_status).toBe("rejected");
+
+				const pendingAcc = await f.directory.upsertAccompanistProfile({
+					organizationId: f.orgAId,
+					customerId: custA2,
+					displayName: "Accompanist OptOut",
+					publicDirectoryOptIn: false,
+					divisionIds: [f.div1Id],
+				});
+				expect(pendingAcc.approval_status).toBe("pending");
+				const transitionedAcc = await f.directory.upsertAccompanistProfile({
+					organizationId: f.orgAId,
+					customerId: custA2,
+					displayName: "Accompanist OptOut",
+					publicDirectoryOptIn: true,
+					divisionIds: [f.div1Id],
+				});
+				expect(transitionedAcc.approval_status).toBe("approved");
+
 				expect(
 					await f.directory.getAccompanistProfile(f.orgBId, custA1),
 				).toBeNull();
@@ -251,6 +279,7 @@ describe("PostgresTeacherDirectoryRepository - Integration", () => {
 				const custTActive = await f.seedCustomer("cust-t-active");
 				const custTNoMem = await f.seedCustomer("cust-t-nomem");
 				const custAActive = await f.seedCustomer("cust-a-active");
+				const custANoMem = await f.seedCustomer("cust-a-nomem");
 				await f.seedActiveTeacherGrant(custTActive);
 				await f.directory.upsertTeacherProfile({
 					organizationId: f.orgAId,
@@ -289,11 +318,14 @@ describe("PostgresTeacherDirectoryRepository - Integration", () => {
 					publicDirectoryOptIn: true,
 					divisionIds: [f.div2Id],
 				});
-				await f.directory.updateAccompanistProfileApproval(
-					f.orgAId,
-					acc.id,
-					"approved",
-				);
+				expect(acc.approval_status).toBe("approved");
+				await f.directory.upsertAccompanistProfile({
+					organizationId: f.orgAId,
+					customerId: custANoMem,
+					displayName: "No Membership Accompanist",
+					publicDirectoryOptIn: true,
+					divisionIds: [f.div2Id],
+				});
 
 				const directory = await f.directory.getPublicDirectoryProfiles(
 					f.orgAId,
@@ -419,7 +451,7 @@ describe("PostgresTeacherDirectoryRepository - Profile Queries", () => {
 		).rejects.toThrow(/Approval status must be one of/);
 	});
 
-	it("getPublicDirectoryProfiles returns active teachers then accompanists and omits non-member teachers", async () => {
+	it("getPublicDirectoryProfiles returns active teachers and active accompanists only, filtering out inactive or superseded grants", async () => {
 		unsafeSpy.mockResolvedValueOnce([{ customer_id: "cust-t-1" }]);
 		unsafeSpy.mockResolvedValueOnce([
 			{
@@ -435,17 +467,27 @@ describe("PostgresTeacherDirectoryRepository - Profile Queries", () => {
 				divisions: [],
 			},
 		]);
-		unsafeSpy.mockResolvedValueOnce([]);
+		unsafeSpy.mockResolvedValueOnce([{ customer_id: "cust-2" }]);
 		unsafeSpy.mockResolvedValueOnce([
 			{
 				id: "prof-a-1",
-				customer_id: "cust-a-1",
-				display_name: "Accompanist 1",
+				customer_id: "cust-a-inactive",
+				display_name: "Inactive Accompanist",
 				divisions: [],
+			},
+			{
+				id: "prof-a-2",
+				customer_id: "cust-2",
+				display_name: "Accompanist 2",
+				divisions: [{ id: VALID_DIV_2, name: "Piano" }],
 			},
 		]);
 
 		const directory = await repo.getPublicDirectoryProfiles("org-1");
+		const accompanistActiveQuery = String(unsafeSpy.mock.calls[2]?.[0] ?? "");
+		expect(accompanistActiveQuery).toContain(
+			"AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date)",
+		);
 		expect(directory.length).toBe(2);
 		expect(directory[0].displayName).toBe("Teacher 1");
 		expect(directory[0].role).toBe("Teacher");
@@ -453,9 +495,9 @@ describe("PostgresTeacherDirectoryRepository - Profile Queries", () => {
 		expect(directory[0].teacherColor).toBe(
 			getDeterministicTeacherColor("cust-t-1"),
 		);
-		expect(directory[1].displayName).toBe("Accompanist 1");
+		expect(directory[1].displayName).toBe("Accompanist 2");
 		expect(directory[1].role).toBe("Accompanist");
-		expect(directory[1].isActiveMember).toBe(false);
+		expect(directory[1].isActiveMember).toBe(true);
 		expect(directory[1].teacherColor).toBeUndefined();
 	});
 
@@ -618,7 +660,7 @@ describe("PostgresTeacherDirectoryRepository - Profile Queries", () => {
 		beginSpy.mockRestore();
 	});
 
-	it("upsertAccompanistProfile resets approval when division set changes", async () => {
+	it("upsertAccompanistProfile never resets approval to pending on update and preserves rejected status", async () => {
 		unsafeSpy.mockResolvedValueOnce([{ id: VALID_DIV_2 }]);
 		const { calls, beginSpy } = mockExistingProfileTransaction("accompanist", {
 			display_name: "Acc Name",
@@ -634,14 +676,12 @@ describe("PostgresTeacherDirectoryRepository - Profile Queries", () => {
 			divisionIds: [VALID_DIV_2],
 		});
 
-		const { lockIndex, upsert, upsertIndex } = findUpsertCall(
-			calls,
-			"accompanist",
-		);
-		expect(lockIndex).toBeGreaterThanOrEqual(0);
-		expect(lockIndex).toBeLessThan(upsertIndex);
-		expect(upsert.query).toContain("approval_status = CASE WHEN $6");
-		expect(upsert.params[5]).toBe(true);
+		const { upsert } = findUpsertCall(calls, "accompanist");
+		const updateClause = upsert.query.split("DO UPDATE SET")[1] ?? "";
+		expect(updateClause).toContain("EXCLUDED.public_directory_opt_in");
+		expect(updateClause).toContain("'approved'");
+		expect(updateClause).toContain("'rejected'");
+		expect(updateClause).not.toContain("'pending'");
 		beginSpy.mockRestore();
 	});
 

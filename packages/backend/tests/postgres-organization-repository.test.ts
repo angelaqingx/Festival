@@ -675,13 +675,62 @@ describe("PostgresOrganizationRepository", () => {
 			const calls = normalizedCalls(unsafeSpy);
 			expect(calls).toContainEqual([
 				expect.stringContaining(
-					"WHERE e.organization_id=$1 AND e.customer_id=$2 AND e.entitlement_class='accompanist_membership' AND e.revoked_at IS NULL AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date",
+					"WHERE e.organization_id=$1 AND e.customer_id=$2 AND e.entitlement_class='accompanist_membership' AND e.revoked_at IS NULL AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date) AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date",
 				),
 				["org-1", "acc-1"],
 			]);
 			expect(calls).toContainEqual([
 				expect.stringContaining("ORDER BY e.created_at ASC, e.id ASC LIMIT 1"),
 				["org-1", "acc-1"],
+			]);
+		});
+
+		it("listAccompanistMembershipGrants derives superseded status and excludes superseded grants when currentOnly is true", async () => {
+			unsafeSpy.mockResolvedValueOnce([
+				{
+					id: "acc-grant-sup",
+					organization_id: "org-1",
+					customer_id: "acc-1",
+					normalized_email: "acc@example.com",
+					offering_id: "offering-acc",
+					offering_name_snapshot: "Accompanist Membership",
+					source: "accompanist_form",
+					contact_name: "Sam Acc",
+					contact_email: "acc@example.com",
+					contact_city: "Seattle",
+					contact_phone: "555-0100",
+					divisions: [{ divisionId: "div-1", divisionName: "Junior Piano" }],
+					starts_on: "2026-01-01",
+					ends_on: "2027-01-01",
+					status: "superseded",
+					is_current: false,
+					created_at: "2026-01-01T00:00:00.000Z",
+				},
+			]);
+
+			const result = await repo.listAccompanistMembershipGrants({
+				organizationId: "org-1",
+				customerId: "acc-1",
+				currentOnly: true,
+			});
+
+			expect(result[0]).toMatchObject({
+				id: "acc-grant-sup",
+				status: "superseded",
+				isCurrent: false,
+			});
+			const calls = normalizedCalls(unsafeSpy);
+			expect(calls).toContainEqual([
+				expect.stringContaining(
+					"WHEN e.revoked_at IS NOT NULL THEN 'revoked' WHEN e.superseded_on IS NOT NULL AND e.superseded_on <= (NOW() AT TIME ZONE o.timezone)::date THEN 'superseded'",
+				),
+				["org-1", "acc-1", null, true],
+			]);
+			expect(calls).toContainEqual([
+				expect.stringContaining(
+					"AND ($4::boolean = FALSE OR (e.revoked_at IS NULL AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date) AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date))",
+				),
+				["org-1", "acc-1", null, true],
 			]);
 		});
 

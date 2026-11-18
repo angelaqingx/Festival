@@ -464,9 +464,10 @@ interface DirectoryFilterHelpers {
 	) => Array<{ id: string; name: string }>;
 }
 
-describe("active-member teacher filtering and directory search/division filters", () => {
+describe("active-member teacher and accompanist filtering and directory search/division filters", () => {
 	const piano = { id: "div-piano", name: "Piano" };
 	const strings = { id: "div-strings", name: "Strings" };
+	const voice = { id: "div-voice", name: "Voice" };
 	const names = (l?: PublicDirectoryProfileDto[]) =>
 		l?.map((p) => p.displayName);
 	const sample: PublicDirectoryProfileDto[] = [
@@ -476,21 +477,32 @@ describe("active-member teacher filtering and directory search/division filters"
 			...profile("Niccolo Paganini", "Teacher"),
 			approvedDivisions: [strings, piano],
 		},
-		{ ...profile("Gerald Moore", "Accompanist"), isActiveMember: false },
+		{
+			...profile("Gerald Moore", "Accompanist"),
+			approvedDivisions: [voice],
+			isActiveMember: false,
+		},
+		{
+			...profile("Ava Piano", "Accompanist"),
+			approvedDivisions: [piano],
+			isActiveMember: true,
+		},
 	];
 
-	it("omits inactive Teachers and filters/collects divisions deterministically", async () => {
-		expect(names(partitionDirectoryProfiles(sample).teachers)).toEqual([
+	it("omits inactive Teachers and Accompanists while keeping active members and filtering deterministically", async () => {
+		const partitioned = partitionDirectoryProfiles(sample);
+		expect(names(partitioned.teachers)).toEqual([
 			"Clara Schumann",
 			"Niccolo Paganini",
 		]);
+		expect(names(partitioned.accompanists)).toEqual(["Ava Piano"]);
 		const path = "../src/pages/publicDirectoryHelpers.js";
 		const h = (await import(path)) as DirectoryFilterHelpers;
 		expect(h.collectDirectoryDivisions?.(sample)).toEqual([piano, strings]);
 		expect(names(h.filterDirectoryProfiles?.(sample))).toEqual([
 			"Clara Schumann",
 			"Niccolo Paganini",
-			"Gerald Moore",
+			"Ava Piano",
 		]);
 		const byQuery = h.filterDirectoryProfiles?.(sample, { query: " STRINGS " });
 		expect(names(byQuery)).toEqual(["Niccolo Paganini"]);

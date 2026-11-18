@@ -28,6 +28,7 @@ export {
 } from "../repo/postgres-schema.js";
 export {
 	profileEditRequiresReapproval,
+	resolveParticipantProfileApprovalStatus,
 	resolveTeacherProfileApprovalStatus,
 } from "../repo/profile-moderation.js";
 export {

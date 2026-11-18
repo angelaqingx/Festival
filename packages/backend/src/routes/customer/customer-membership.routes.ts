@@ -107,7 +107,6 @@ const ACCOMPANIST_ALLOWED_FIELDS = [
 	"city",
 	"phone",
 	"divisionIds",
-	"staffAccessConsent",
 ] as const;
 
 async function resolveMembershipCheckoutContext(
@@ -309,12 +308,8 @@ async function postAccompanistMembershipHandler(
 	payload: unknown,
 ) {
 	try {
-		const { customerAccountService, accompanistMembershipService, access } =
+		const { accompanistMembershipService, access } =
 			await resolveAccompanistContext(c, options);
-		await customerAccountService.recordCheckoutStaffAccessConsent(
-			access.organizationId,
-			access.customerId,
-		);
 		c.header("Cache-Control", "no-store");
 		return c.json(
 			await accompanistMembershipService.acquire({ ...access, payload }),

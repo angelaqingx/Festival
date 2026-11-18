@@ -6,9 +6,11 @@ import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { Button } from "../components/Button.js";
 import {
 	ApiError,
+	getCustomerAccompanistProfile,
 	getCustomerProfile,
 	getCustomerTeacherProfile,
 	getPublicDivisions,
+	upsertCustomerAccompanistProfile,
 	upsertCustomerTeacherProfile,
 } from "../lib/api.js";
 import {
@@ -16,53 +18,149 @@ import {
 	clearPendingTeacherDirectoryOptIn,
 	formatTeacherVisibilityBadge,
 	readPendingTeacherDirectoryOptIn,
+	resolveActiveAccompanistGrantDivisionIds,
 	resolveActiveTeacherGrantDivisionIds,
 	type TeacherDirectoryDraftState,
 	toggleDivisionSelection,
 } from "./teacherDirectoryHelpers.js";
 
+export type DirectoryCardRole = "teacher" | "accompanist";
+
 export interface CustomerTeacherDirectoryCardProps {
 	slug: string;
 	csrfToken: string;
 	memberships: readonly CustomerMembershipStatusEntry[];
+	role?: DirectoryCardRole;
 }
 
-async function fetchInitialTeacherDirectoryBundle(
+const ROLE_CONFIG = {
+	teacher: {
+		headingId: "teacher-directory-card-heading",
+		heading: "Public Teacher Directory",
+		optInLabel: "Show my profile in the Public Teacher Directory",
+		loadingText: "Loading teacher directory profile…",
+		loadErrorText: "Teacher directory settings could not be loaded.",
+		saveErrorText: "Teacher directory profile could not be saved.",
+	},
+	accompanist: {
+		headingId: "accompanist-directory-card-heading",
+		heading: "Public Accompanist Directory",
+		optInLabel: "Show my profile in the Public Accompanist Directory",
+		loadingText: "Loading accompanist directory profile…",
+		loadErrorText: "Accompanist directory settings could not be loaded.",
+		saveErrorText: "Accompanist directory profile could not be saved.",
+	},
+} as const;
+
+async function fetchInitialDirectoryBundle(
 	slug: string,
 	memberships: readonly CustomerMembershipStatusEntry[],
+	role: DirectoryCardRole,
 ) {
+	const isAcc = role === "accompanist";
 	const [profile, customerResp, divisionResp] = await Promise.all([
-		getCustomerTeacherProfile(slug),
+		isAcc
+			? getCustomerAccompanistProfile(slug)
+			: getCustomerTeacherProfile(slug),
 		getCustomerProfile(slug).catch(() => null),
 		getPublicDivisions(slug),
 	]);
 	const divisions = divisionResp.divisions;
-	const pendingOptIn = readPendingTeacherDirectoryOptIn(slug);
+	const pendingOptIn = isAcc ? null : readPendingTeacherDirectoryOptIn(slug);
+	const activeDivisionIds = isAcc
+		? resolveActiveAccompanistGrantDivisionIds(memberships, divisions)
+		: resolveActiveTeacherGrantDivisionIds(memberships, divisions);
 	const draft = buildTeacherDirectoryDraft({
 		profile,
 		customerName: customerResp?.profile.name ?? null,
-		activeDivisionIds: resolveActiveTeacherGrantDivisionIds(
-			memberships,
-			divisions,
-		),
+		activeDivisionIds,
 		pendingOptIn,
 	});
 	return {
 		divisions,
 		draft,
 		shouldAutoSave:
-			profile === null && pendingOptIn !== null && Boolean(draft.displayName),
+			!isAcc &&
+			profile === null &&
+			pendingOptIn !== null &&
+			Boolean(draft.displayName),
 	};
 }
 
+interface CardUiState {
+	loading: boolean;
+	saving: boolean;
+	error: string;
+	savedMessage: string;
+}
+
+interface SaveDraftContext {
+	props: CustomerTeacherDirectoryCardProps;
+	role: () => DirectoryCardRole;
+	state: { disposed: boolean };
+	setDraft: (next: TeacherDirectoryDraftState) => void;
+	patchUi: (next: Partial<CardUiState>) => void;
+}
+
+async function upsertRoleDirectoryProfile(
+	props: CustomerTeacherDirectoryCardProps,
+	role: DirectoryCardRole,
+	payload: {
+		displayName: string;
+		publicDirectoryOptIn: boolean;
+		divisionIds: string[];
+	},
+) {
+	return role === "accompanist"
+		? upsertCustomerAccompanistProfile(props.slug, props.csrfToken, payload)
+		: upsertCustomerTeacherProfile(props.slug, props.csrfToken, payload);
+}
+
+async function saveCardDraft(
+	ctx: SaveDraftContext,
+	target: TeacherDirectoryDraftState,
+	savedMessage: string,
+): Promise<void> {
+	const displayName = target.displayName.trim();
+	if (!displayName) {
+		ctx.patchUi({ error: "Display name is required." });
+		return;
+	}
+	ctx.patchUi({ saving: true, error: "", savedMessage: "" });
+	const currentRole = ctx.role();
+	try {
+		const saved = await upsertRoleDirectoryProfile(ctx.props, currentRole, {
+			displayName,
+			publicDirectoryOptIn: target.publicDirectoryOptIn,
+			divisionIds: target.divisionIds,
+		});
+		if (ctx.state.disposed) return;
+		if (currentRole === "teacher") {
+			clearPendingTeacherDirectoryOptIn(ctx.props.slug);
+		}
+		ctx.setDraft(buildTeacherDirectoryDraft({ profile: saved }));
+		ctx.patchUi({ savedMessage });
+	} catch (e) {
+		const error =
+			e instanceof ApiError
+				? e.message
+				: ROLE_CONFIG[currentRole].saveErrorText;
+		if (!ctx.state.disposed) ctx.patchUi({ error });
+	} finally {
+		if (!ctx.state.disposed) ctx.patchUi({ saving: false });
+	}
+}
+
 function createTeacherCardController(props: CustomerTeacherDirectoryCardProps) {
-	const [ui, setUi] = createSignal({
+	const role = () => props.role ?? "teacher";
+	const cfg = () => ROLE_CONFIG[role()];
+	const [ui, setUi] = createSignal<CardUiState>({
 		loading: true,
 		saving: false,
 		error: "",
 		savedMessage: "",
 	});
-	const patchUi = (next: Partial<ReturnType<typeof ui>>) =>
+	const patchUi = (next: Partial<CardUiState>) =>
 		setUi((cur) => ({ ...cur, ...next }));
 	const [divisions, setDivisions] = createSignal<PublicOrganizationDivision[]>(
 		[],
@@ -73,35 +171,11 @@ function createTeacherCardController(props: CustomerTeacherDirectoryCardProps) {
 	const patchDraft = (next: Partial<TeacherDirectoryDraftState>) =>
 		setDraft((cur) => ({ ...cur, ...next }));
 	const state = { disposed: false };
-	const save = async (target: TeacherDirectoryDraftState, msg: string) => {
-		const displayName = target.displayName.trim();
-		if (!displayName) return patchUi({ error: "Display name is required." });
-		patchUi({ saving: true, error: "", savedMessage: "" });
-		try {
-			const saved = await upsertCustomerTeacherProfile(
-				props.slug,
-				props.csrfToken,
-				{
-					displayName,
-					publicDirectoryOptIn: target.publicDirectoryOptIn,
-					divisionIds: target.divisionIds,
-				},
-			);
-			if (state.disposed) return;
-			clearPendingTeacherDirectoryOptIn(props.slug);
-			setDraft(buildTeacherDirectoryDraft({ profile: saved }));
-			patchUi({ savedMessage: msg });
-		} catch (e) {
-			const error =
-				e instanceof ApiError
-					? e.message
-					: "Teacher directory profile could not be saved.";
-			if (!state.disposed) patchUi({ error });
-		} finally {
-			if (!state.disposed) patchUi({ saving: false });
-		}
-	};
+	const save = (target: TeacherDirectoryDraftState, msg: string) =>
+		saveCardDraft({ props, role, state, setDraft, patchUi }, target, msg);
 	return {
+		role,
+		cfg,
 		ui,
 		patchUi,
 		divisions,
@@ -174,7 +248,7 @@ function TeacherDirectoryForm(props: { ctrl: TeacherCardCtrl }) {
 						c.patchDraft({ publicDirectoryOptIn: e.currentTarget.checked })
 					}
 				/>
-				<span>Show my profile in the Public Teacher Directory</span>
+				<span>{c.cfg().optInLabel}</span>
 			</label>
 			<div class="membership-checkout-actions">
 				<Button type="submit" disabled={c.ui().saving}>
@@ -188,7 +262,7 @@ function loadBundle(
 	props: CustomerTeacherDirectoryCardProps,
 	ctrl: TeacherCardCtrl,
 ) {
-	void fetchInitialTeacherDirectoryBundle(props.slug, props.memberships)
+	void fetchInitialDirectoryBundle(props.slug, props.memberships, ctrl.role())
 		.then(async ({ divisions, draft, shouldAutoSave }) => {
 			if (ctrl.state.disposed) return;
 			ctrl.setDivisions(divisions);
@@ -197,8 +271,8 @@ function loadBundle(
 				await ctrl.save(draft, "Directory listing preference saved.");
 		})
 		.catch(() => {
-			const error = "Teacher directory settings could not be loaded.";
-			if (!ctrl.state.disposed) ctrl.patchUi({ error });
+			if (!ctrl.state.disposed)
+				ctrl.patchUi({ error: ctrl.cfg().loadErrorText });
 		})
 		.finally(() => !ctrl.state.disposed && ctrl.patchUi({ loading: false }));
 }
@@ -215,11 +289,11 @@ export function CustomerTeacherDirectoryCard(
 	return (
 		<section
 			class="customer-membership-section teacher-directory-card"
-			aria-labelledby="teacher-directory-card-heading"
+			aria-labelledby={ctrl.cfg().headingId}
 		>
 			<header class="customer-membership-section-header">
 				<div>
-					<h2 id="teacher-directory-card-heading">Public Teacher Directory</h2>
+					<h2 id={ctrl.cfg().headingId}>{ctrl.cfg().heading}</h2>
 					<p class="muted">Manage your public directory name and divisions.</p>
 				</div>
 				<span class={`directory-status-tag ${badge().badgeClass}`}>
@@ -227,7 +301,7 @@ export function CustomerTeacherDirectoryCard(
 				</span>
 			</header>
 			<Show when={ctrl.ui().loading}>
-				<p role="status">Loading teacher directory profile…</p>
+				<p role="status">{ctrl.cfg().loadingText}</p>
 			</Show>
 			<Show when={ctrl.ui().error}>
 				{(err) => (

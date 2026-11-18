@@ -271,20 +271,21 @@ export class ParticipantDirectoryService {
 			access.organizationId,
 			access.customerId,
 		);
-		const hasGrant = existing
-			? true
-			: Boolean(
-					await this.deps.entitlements.findCurrentAccompanistMembershipGrant({
-						organizationId: access.organizationId,
-						customerId: access.customerId,
-					}),
+		if (!existing || parsed.publicDirectoryOptIn) {
+			const grant =
+				await this.deps.entitlements.findCurrentAccompanistMembershipGrant({
+					organizationId: access.organizationId,
+					customerId: access.customerId,
+				});
+			if (!grant || grant.status !== "active") {
+				throw new AppError(
+					existing
+						? "An active Accompanist membership is required to opt in to the public directory."
+						: "An active Accompanist membership is required to create a profile.",
+					403,
+					"active_membership_required",
 				);
-		if (!hasGrant) {
-			throw new AppError(
-				"An active Accompanist membership is required to create a profile.",
-				403,
-				"active_membership_required",
-			);
+			}
 		}
 		const saved = await this.deps.directory.upsertAccompanistProfile({
 			organizationId: access.organizationId,

@@ -7,18 +7,28 @@ export const UpsertCustomerTeacherProfileInputSchema = v.strictObject({
 	publicDirectoryOptIn: v.boolean(),
 	divisionIds: v.array(v.string()),
 });
+export const UpsertCustomerAccompanistProfileInputSchema =
+	UpsertCustomerTeacherProfileInputSchema;
 export const UpsertParticipantProfileInputSchema =
 	UpsertCustomerTeacherProfileInputSchema;
 export type UpsertCustomerTeacherProfileInput = v.InferOutput<
 	typeof UpsertCustomerTeacherProfileInputSchema
+>;
+export type UpsertCustomerAccompanistProfileInput = v.InferOutput<
+	typeof UpsertCustomerAccompanistProfileInputSchema
 >;
 
 export const UpdateAdminTeacherProfileApprovalInputSchema = v.object({
 	profileId: nonEmptyText("Profile ID", 200),
 	approvalStatus: v.picklist(PROFILE_APPROVAL_STATUSES),
 });
+export const UpdateAdminAccompanistProfileApprovalInputSchema =
+	UpdateAdminTeacherProfileApprovalInputSchema;
 export type UpdateAdminTeacherProfileApprovalInput = v.InferOutput<
 	typeof UpdateAdminTeacherProfileApprovalInputSchema
+>;
+export type UpdateAdminAccompanistProfileApprovalInput = v.InferOutput<
+	typeof UpdateAdminAccompanistProfileApprovalInputSchema
 >;
 
 export const UpdateProfileApprovalBodySchema = v.object({

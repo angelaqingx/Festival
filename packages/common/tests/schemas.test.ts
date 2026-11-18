@@ -3,6 +3,7 @@ import * as v from "valibot";
 import {
 	AcceptInviteInputSchema,
 	AcquireAccompanistMembershipPayloadSchema,
+	AcquireAccompanistMembershipRouteBodySchema,
 	AddRepertoireCatalogWorkInputSchema,
 	AdminCheckoutIntentSchema,
 	AdminResolveClassCheckoutRecoveryPayloadSchema,
@@ -479,16 +480,36 @@ describe("@festival/common valibot schemas", () => {
 			}).success,
 		).toBe(true);
 		expect(v.safeParse(TransferRegistrationBodySchema, {}).success).toBe(false);
+		const validAccompanistPayload = {
+			name: "Sam Accompanist",
+			email: "sam@example.com",
+			city: "Seattle",
+			phone: "206-555-0199",
+			divisionIds: ["div_1"],
+		};
+		expect(
+			v.safeParse(
+				AcquireAccompanistMembershipPayloadSchema,
+				validAccompanistPayload,
+			).success,
+		).toBe(true);
 		expect(
 			v.safeParse(AcquireAccompanistMembershipPayloadSchema, {
-				name: "Sam Accompanist",
-				email: "sam@example.com",
-				city: "Seattle",
-				phone: "206-555-0199",
-				divisionIds: ["div_1"],
+				...validAccompanistPayload,
 				staffAccessConsent: true,
 			}).success,
+		).toBe(false);
+		expect(
+			v.safeParse(AcquireAccompanistMembershipRouteBodySchema, {
+				divisionIds: ["div-1"],
+			}).success,
 		).toBe(true);
+		expect(
+			v.safeParse(AcquireAccompanistMembershipRouteBodySchema, {
+				divisionIds: ["div-1"],
+				staffAccessConsent: true,
+			}).success,
+		).toBe(false);
 	});
 
 	it("validates commerce schemas (billing adjustments, recovery, checkout)", () => {

@@ -11,6 +11,7 @@ import { sql } from "bun";
 import {
 	initializePostgresSchema,
 	postgresSchemaName,
+	resolveParticipantProfileApprovalStatus,
 	resolveTeacherProfileApprovalStatus,
 } from "../../infra/s10-infra.js";
 import {
@@ -228,6 +229,10 @@ export class PostgresTeacherDirectoryRepository
 			customerId: params.customerId,
 			displayName,
 			publicDirectoryOptIn,
+			initialApprovalStatus: resolveParticipantProfileApprovalStatus(
+				null,
+				publicDirectoryOptIn,
+			),
 			divisionIds,
 		});
 		const result = await this.getAccompanistProfileById(

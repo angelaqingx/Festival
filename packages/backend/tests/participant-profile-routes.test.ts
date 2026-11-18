@@ -174,7 +174,7 @@ describe("Participant Profiles API End-to-End", () => {
 			const created = await putRes.json();
 			expect(created.display_name).toBe("Bob Accompanist");
 			expect(created.customer_id).toBe("cust-1");
-			expect(created.approval_status).toBe("pending");
+			expect(created.approval_status).toBe("approved");
 
 			// GET own profile
 			const getRes = await app.request(
@@ -483,7 +483,7 @@ describe("Participant Profiles API End-to-End", () => {
 				}),
 			});
 
-			// Create accompanist 1 (opted in, approved)
+			// Create accompanist 1 (opted in -> auto-approved immediately under #416)
 			const a1Res = await app.request(
 				"/api/customer/orgs/org-a/profiles/accompanist",
 				{
@@ -501,17 +501,7 @@ describe("Participant Profiles API End-to-End", () => {
 				},
 			);
 			const a1 = await a1Res.json();
-			await app.request(
-				`/api/admin/orgs/org-a/profiles/accompanists/${a1.id}/approval`,
-				{
-					method: "PATCH",
-					headers: {
-						"Content-Type": "application/json",
-						Authorization: "Bearer admin-org-a",
-					},
-					body: JSON.stringify({ approvalStatus: "approved" }),
-				},
-			);
+			expect(a1.approval_status).toBe("approved");
 
 			// Active memberships are seeded by setupTestApp.
 
@@ -533,6 +523,7 @@ describe("Participant Profiles API End-to-End", () => {
 
 			expect(profiles[1].role).toBe("Accompanist");
 			expect(profiles[1].displayName).toBe("Bob Accompanist");
+			expect(profiles[1].isActiveMember).toBe(true);
 			expect(profiles[1].teacherColor).toBeUndefined();
 
 			// Zero private info leaked across all returned profiles
@@ -600,6 +591,69 @@ describe("Participant Profiles API End-to-End", () => {
 			const reinstateRes = await patchTeacher(created.id, "approved");
 			expect(reinstateRes.status).toBe(200);
 			expect(await listDirectoryNames()).toEqual(["Alice Bypass"]);
+		});
+
+		it("auto-approves accompanist in public directory, keeps approved across edits, and enforces sticky admin hide/reinstate", async () => {
+			const { app, divA1, divA2 } = await setupTestApp();
+			const putAccompanist = (
+				displayName: string,
+				divisionIds = [divA1.id],
+				publicDirectoryOptIn = true,
+			) =>
+				app.request("/api/customer/orgs/org-a/profiles/accompanist", {
+					method: "PUT",
+					headers: {
+						"Content-Type": "application/json",
+						Cookie: `${CUSTOMER_SESSION_COOKIE}=sess-cust-1`,
+						"X-CSRF-Token": "csrf-token-1",
+					},
+					body: JSON.stringify({
+						displayName,
+						publicDirectoryOptIn,
+						divisionIds,
+					}),
+				});
+			const patchAccompanist = (profileId: string, approvalStatus: string) =>
+				app.request(
+					`/api/admin/orgs/org-a/profiles/accompanists/${profileId}/approval`,
+					{
+						method: "PATCH",
+						headers: {
+							"Content-Type": "application/json",
+							Authorization: "Bearer admin-org-a",
+						},
+						body: JSON.stringify({ approvalStatus }),
+					},
+				);
+			const listDirectoryNames = async () => {
+				const items: PublicDirectoryProfileDto[] = await (
+					await app.request("/api/org-info/org-a/directory/profiles")
+				).json();
+				return items.map((p) => p.displayName);
+			};
+
+			const created = await (await putAccompanist("Bob Accompanist")).json();
+			expect(created.approval_status).toBe("approved");
+			expect(await listDirectoryNames()).toEqual(["Bob Accompanist"]);
+
+			const editRes = await putAccompanist("Bob Renamed", [divA2.id]);
+			expect(editRes.status).toBe(200);
+			expect((await editRes.json()).approval_status).toBe("approved");
+			expect(await listDirectoryNames()).toEqual(["Bob Renamed"]);
+
+			const hideRes = await patchAccompanist(created.id, "rejected");
+			expect(hideRes.status).toBe(200);
+			expect(await listDirectoryNames()).toEqual([]);
+
+			const blockedBypass = await (
+				await putAccompanist("Bob Bypass", [divA1.id], true)
+			).json();
+			expect(blockedBypass.approval_status).toBe("rejected");
+			expect(await listDirectoryNames()).toEqual([]);
+
+			const reinstateRes = await patchAccompanist(created.id, "approved");
+			expect(reinstateRes.status).toBe(200);
+			expect(await listDirectoryNames()).toEqual(["Bob Bypass"]);
 		});
 
 		it("returns 404 for nonexistent organization", async () => {
