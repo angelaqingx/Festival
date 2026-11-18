@@ -746,6 +746,14 @@ button.compact-header-button {
 	background: rgba(185, 77, 54, 0.08);
 }
 
+.customer-membership-acquire-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.75rem;
+	margin-bottom: 1.5rem;
+}
+
 .customer-membership-section,
 .customer-membership-list,
 .customer-membership-card,
