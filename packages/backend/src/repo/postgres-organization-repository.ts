@@ -168,6 +168,11 @@ export class PostgresOrganizationRepository
 	) {
 		return this.profileDelegate.updateTeacherProfileApproval(...args);
 	}
+	updateTeacherProfileDivisions(
+		...args: Parameters<OrganizationRepository["updateTeacherProfileDivisions"]>
+	) {
+		return this.profileDelegate.updateTeacherProfileDivisions(...args);
+	}
 	listTeacherProfiles(
 		...args: Parameters<OrganizationRepository["listTeacherProfiles"]>
 	) {

@@ -6,6 +6,7 @@ import {
 	type EntitlementGrantSnapshot,
 	type EntitlementReportEntry,
 	type OrganizationDivision,
+	type TeacherProfileRecord,
 	validateAccompanistContact,
 	validateAccompanistDivisionSelection,
 } from "@festival/common";
@@ -14,6 +15,8 @@ import type {
 	MembershipEntitlementRepository,
 	MembershipProductRepository,
 	StaffMembershipRosterEntry,
+	TeacherDirectoryOrganizationPort,
+	TeacherDirectoryRepository,
 } from "./types.js";
 
 const RENEWAL_WINDOW_DAYS = 30;
@@ -185,23 +188,50 @@ export function mapValidationDecisions(
 	});
 }
 
+export interface TeacherStatusMappingOptions {
+	displayName: string;
+	today: string;
+	teacherProfile?: TeacherProfileRecord | null;
+	orgDivisions?: readonly OrganizationDivision[];
+}
+
 export function mapTeacherStatusEntries(
 	grants: EntitlementGrantSnapshot[],
-	displayName: string,
-	today: string,
+	options: TeacherStatusMappingOptions,
 ): CustomerMembershipStatusEntry[] {
-	return grants.map((grant) => ({
-		status: lifecycleForEntitlementRead(grant, today),
-		entitlementClass: grant.entitlementClass,
-		displayName,
-		divisionName: grant.divisionNameSnapshot,
-		paidAmount: grant.paidAmount,
-		paidCurrencyCode: grant.paidCurrencyCode,
-		durationDays: grant.durationDays,
-		startsOn: grant.startsOn,
-		endsOn: grant.endsOn,
-		supersededOn: grant.supersededOn ?? null,
-	}));
+	const divisionNames = new Map(
+		(options.orgDivisions ?? []).map((d) => [d.id, d.displayName]),
+	);
+	const profile = options.teacherProfile ?? null;
+	const hasProfile = profile !== null;
+	const activeProfileDivisionName =
+		profile !== null
+			? profile.division_ids
+					.map((id) => divisionNames.get(id))
+					.filter((name): name is string => Boolean(name))
+					.join(", ") || undefined
+			: undefined;
+	return grants.map((grant) => {
+		const status = lifecycleForEntitlementRead(grant, options.today);
+		const useProfile =
+			hasProfile &&
+			grant.entitlementClass === "teacher_membership" &&
+			status === "active";
+		return {
+			status,
+			entitlementClass: grant.entitlementClass,
+			displayName: options.displayName,
+			divisionName: useProfile
+				? activeProfileDivisionName
+				: grant.divisionNameSnapshot,
+			paidAmount: grant.paidAmount,
+			paidCurrencyCode: grant.paidCurrencyCode,
+			durationDays: grant.durationDays,
+			startsOn: grant.startsOn,
+			endsOn: grant.endsOn,
+			supersededOn: grant.supersededOn ?? null,
+		};
+	});
 }
 
 export function mapAccompanistStatusEntries(
@@ -315,33 +345,74 @@ export async function loadActiveAccompanistRoster(
 		}));
 }
 
-export async function loadActiveTeacherRoster(
+export interface LoadActiveTeacherRosterOptions {
 	entitlements: Pick<
 		MembershipEntitlementRepository,
 		"listEntitlementGrantSnapshots" | "findMembershipCustomerContacts"
-	>,
-	products: Pick<MembershipProductRepository, "listMembershipProductRecords">,
-	organizationId: string,
-	today: string,
+	>;
+	products: Pick<MembershipProductRepository, "listMembershipProductRecords">;
+	organizations?: Pick<TeacherDirectoryOrganizationPort, "listDivisions">;
+	directory?: Pick<TeacherDirectoryRepository, "listTeacherProfiles">;
+	organizationId: string;
+	today: string;
+}
+
+function resolveTeacherRosterDivisions(
+	grant: EntitlementGrantSnapshot,
+	profilesByCustomer: ReadonlyMap<string, TeacherProfileRecord> | null,
+	divisionNames: ReadonlyMap<string, string>,
+): Array<{ divisionId: string; divisionName: string }> {
+	const profile = profilesByCustomer?.get(grant.customerId);
+	if (!profile) {
+		return [
+			{
+				divisionId: grant.divisionId,
+				divisionName: grant.divisionNameSnapshot,
+			},
+		];
+	}
+	return profile.division_ids.flatMap((divisionId) => {
+		const divisionName = divisionNames.get(divisionId);
+		return divisionName ? [{ divisionId, divisionName }] : [];
+	});
+}
+
+export async function loadActiveTeacherRoster(
+	options: LoadActiveTeacherRosterOptions,
 ): Promise<StaffMembershipRosterEntry[]> {
-	const grants =
-		await entitlements.listEntitlementGrantSnapshots(organizationId);
+	const grants = await options.entitlements.listEntitlementGrantSnapshots(
+		options.organizationId,
+	);
 	const active = grants
 		.filter((grant) => grant.entitlementClass === "teacher_membership")
 		.map((grant) => ({
 			grant,
-			status: lifecycleForEntitlementRead(grant, today),
+			status: lifecycleForEntitlementRead(grant, options.today),
 		}))
 		.filter((candidate) => candidate.status === "active");
 	if (active.length === 0) return [];
 	const customerIds = active.map(({ grant }) => grant.customerId);
-	const [contacts, productRecords] = await Promise.all([
-		entitlements.findMembershipCustomerContacts(organizationId, customerIds),
-		products.listMembershipProductRecords(organizationId),
+	const useProfiles = Boolean(options.directory && options.organizations);
+	const [contacts, productRecords, profiles, divisions] = await Promise.all([
+		options.entitlements.findMembershipCustomerContacts(
+			options.organizationId,
+			customerIds,
+		),
+		options.products.listMembershipProductRecords(options.organizationId),
+		useProfiles && options.directory
+			? options.directory.listTeacherProfiles(options.organizationId)
+			: Promise.resolve(null),
+		useProfiles && options.organizations
+			? options.organizations.listDivisions(options.organizationId, false)
+			: Promise.resolve([]),
 	]);
 	const productNames = new Map(
 		productRecords.map((product) => [product.id, product.productNameSnapshot]),
 	);
+	const profilesByCustomer = profiles
+		? new Map(profiles.map((p) => [p.customer_id, p]))
+		: null;
+	const divisionNames = new Map(divisions.map((d) => [d.id, d.displayName]));
 	return active.map(({ grant }) => {
 		const contact = contacts.get(grant.customerId);
 		return {
@@ -355,12 +426,11 @@ export async function loadActiveTeacherRoster(
 			email: contact?.email,
 			phone: contact?.phone,
 			city: contact?.city,
-			divisions: [
-				{
-					divisionId: grant.divisionId,
-					divisionName: grant.divisionNameSnapshot,
-				},
-			],
+			divisions: resolveTeacherRosterDivisions(
+				grant,
+				profilesByCustomer,
+				divisionNames,
+			),
 		};
 	});
 }

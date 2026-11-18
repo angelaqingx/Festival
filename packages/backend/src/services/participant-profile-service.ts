@@ -27,6 +27,7 @@ export class ParticipantProfileService {
 			directory: repository,
 			entitlements: repository,
 			organizations: repository,
+			products: repository,
 			customerAccess: customerAccountService,
 		});
 	}
@@ -73,6 +74,20 @@ export class ParticipantProfileService {
 		actorUid: string,
 	): Promise<TeacherProfileRecord> {
 		return this.directory.updateTeacherProfileApproval(
+			organizationId,
+			profileId,
+			payload,
+			actorUid,
+		);
+	}
+
+	updateTeacherProfileDivisions(
+		organizationId: string,
+		profileId: string,
+		payload: unknown,
+		actorUid: string,
+	): Promise<TeacherProfileRecord> {
+		return this.directory.updateTeacherProfileDivisions(
 			organizationId,
 			profileId,
 			payload,

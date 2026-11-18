@@ -194,7 +194,9 @@ export class PostgresMembershipGrantDelegate extends PostgresAccompanistGrantDel
 		await this.ensureReady();
 		const rows = (await sql.unsafe(
 			`SELECT e.id,e.organization_id,e.customer_id,e.entitlement_class,e.offering_id,d.duration_days,
-					ed.division_id,ed.division_name_snapshot,d.paid_amount,d.paid_currency_code,
+					COALESCE(tpd.division_id, ed.division_id) AS division_id,
+					COALESCE(od.display_name, ed.division_name_snapshot) AS division_name_snapshot,
+					d.paid_amount,d.paid_currency_code,
 					d.checkout_intent_id,d.shopify_order_gid,d.shopify_order_line_gid,
 					e.starts_on::text,e.ends_on::text,e.superseded_on::text,e.superseded_at,
 					e.superseded_by_grant_id,'active' AS status,e.created_at
@@ -202,8 +204,12 @@ export class PostgresMembershipGrantDelegate extends PostgresAccompanistGrantDel
 			 JOIN ${this.schema}.organizations o ON o.id=e.organization_id
 			 JOIN ${this.schema}.teacher_membership_entitlement_details d ON d.entitlement_id=e.id
 			 JOIN ${this.schema}.membership_entitlement_divisions ed ON ed.entitlement_id=e.id
+			 LEFT JOIN ${this.schema}.teacher_profiles tp ON tp.organization_id = e.organization_id AND tp.customer_id = e.customer_id
+			 LEFT JOIN ${this.schema}.teacher_profile_divisions tpd ON tpd.teacher_profile_id = tp.id AND tpd.organization_id = tp.organization_id
+			 LEFT JOIN ${this.schema}.organization_divisions od ON od.id = tpd.division_id AND od.organization_id = e.organization_id
 			 WHERE e.organization_id=$1 AND e.customer_id=$2 AND e.entitlement_class='teacher_membership'
-			   AND ed.division_id=$3 AND e.revoked_at IS NULL
+			   AND ((tp.id IS NOT NULL AND tpd.division_id = $3) OR (tp.id IS NULL AND ed.division_id = $3))
+			   AND e.revoked_at IS NULL
 			   AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date)
 			   AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date
 			   AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date
@@ -298,8 +304,11 @@ export class PostgresMembershipGrantDelegate extends PostgresAccompanistGrantDel
 			 JOIN ${this.schema}.organizations o ON o.id = e.organization_id
 			 JOIN ${this.schema}.membership_entitlement_divisions ed ON ed.entitlement_id = e.id
 			 JOIN ${this.schema}.festival_customers c ON c.id = e.customer_id AND c.organization_id = e.organization_id
+			 LEFT JOIN ${this.schema}.teacher_profiles tp ON tp.organization_id = e.organization_id AND tp.customer_id = e.customer_id
+			 LEFT JOIN ${this.schema}.teacher_profile_divisions tpd ON tpd.teacher_profile_id = tp.id AND tpd.organization_id = tp.organization_id
 			 WHERE e.organization_id = $1 AND e.entitlement_class = 'teacher_membership'
-			   AND ed.division_id = $2 AND e.revoked_at IS NULL
+			   AND ((tp.id IS NOT NULL AND tpd.division_id = $2) OR (tp.id IS NULL AND ed.division_id = $2))
+			   AND e.revoked_at IS NULL
 			   AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date)
 			   AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date
 			   AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date

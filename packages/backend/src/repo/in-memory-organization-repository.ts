@@ -1,4 +1,3 @@
-import { TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS } from "@festival/common";
 import {
 	inMemCreateMembershipProductRecord,
 	inMemUpdateMembershipProductRecord,
@@ -9,6 +8,7 @@ import {
 import {
 	inMemCreateAccompanistMembershipGrant,
 	inMemCreateEntitlementGrantSnapshot,
+	inMemFindActiveTeacherEntitlementGrant,
 	inMemFindMembershipCustomerContacts,
 	inMemListActiveTeachersForDivision,
 	inMemRevokeEntitlement,
@@ -19,6 +19,7 @@ import {
 	inMemListTeacherProfiles,
 	inMemUpdateAccompanistProfileApproval,
 	inMemUpdateTeacherProfileApproval,
+	inMemUpdateTeacherProfileDivisions,
 	inMemUpsertAccompanistProfile,
 	inMemUpsertTeacherProfile,
 	withAccompanistContact,
@@ -65,6 +66,17 @@ class InMemoryOrgProfilesAdapter extends InMemoryTenantCatalogAdapter {
 			profileId,
 			approvalStatus,
 		);
+	}
+	async updateTeacherProfileDivisions(
+		organizationId: string,
+		profileId: string,
+		divisionIds: string[],
+	) {
+		return inMemUpdateTeacherProfileDivisions(this.state, {
+			organizationId,
+			profileId,
+			divisionIds,
+		});
 	}
 	async listTeacherProfiles(organizationId: string) {
 		return inMemListTeacherProfiles(this.state, organizationId);
@@ -259,23 +271,7 @@ export class InMemoryOrganizationRepository
 			OrganizationRepository["findActiveTeacherEntitlementGrant"]
 		>[0],
 	) {
-		return (
-			[...this.state.entitlementGrants.values()]
-				.filter(
-					(g) =>
-						g.organizationId === input.organizationId &&
-						g.customerId === input.customerId &&
-						g.entitlementClass === TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS &&
-						g.divisionId === input.divisionId,
-				)
-				.sort(
-					(a, b) =>
-						a.createdAtIso.localeCompare(b.createdAtIso) ||
-						a.id.localeCompare(b.id),
-				)
-				.map((g) => withTeacherLifecycle(this.state, g))
-				.find((g) => g.status === "active") ?? null
-		);
+		return inMemFindActiveTeacherEntitlementGrant(this.state, input);
 	}
 	async listEntitlementGrantSnapshots(
 		organizationId: string,

@@ -165,6 +165,11 @@ export interface TeacherDirectoryRepository {
 		profileId: string,
 		approvalStatus: ProfileApprovalStatus,
 	): Promise<TeacherProfileRecord | null>;
+	updateTeacherProfileDivisions(
+		organizationId: string,
+		profileId: string,
+		divisionIds: string[],
+	): Promise<TeacherProfileRecord | null>;
 	listTeacherProfiles(organizationId: string): Promise<TeacherProfileRecord[]>;
 	getAccompanistProfile(
 		organizationId: string,

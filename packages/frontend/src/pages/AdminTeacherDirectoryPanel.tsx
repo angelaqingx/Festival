@@ -1,3 +1,7 @@
+import type {
+	OrganizationDivision,
+	TeacherProfileRecord,
+} from "@festival/common";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { FestivalAppController } from "../app/useFestivalAppController.js";
 import { Button } from "../components/Button.js";
@@ -10,6 +14,10 @@ import {
 	updateAdminTeacherProfileApproval,
 } from "../lib/api.js";
 import {
+	type AdminTeacherDivisionAuthContext,
+	AdminTeacherDivisionEditor,
+} from "./AdminTeacherDivisionEditor.js";
+import {
 	type AdminDirectoryModerationProfile,
 	applyUpdatedModerationProfile,
 	buildDivisionNameMap,
@@ -20,11 +28,9 @@ import {
 	toAdminDirectoryModerationProfiles,
 } from "./adminTeacherDirectoryHelpers.js";
 
-function AdminDirectoryProfileItem(props: {
+function ProfileHeaderAndSummary(props: {
 	profile: AdminDirectoryModerationProfile;
 	divisionsById: ReadonlyMap<string, string>;
-	updating: boolean;
-	onToggleApproval: (profile: AdminDirectoryModerationProfile) => void;
 }) {
 	const badge = () => formatTeacherApprovalBadge(props.profile.approval_status);
 	const divisionNames = () =>
@@ -34,35 +40,68 @@ function AdminDirectoryProfileItem(props: {
 		);
 	const teacherColor = () =>
 		props.profile.role === "Teacher" ? props.profile.teacher_color : undefined;
+	return (
+		<>
+			<div class="directory-profile-header">
+				<Show when={teacherColor()}>
+					{(color) => (
+						<span
+							class="directory-profile-color-indicator"
+							style={{ "background-color": color() }}
+							aria-hidden="true"
+						/>
+					)}
+				</Show>
+				<strong>{props.profile.display_name}</strong>
+				<span class="directory-division-tag">{props.profile.role}</span>
+				<span class={`directory-status-tag ${badge().badgeClass}`}>
+					{badge().label}
+				</span>
+			</div>
+			<p class="muted">
+				{props.profile.public_directory_opt_in
+					? `${props.profile.role} opted in`
+					: `${props.profile.role} opted out`}
+				{" · "}
+				{divisionNames().length > 0
+					? divisionNames().join(", ")
+					: "No divisions selected"}
+			</p>
+		</>
+	);
+}
 
+function AdminDirectoryProfileItem(props: {
+	profile: AdminDirectoryModerationProfile;
+	activeDivisions: readonly OrganizationDivision[];
+	divisionsById: ReadonlyMap<string, string>;
+	updating: boolean;
+	acquireAuth: () => Promise<AdminTeacherDivisionAuthContext | null>;
+	onToggleApproval: (profile: AdminDirectoryModerationProfile) => void;
+	onTeacherUpdated: (updated: TeacherProfileRecord) => void;
+	onDivisionBusyChange: (busy: boolean) => void;
+	onError: (message: string) => void;
+}) {
 	return (
 		<article class="admin-membership-item">
 			<div>
-				<div class="directory-profile-header">
-					<Show when={teacherColor()}>
-						{(color) => (
-							<span
-								class="directory-profile-color-indicator"
-								style={{ "background-color": color() }}
-								aria-hidden="true"
-							/>
-						)}
-					</Show>
-					<strong>{props.profile.display_name}</strong>
-					<span class="directory-division-tag">{props.profile.role}</span>
-					<span class={`directory-status-tag ${badge().badgeClass}`}>
-						{badge().label}
-					</span>
-				</div>
-				<p class="muted">
-					{props.profile.public_directory_opt_in
-						? `${props.profile.role} opted in`
-						: `${props.profile.role} opted out`}
-					{" · "}
-					{divisionNames().length > 0
-						? divisionNames().join(", ")
-						: "No divisions selected"}
-				</p>
+				<ProfileHeaderAndSummary
+					profile={props.profile}
+					divisionsById={props.divisionsById}
+				/>
+				<Show when={props.profile.role === "Teacher" ? props.profile : null}>
+					{(teacher) => (
+						<AdminTeacherDivisionEditor
+							profile={teacher()}
+							activeDivisions={props.activeDivisions}
+							disabled={props.updating}
+							acquireAuth={props.acquireAuth}
+							onSaved={props.onTeacherUpdated}
+							onBusyChange={props.onDivisionBusyChange}
+							onError={props.onError}
+						/>
+					)}
+				</Show>
 			</div>
 			<div class="admin-membership-meta">
 				<Button
@@ -84,6 +123,7 @@ function AdminDirectoryProfileItem(props: {
 function createModerationStore(app: FestivalAppController) {
 	const [state, setState] = createSignal({
 		profiles: [] as AdminDirectoryModerationProfile[],
+		activeDivisions: [] as OrganizationDivision[],
 		divisionsById: new Map<string, string>(),
 		loading: false,
 		error: "",
@@ -95,6 +135,15 @@ function createModerationStore(app: FestivalAppController) {
 }
 
 type ModerationStore = ReturnType<typeof createModerationStore>;
+
+async function resolveModerationAuth(
+	store: ModerationStore,
+): Promise<AdminTeacherDivisionAuthContext | null> {
+	const route = store.app.route();
+	const user = store.app.firebaseUser();
+	if (route.kind !== "org-admin-memberships" || !user) return null;
+	return { token: await user.getIdToken(), slug: route.slug };
+}
 
 async function loadModerationProfiles(store: ModerationStore) {
 	const route = store.app.route();
@@ -111,6 +160,7 @@ async function loadModerationProfiles(store: ModerationStore) {
 		if (!store.disposed) {
 			store.patch({
 				profiles: toAdminDirectoryModerationProfiles(teachers, accompanists),
+				activeDivisions: divResp.divisions.filter((div) => div.isActive),
 				divisionsById: buildDivisionNameMap(divResp.divisions),
 			});
 		}
@@ -215,6 +265,47 @@ function ModerationPanelHeader(props: {
 		</div>
 	);
 }
+function ModerationProfilesList(props: { store: ModerationStore }) {
+	const s = () => props.store.state();
+	return (
+		<div class="admin-membership-list">
+			<For each={s().profiles}>
+				{(profile) => {
+					const rowKey = `${profile.role}:${profile.id}`;
+					return (
+						<AdminDirectoryProfileItem
+							profile={profile}
+							activeDivisions={s().activeDivisions}
+							divisionsById={s().divisionsById}
+							updating={s().updatingKey === rowKey}
+							acquireAuth={() => resolveModerationAuth(props.store)}
+							onToggleApproval={(t) =>
+								void toggleProfileModeration(props.store, t)
+							}
+							onTeacherUpdated={(updated) =>
+								!props.store.disposed &&
+								props.store.patch({
+									profiles: applyUpdatedModerationProfile(s().profiles, {
+										...updated,
+										role: "Teacher",
+									}),
+								})
+							}
+							onDivisionBusyChange={(busy) =>
+								!props.store.disposed &&
+								props.store.patch({ updatingKey: busy ? rowKey : null })
+							}
+							onError={(error) =>
+								!props.store.disposed && props.store.patch({ error })
+							}
+						/>
+					);
+				}}
+			</For>
+		</div>
+	);
+}
+
 export function AdminTeacherDirectoryPanel(props: {
 	app: FestivalAppController;
 }) {
@@ -249,20 +340,7 @@ export function AdminTeacherDirectoryPanel(props: {
 					when={s().profiles.length > 0}
 					fallback={<p class="muted">No directory profiles yet.</p>}
 				>
-					<div class="admin-membership-list">
-						<For each={s().profiles}>
-							{(profile) => (
-								<AdminDirectoryProfileItem
-									profile={profile}
-									divisionsById={s().divisionsById}
-									updating={s().updatingKey === `${profile.role}:${profile.id}`}
-									onToggleApproval={(t) =>
-										void toggleProfileModeration(store, t)
-									}
-								/>
-							)}
-						</For>
-					</div>
+					<ModerationProfilesList store={store} />
 				</Show>
 			</Show>
 		</section>

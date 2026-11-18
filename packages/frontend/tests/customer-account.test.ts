@@ -3,7 +3,13 @@ import { existsSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as babel from "@babel/core";
-import type { CustomerMembershipStatusEntry } from "@festival/common";
+import type {
+	AccompanistProfileRecord,
+	CustomerMembershipStatusEntry,
+	MembershipDivisionSelectionPolicy,
+	OrganizationDivision,
+	TeacherProfileRecord,
+} from "@festival/common";
 import solidPreset from "babel-preset-solid";
 import { createRenderer } from "solid-js/universal";
 import TypeScript from "typescript";
@@ -257,12 +263,26 @@ const pageMod = (await import(
 	"@solid-dom/pages/CustomerAccountMembershipsPage.tsx"
 )) as Record<string, PageFn>;
 const MembershipsPage = pageMod.CustomerAccountMembershipsPage;
+const mkDiv = (n: number, displayName: string): OrganizationDivision => ({
+	id: `${n}${n}${n}${n}${n}${n}${n}${n}-${n}${n}${n}${n}-4${n}${n}${n}-8${n}${n}${n}-${n}${n}${n}${n}${n}${n}${n}${n}${n}${n}${n}${n}`,
+	organizationId: "org-1",
+	displayName,
+	isActive: true,
+	displayOrder: n,
+	createdAtIso: "2026-01-01T00:00:00.000Z",
+	updatedAtIso: "2026-01-01T00:00:00.000Z",
+});
+const MOCK_DIVS = [mkDiv(1, "Piano"), mkDiv(2, "Strings"), mkDiv(3, "Voice")];
 interface HarnessOpts {
 	authenticated?: boolean;
 	memberships?: CustomerMembershipStatusEntry[];
 	statusMode?: "ok" | "pending" | "error";
 	search?: string;
 	onNavigate?: (path: string) => void;
+	accompanistPolicy?: MembershipDivisionSelectionPolicy;
+	customerName?: string;
+	teacherProfile?: TeacherProfileRecord | null;
+	accompanistProfile?: AccompanistProfileRecord | null;
 }
 interface MockState {
 	auth: boolean;
@@ -270,11 +290,49 @@ interface MockState {
 	mode: string;
 	reqs: number;
 	gate?: Promise<void>;
+	accompanistPolicy?: MembershipDivisionSelectionPolicy;
+	customerName?: string;
+	teacherProfile?: TeacherProfileRecord | null;
+	accompanistProfile?: AccompanistProfileRecord | null;
+	puts: Array<{ url: string; body: Record<string, unknown> }>;
+}
+function handleDirectoryProfileMock(
+	s: MockState,
+	u: string,
+	init?: RequestInit,
+): Response {
+	const isAcc = u.includes("/profiles/accompanist");
+	if (init?.method === "PUT") {
+		const body = JSON.parse(String(init.body ?? "{}")) as Record<
+			string,
+			unknown
+		>;
+		s.puts.push({ url: u, body });
+		const iso = "2026-09-01T00:00:00.000Z";
+		const base = {
+			id: isAcc ? "acc-1" : "tch-1",
+			organization_id: "org-1",
+			customer_id: "cust-1",
+			display_name: String(body.displayName ?? "Member"),
+			public_directory_opt_in: Boolean(body.publicDirectoryOptIn),
+			approval_status: "approved" as const,
+			division_ids: isAcc
+				? ((body.divisionIds as string[]) ?? [])
+				: (s.teacherProfile?.division_ids ?? [MOCK_DIVS[0].id]),
+			created_at: iso,
+			updated_at: iso,
+		};
+		return Response.json(isAcc ? base : { ...base, teacher_color: "#1D4ED8" });
+	}
+	const found = isAcc ? s.accompanistProfile : s.teacherProfile;
+	return found
+		? Response.json(found)
+		: Response.json({ error: "Not found" }, { status: 404 });
 }
 function createMockFetch(s: MockState): typeof fetch {
 	const json = Response.json;
 	const okSession = { authenticated: true, csrfToken: "c" };
-	return (async (input: string | URL | Request) => {
+	return (async (input: string | URL | Request, init?: RequestInit) => {
 		const u = String(input);
 		if (u.endsWith("/customer/session"))
 			return json({ session: s.auth ? okSession : { authenticated: false } });
@@ -285,10 +343,18 @@ function createMockFetch(s: MockState): typeof fetch {
 			if (s.mode === "error") return json({ error: "E" }, { status: 500 });
 			return json({ memberships: s.list });
 		}
+		if (u.endsWith("/customer/accompanist-membership"))
+			return json({
+				policy: { policy: s.accompanistPolicy ?? "one_to_all" },
+				divisions: MOCK_DIVS,
+			});
 		if (u.includes("/profiles/teacher") || u.includes("/profiles/accompanist"))
-			return json({ error: "Not found" }, { status: 404 });
-		if (u.endsWith("/customer/profile")) return json({ profile: {} });
-		if (u.endsWith("/divisions")) return json({ divisions: [] });
+			return handleDirectoryProfileMock(s, u, init);
+		if (u.endsWith("/customer/profile"))
+			return json({
+				profile: s.customerName ? { name: s.customerName } : {},
+			});
+		if (u.endsWith("/divisions")) return json({ divisions: MOCK_DIVS });
 		throw new Error(`Unexpected URL: ${u}`);
 	}) as typeof fetch;
 }
@@ -335,6 +401,7 @@ interface HarnessCtx {
 	docRoot: DNode;
 	buttons: () => DNode[];
 	assigned: string[];
+	puts: Array<{ url: string; body: Record<string, unknown> }>;
 	statusRequests: () => number;
 	deferStatus: (n: CustomerMembershipStatusEntry[]) => () => Promise<void>;
 	pageShow: (persisted: boolean, wait?: boolean) => Promise<void>;
@@ -353,6 +420,11 @@ async function withHarness(
 		list: [...(opts.memberships ?? [])],
 		mode: opts.statusMode ?? "ok",
 		reqs: 0,
+		accompanistPolicy: opts.accompanistPolicy,
+		customerName: opts.customerName,
+		teacherProfile: opts.teacherProfile,
+		accompanistProfile: opts.accompanistProfile,
+		puts: [],
 	};
 	const { win, docRoot, mount } = createEnv(opts.search ?? "", assigned);
 	const mockFetch = createMockFetch(s);
@@ -373,6 +445,7 @@ async function withHarness(
 			docRoot,
 			buttons: () => queryAll(docRoot, `.${ACT_CLS} > button`),
 			assigned,
+			puts: s.puts,
 			statusRequests: () => s.reqs,
 			deferStatus: (n) => deferStatusFor(s, n),
 			pageShow: async (persisted, wait = true) => {
@@ -495,4 +568,162 @@ describe("CustomerAccountMembershipsPage acquisition controls", () => {
 			const kids = elKids(queryAll(h.docRoot, SEC_SEL)[0] ?? mkNode("div"));
 			expect(kids.slice(0, 3).map((e) => e.tag)).toEqual(["h1", "div", "h1"]);
 		}));
+});
+
+const findCard = (root: DNode, headingId: string) =>
+	allEls(root).find(
+		(el) => el.tag === "section" && el.props["aria-labelledby"] === headingId,
+	);
+const cardBoxes = (card: DNode) =>
+	allEls(card).filter(
+		(el) => el.tag === "input" && el.props.type === "checkbox",
+	);
+const divBox = (card: DNode, name: string) => {
+	const lbl = allEls(card).find(
+		(el) => el.tag === "label" && textOf(el).trim() === name,
+	);
+	return lbl ? cardBoxes(lbl)[0] : undefined;
+};
+function toggleBox(box: DNode | undefined) {
+	if (!box || isDisabled(box)) return;
+	const target = { ...box.props, checked: !box.props.checked };
+	const ev = new Event("change", { bubbles: true });
+	Object.defineProperty(ev, "currentTarget", { value: target });
+	Object.defineProperty(ev, "target", { value: target });
+	(box.props.onChange as ((e: Event) => void) | undefined)?.(ev);
+}
+async function submitCard(card: DNode) {
+	const btn = allEls(card).find(
+		(el) => el.tag === "button" && el.props.type === "submit",
+	);
+	const form = queryAll(card, "form")[0];
+	if (btn && !isDisabled(btn) && form) fireDom(form, "onSubmit");
+	await flushUi();
+}
+const mkAccProf = (divisionIds: string[]): AccompanistProfileRecord => ({
+	id: "acc-1",
+	organization_id: "org-1",
+	customer_id: "cust-1",
+	display_name: "Ava Piano",
+	public_directory_opt_in: true,
+	approval_status: "approved",
+	division_ids: divisionIds,
+	created_at: "2026-09-01T00:00:00.000Z",
+	updated_at: "2026-09-01T00:00:00.000Z",
+});
+
+describe("CustomerTeacherDirectoryCard role division controls", () => {
+	it("renders Teacher divisions read-only with zero division checkboxes and omits divisionIds on save", () =>
+		withHarness(
+			{
+				memberships: [{ ...tm("active"), divisionName: "Piano" }],
+				customerName: "Clara Schumann",
+			},
+			async (h) => {
+				const card = findCard(h.docRoot, "teacher-directory-card-heading");
+				expect(card).toBeDefined();
+				if (!card) return;
+				expect(textOf(card)).toContain("Public Teacher Directory");
+				expect(textOf(card)).toContain("Piano");
+				expect(cardBoxes(card)).toHaveLength(1);
+				await submitCard(card);
+				expect(h.puts).toEqual([
+					{
+						url: "/api/customer/orgs/pafe/profiles/teacher",
+						body: {
+							displayName: "Clara Schumann",
+							publicDirectoryOptIn: true,
+						},
+					},
+				]);
+			},
+		));
+
+	it("enforces exactly_one, one_to_two, and one_to_all policy rules and submits divisionIds on Accompanist card", async () => {
+		const [d1, d2, d3] = MOCK_DIVS.map((d) => d.id);
+		await withHarness(
+			{
+				memberships: [am("active")],
+				accompanistPolicy: "exactly_one",
+				accompanistProfile: mkAccProf([d1]),
+			},
+			async (h) => {
+				const card = findCard(h.docRoot, "accompanist-directory-card-heading");
+				if (!card) throw new Error("Missing accompanist card");
+				toggleBox(divBox(card, "Strings"));
+				expect(Boolean(divBox(card, "Piano")?.props.checked)).toBe(false);
+				expect(Boolean(divBox(card, "Strings")?.props.checked)).toBe(true);
+				await submitCard(card);
+				expect(h.puts[0]?.body).toEqual({
+					displayName: "Ava Piano",
+					publicDirectoryOptIn: true,
+					divisionIds: [d2],
+				});
+			},
+		);
+		await withHarness(
+			{
+				memberships: [am("active")],
+				accompanistPolicy: "one_to_two",
+				accompanistProfile: mkAccProf([d1]),
+			},
+			async (h) => {
+				const card = findCard(h.docRoot, "accompanist-directory-card-heading");
+				if (!card) throw new Error("Missing accompanist card");
+				toggleBox(divBox(card, "Strings"));
+				expect(isDisabled(divBox(card, "Voice") ?? mkNode("input"))).toBe(true);
+				toggleBox(divBox(card, "Piano"));
+				toggleBox(divBox(card, "Strings"));
+				await submitCard(card);
+				expect(h.puts).toHaveLength(0);
+				toggleBox(divBox(card, "Piano"));
+				toggleBox(divBox(card, "Strings"));
+				await submitCard(card);
+				expect(h.puts[0]?.body.divisionIds).toEqual([d1, d2]);
+			},
+		);
+		await withHarness(
+			{
+				memberships: [am("active")],
+				accompanistPolicy: "one_to_all",
+				accompanistProfile: mkAccProf([d1, d2]),
+			},
+			async (h) => {
+				const card = findCard(h.docRoot, "accompanist-directory-card-heading");
+				if (!card) throw new Error("Missing accompanist card");
+				expect(isDisabled(divBox(card, "Voice") ?? mkNode("input"))).toBe(
+					false,
+				);
+				toggleBox(divBox(card, "Voice"));
+				await submitCard(card);
+				expect(h.puts[0]?.body.divisionIds).toEqual([d1, d2, d3]);
+			},
+		);
+	});
+
+	it("renders dual-role account with read-only Teacher divisions alongside editable Accompanist divisions", () =>
+		withHarness(
+			{
+				memberships: [
+					{ ...tm("active"), divisionName: "Piano" },
+					{ ...am("active"), divisionName: "Strings" },
+				],
+				customerName: "Dual Artist",
+				accompanistPolicy: "one_to_two",
+			},
+			async (h) => {
+				const tCard = findCard(h.docRoot, "teacher-directory-card-heading");
+				const aCard = findCard(h.docRoot, "accompanist-directory-card-heading");
+				expect(tCard && aCard).toBeDefined();
+				if (!tCard || !aCard) return;
+				expect(textOf(tCard)).toContain("Piano");
+				expect(cardBoxes(tCard)).toHaveLength(1);
+				expect(cardBoxes(aCard)).toHaveLength(4);
+				toggleBox(divBox(aCard, "Voice"));
+				expect(isDisabled(divBox(aCard, "Piano") ?? mkNode("input"))).toBe(
+					true,
+				);
+				expect(cardBoxes(tCard)).toHaveLength(1);
+			},
+		));
 });

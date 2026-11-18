@@ -42,7 +42,7 @@ describe("domains/teacher-directory", () => {
 		const service = new ParticipantDirectoryService({
 			cacheInvalidator: invalidator,
 			organizations: {
-				findOrganizationBySlug: async (slug) =>
+				findOrganizationBySlug: async (slug: string) =>
 					slug === "fest"
 						? {
 								id: "org-1",
@@ -53,6 +53,35 @@ describe("domains/teacher-directory", () => {
 								createdAtIso: "2026-01-01T00:00:00.000Z",
 							}
 						: null,
+				listDivisions: async () => [
+					{
+						id: "11111111-1111-4111-8111-111111111111",
+						organizationId: "org-1",
+						displayName: "Piano",
+						normalizedName: "piano",
+						displayOrder: 0,
+						isActive: true,
+						createdAtIso: "2026-01-01T00:00:00.000Z",
+						updatedAtIso: "2026-01-01T00:00:00.000Z",
+					},
+					{
+						id: "22222222-2222-4222-8222-222222222222",
+						organizationId: "org-1",
+						displayName: "Strings",
+						normalizedName: "strings",
+						displayOrder: 1,
+						isActive: true,
+						createdAtIso: "2026-01-01T00:00:00.000Z",
+						updatedAtIso: "2026-01-01T00:00:00.000Z",
+					},
+				],
+			},
+			products: {
+				getAccompanistDivisionPolicy: async () => ({
+					organizationId: "org-1",
+					policy: "exactly_one",
+					updatedAtIso: "2026-01-01T00:00:00.000Z",
+				}),
 			},
 			entitlements: {
 				listEntitlementGrantSnapshots: async (): Promise<
@@ -65,6 +94,8 @@ describe("domains/teacher-directory", () => {
 									organizationId: "org-1",
 									customerId: "cust-1",
 									entitlementClass: TEACHER_MEMBERSHIP_ENTITLEMENT_CLASS,
+									divisionId: "11111111-1111-4111-8111-111111111111",
+									divisionNameSnapshot: "Piano",
 									status: "active",
 								} as EntitlementGrantSnapshot,
 							]
@@ -105,8 +136,16 @@ describe("domains/teacher-directory", () => {
 				>[0]["customerAccess"]
 			>,
 			directory: {
-				getTeacherProfile: async (_o, cid) => profiles.get(cid) ?? null,
-				upsertTeacherProfile: async (input) => {
+				getTeacherProfile: async (_o: string, cid: string) =>
+					profiles.get(cid) ?? null,
+				upsertTeacherProfile: async (input: {
+					organizationId: string;
+					customerId: string;
+					displayName: string;
+					publicDirectoryOptIn: boolean;
+					divisionIds?: string[];
+				}) => {
+					const existing = profiles.get(input.customerId);
 					const rec: TeacherProfileRecord = {
 						id: "prof-1",
 						organization_id: input.organizationId,
@@ -118,17 +157,32 @@ describe("domains/teacher-directory", () => {
 							? "approved"
 							: "pending",
 						zip_code: "98101",
-						division_ids: input.divisionIds,
+						division_ids: input.divisionIds ?? existing?.division_ids ?? [],
 						created_at: "2026-01-01T00:00:00.000Z",
 						updated_at: "2026-01-01T00:00:00.000Z",
 					};
 					profiles.set(input.customerId, rec);
 					return rec;
 				},
-				updateTeacherProfileApproval: async (_o, _pid, status) => {
+				updateTeacherProfileApproval: async (
+					_o: string,
+					_pid: string,
+					status: TeacherProfileRecord["approval_status"],
+				) => {
 					const existing = profiles.get("cust-1");
 					if (!existing) return null;
 					const updated = { ...existing, approval_status: status };
+					profiles.set("cust-1", updated);
+					return updated;
+				},
+				updateTeacherProfileDivisions: async (
+					_o: string,
+					_pid: string,
+					divisionIds: string[],
+				) => {
+					const existing = profiles.get("cust-1");
+					if (!existing) return null;
+					const updated = { ...existing, division_ids: divisionIds };
 					profiles.set("cust-1", updated);
 					return updated;
 				},
@@ -141,13 +195,14 @@ describe("domains/teacher-directory", () => {
 				listAccompanistProfiles: async () => [],
 				getPublicDirectoryProfiles: async () => [],
 			},
-		});
+		} as unknown as ConstructorParameters<
+			typeof ParticipantDirectoryService
+		>[0]);
 		service.onDomainEvent((e) => events.push(e));
 		const tCtx = { orgSlug: "fest", sessionId: "s-1", csrfToken: "c" };
 		const tBody = {
 			displayName: "Prof. Lee",
 			publicDirectoryOptIn: true,
-			divisionIds: ["11111111-1111-4111-8111-111111111111"],
 		};
 
 		await expect(
@@ -158,9 +213,20 @@ describe("domains/teacher-directory", () => {
 		});
 
 		activeGrant = true;
-		expect(
-			(await service.upsertTeacherProfile(tCtx, tBody)).approval_status,
-		).toBe("approved");
+		await expect(
+			service.upsertTeacherProfile(tCtx, {
+				...tBody,
+				divisionIds: ["11111111-1111-4111-8111-111111111111"],
+			}),
+		).rejects.toMatchObject({
+			status: 400,
+		});
+
+		const created = await service.upsertTeacherProfile(tCtx, tBody);
+		expect(created.approval_status).toBe("approved");
+		expect(created.division_ids).toEqual([
+			"11111111-1111-4111-8111-111111111111",
+		]);
 		expect(
 			(await service.listTeacherProfiles("org-1", "admin"))[0]?.zip_code,
 		).toBeUndefined();
@@ -174,13 +240,33 @@ describe("domains/teacher-directory", () => {
 				)
 			).approval_status,
 		).toBe("rejected");
+		const updatedDivisions = await (
+			service as unknown as {
+				updateTeacherProfileDivisions: (
+					organizationId: string,
+					profileId: string,
+					payload: { divisionIds: string[] },
+					adminUserId?: string,
+				) => Promise<TeacherProfileRecord>;
+			}
+		).updateTeacherProfileDivisions(
+			"org-1",
+			"prof-1",
+			{ divisionIds: ["22222222-2222-4222-8222-222222222222"] },
+			"admin",
+		);
+		expect(updatedDivisions.division_ids).toEqual([
+			"22222222-2222-4222-8222-222222222222",
+		]);
+		expect(updatedDivisions.approval_status).toBe("rejected");
+		expect(updatedDivisions.zip_code).toBeUndefined();
 		const expectedEvent = {
 			type: "TeacherDirectoryChanged",
 			organizationId: "org-1",
 			role: "teacher",
 			profileId: "prof-1",
 		};
-		expect(events).toEqual([expectedEvent, expectedEvent]);
+		expect(events).toEqual([expectedEvent, expectedEvent, expectedEvent]);
 	});
 
 	it("emits MembershipChanged on accompanist acquisition via DomainCacheInvalidator and local listener", async () => {

@@ -8,6 +8,8 @@ import {
 import { sql } from "bun";
 import { Hono } from "hono";
 import type { AuthVerifier } from "../src/auth/types.js";
+import { MembershipStatusService } from "../src/commerce/membership-status-service.js";
+import { PostgresMembershipCommerceRepository } from "../src/commerce/postgres-membership-commerce-repository.js";
 import {
 	CUSTOMER_SESSION_COOKIE,
 	type CustomerAccountService,
@@ -16,6 +18,7 @@ import { AppError } from "../src/errors/app-error.js";
 import { PostgresOrganizationRepository } from "../src/repo/postgres-organization-repository.js";
 import { provisionPostgresTestSchema } from "../src/repo/postgres-schema.js";
 import { buildParticipantProfileRoutes } from "../src/routes/participant-profile/participant-profile.routes.js";
+import { AccompanistMembershipService } from "../src/services/accompanist-membership-service.js";
 import { ParticipantProfileService } from "../src/services/participant-profile-service.js";
 
 if (!process.env.DATABASE_URL?.trim() && process.env.POSTGRES_INTEGRATION_URL) {
@@ -193,7 +196,11 @@ function putProfile(
 		body: JSON.stringify({
 			displayName: opts.name,
 			publicDirectoryOptIn: opts.optIn,
-			divisionIds: opts.divisionIds ?? [ctx.pianoId],
+			...(role === "accompanist"
+				? { divisionIds: opts.divisionIds ?? [ctx.pianoId] }
+				: opts.divisionIds !== undefined
+					? { divisionIds: opts.divisionIds }
+					: {}),
 		}),
 	});
 }
@@ -201,6 +208,27 @@ const putTeacher = (c: DirectoryFixture, id: string, o: PutOpts) =>
 	putProfile(c, "teacher", id, o);
 const putAccompanist = (c: DirectoryFixture, id: string, o: PutOpts) =>
 	putProfile(c, "accompanist", id, o);
+
+const patchTeacherDivisions = (
+	ctx: DirectoryFixture,
+	id: string,
+	divisionIds: string[],
+) =>
+	ctx.app.request(
+		`/api/admin/orgs/${ctx.orgSlug}/profiles/teachers/${id}/divisions`,
+		{
+			method: "PATCH",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: "Bearer admin-token",
+			},
+			body: JSON.stringify({ divisionIds }),
+		},
+	);
+const getCustomerTeacherProfile = (ctx: DirectoryFixture, cid: string) =>
+	ctx.app.request(`/api/customer/orgs/${ctx.orgSlug}/profiles/teacher`, {
+		headers: { Cookie: `${CUSTOMER_SESSION_COOKIE}=sess-${cid}` },
+	});
 
 function patchApproval(
 	ctx: DirectoryFixture,
@@ -319,7 +347,7 @@ integrationTest(
 );
 
 integrationTest(
-	"auto-approves new opted-in active teacher immediately and keeps approved across name and division edits",
+	"auto-approves new opted-in active teacher immediately and keeps approved across name edits",
 	async () => {
 		await withDirectoryFixture(async (ctx) => {
 			await grantActiveTeacher(ctx, "cust-active");
@@ -339,16 +367,12 @@ integrationTest(
 			const edited = await putTeacher(ctx, "cust-active", {
 				name: "Clara Wieck Schumann",
 				optIn: true,
-				divisionIds: [ctx.pianoId, ctx.stringsId],
 			});
 			expect((await edited.json()).approval_status).toBe("approved");
 			expect(await fetchDirectory(ctx)).toMatchObject([
 				{
 					displayName: "Clara Wieck Schumann",
-					approvedDivisions: [
-						{ id: ctx.pianoId, name: "Piano" },
-						{ id: ctx.stringsId, name: "Strings" },
-					],
+					approvedDivisions: [{ id: ctx.pianoId, name: "Piano" }],
 				},
 			]);
 		});
@@ -379,7 +403,6 @@ integrationTest(
 			const fromPending = await putTeacher(ctx, "cust-leg", {
 				name: "Fanny Mendelssohn",
 				optIn: true,
-				divisionIds: [ctx.stringsId],
 			});
 			expect((await fromPending.json()).approval_status).toBe("approved");
 			expect(await directoryNames(ctx)).toEqual([
@@ -435,7 +458,6 @@ integrationTest(
 			const bypass = await putTeacher(ctx, "c-mod", {
 				name: "Edited Rejected",
 				optIn: true,
-				divisionIds: [ctx.stringsId],
 			});
 			expect((await bypass.json()).approval_status).toBe("rejected");
 			expect(await directoryNames(ctx)).toEqual([]);
@@ -490,6 +512,121 @@ integrationTest(
 				expect(optOut.status).toBe(200);
 				expect((await optOut.json()).public_directory_opt_in).toBe(false);
 			}
+		});
+	},
+);
+
+async function assertEffectiveTeacherDivision(
+	ctx: DirectoryFixture,
+	cid: string,
+	exp: { grantId: string; onId: string; onName: string; offId: string },
+) {
+	const repo = ctx.repository;
+	const status = new MembershipStatusService(
+		repo,
+		new PostgresMembershipCommerceRepository(ctx.schema),
+	);
+	const roster = new AccompanistMembershipService(repo);
+	const activeTeachers = await repo.listActiveTeachersForDivision(
+		ctx.orgId,
+		exp.onId,
+	);
+	expect(activeTeachers.map((t) => t.id)).toEqual([cid]);
+	expect(
+		await repo.listActiveTeachersForDivision(ctx.orgId, exp.offId),
+	).toEqual([]);
+	const matchedGrant = await repo.findActiveTeacherEntitlementGrant({
+		organizationId: ctx.orgId,
+		customerId: cid,
+		divisionId: exp.onId,
+	});
+	expect(matchedGrant?.id).toBe(exp.grantId);
+	expect(
+		await repo.findActiveTeacherEntitlementGrant({
+			organizationId: ctx.orgId,
+			customerId: cid,
+			divisionId: exp.offId,
+		}),
+	).toBeNull();
+	expect((await status.listForCustomer(ctx.orgId, cid)).memberships).toEqual([
+		expect.objectContaining({ status: "active", divisionName: exp.onName }),
+	]);
+	expect((await roster.listCurrentRoster(ctx.orgId)).roster).toEqual([
+		expect.objectContaining({
+			membershipType: "Teacher",
+			divisions: [{ divisionId: exp.onId, divisionName: exp.onName }],
+		}),
+	]);
+}
+
+integrationTest(
+	"resolves pre-profile teacher division from entitlement, seeds profile on customer PUT, rejects customer divisionIds, and lets Admin reassign division while keeping entitlement snapshot immutable",
+	async () => {
+		await withDirectoryFixture(async (ctx) => {
+			const cid = "cust-div-e2e";
+			const grant = await grantActiveTeacher(ctx, cid);
+			await sql.unsafe(
+				`UPDATE ${ctx.schema}.festival_customers SET name = 'Dr. Teacher' WHERE id = $1`,
+				[cid],
+			);
+			await assertEffectiveTeacherDivision(ctx, cid, {
+				grantId: grant.id,
+				onId: ctx.pianoId,
+				onName: "Piano",
+				offId: ctx.stringsId,
+			});
+
+			const badPut = await putTeacher(ctx, cid, {
+				name: "Dr. Teacher",
+				optIn: true,
+				divisionIds: [ctx.stringsId],
+			});
+			expect(badPut.status).toBe(400);
+
+			const createdRes = await putTeacher(ctx, cid, {
+				name: "Dr. Teacher",
+				optIn: true,
+			});
+			expect(createdRes.status).toBe(200);
+			const created = await createdRes.json();
+			expect(created).toMatchObject({
+				division_ids: [ctx.pianoId],
+				approval_status: "approved",
+			});
+
+			const patchedRes = await patchTeacherDivisions(ctx, created.id, [
+				ctx.stringsId,
+			]);
+			expect(patchedRes.status).toBe(200);
+			expect(await patchedRes.json()).toMatchObject({
+				approval_status: "approved",
+				division_ids: [ctx.stringsId],
+			});
+
+			const snapRows = await sql.unsafe(
+				`SELECT division_id, division_name_snapshot FROM ${ctx.schema}.membership_entitlement_divisions WHERE entitlement_id = $1`,
+				[grant.id],
+			);
+			expect(Array.from(snapRows)).toEqual([
+				{ division_id: ctx.pianoId, division_name_snapshot: "Piano" },
+			]);
+
+			await assertEffectiveTeacherDivision(ctx, cid, {
+				grantId: grant.id,
+				onId: ctx.stringsId,
+				onName: "Strings",
+				offId: ctx.pianoId,
+			});
+			const customerGet = await getCustomerTeacherProfile(ctx, cid);
+			expect(customerGet.status).toBe(200);
+			expect((await customerGet.json()).division_ids).toEqual([ctx.stringsId]);
+			expect(await fetchDirectory(ctx)).toMatchObject([
+				{
+					displayName: "Dr. Teacher",
+					role: "Teacher",
+					approvedDivisions: [{ id: ctx.stringsId, name: "Strings" }],
+				},
+			]);
 		});
 	},
 );

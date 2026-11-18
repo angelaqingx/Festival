@@ -2807,6 +2807,14 @@ button.availability-hour-slot.is-unavailable {
 	color: var(--bullet-ink);
 }
 
+.admin-membership-item .admin-teacher-division-editor {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	margin-top: 0.25rem;
+}
+
 .directory-loading {
 	display: flex;
 	flex-direction: column;

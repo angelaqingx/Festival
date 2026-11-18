@@ -4,6 +4,8 @@ import type {
 	TeacherProfileRecord,
 	UpdateAdminAccompanistProfileApprovalInput,
 	UpdateAdminTeacherProfileApprovalInput,
+	UpdateAdminTeacherProfileDivisionsInput,
+	UpdateTeacherProfileDivisionsBody,
 	UpsertCustomerAccompanistProfileInput,
 	UpsertCustomerTeacherProfileInput,
 } from "@festival/common";
@@ -24,6 +26,8 @@ export type {
 	TeacherProfileRecord,
 	UpdateAdminAccompanistProfileApprovalInput,
 	UpdateAdminTeacherProfileApprovalInput,
+	UpdateAdminTeacherProfileDivisionsInput,
+	UpdateTeacherProfileDivisionsBody,
 	UpsertCustomerAccompanistProfileInput,
 	UpsertCustomerTeacherProfileInput,
 } from "@festival/common";
@@ -90,7 +94,13 @@ export async function upsertCustomerTeacherProfile(
 		extraHeaders: { "X-CSRF-Token": csrfToken },
 	}).customer.orgs[":orgSlug"].profiles.teacher;
 	return rpcCall<TeacherProfileRecord>(
-		endpoint.$put({ param, json: input }),
+		endpoint.$put({
+			param,
+			json: {
+				displayName: input.displayName,
+				publicDirectoryOptIn: input.publicDirectoryOptIn,
+			},
+		}),
 		directoryUrl(endpoint.$path({ param }), false),
 	);
 }
@@ -124,6 +134,28 @@ export async function updateAdminTeacherProfileApproval(
 		param,
 		json: { approvalStatus: input.approvalStatus },
 	});
+	return unwrapRpcResponse<TeacherProfileRecord>(
+		response,
+		directoryUrl(endpoint.$path({ param }), true),
+	);
+}
+
+export async function updateAdminTeacherProfileDivisions(
+	idToken: string,
+	orgSlug: string,
+	input: UpdateAdminTeacherProfileDivisionsInput,
+): Promise<TeacherProfileRecord> {
+	const client = createDirectoryClient({ useApiBase: true, idToken });
+	const param = {
+		orgSlug: encodeURIComponent(orgSlug),
+		profileId: encodeURIComponent(input.profileId),
+	};
+	const body: UpdateTeacherProfileDivisionsBody = {
+		divisionIds: input.divisionIds,
+	};
+	const endpoint =
+		client.admin.orgs[":orgSlug"].profiles.teachers[":profileId"].divisions;
+	const response = await endpoint.$patch({ param, json: body });
 	return unwrapRpcResponse<TeacherProfileRecord>(
 		response,
 		directoryUrl(endpoint.$path({ param }), true),

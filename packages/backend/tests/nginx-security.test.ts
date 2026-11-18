@@ -303,6 +303,47 @@ describe("repository nginx security policy", () => {
 		}
 	});
 
+	it("allows PATCH and OPTIONS on admin teacher profile divisions without matching accompanist divisions", async () => {
+		const teacherDivisionsPath =
+			"/api/admin/orgs/pafe/profiles/teachers/prof-1/divisions";
+		const accompanistDivisionsPath =
+			"/api/admin/orgs/pafe/profiles/accompanists/prof-1/divisions";
+
+		for (const configPath of [
+			"nginx/festival.conf",
+			"docker/nginx.festival.conf",
+		]) {
+			const locations = readLocations(await readConfig(configPath));
+			expect(proxiesRoute(locations, "PATCH", teacherDivisionsPath)).toBe(true);
+			expect(proxiesRoute(locations, "OPTIONS", teacherDivisionsPath)).toBe(
+				true,
+			);
+			for (const deniedMethod of ["GET", "PUT", "POST", "DELETE"]) {
+				expect(
+					proxiesRoute(locations, deniedMethod, teacherDivisionsPath),
+				).toBe(false);
+			}
+
+			for (const method of [
+				"PATCH",
+				"OPTIONS",
+				"GET",
+				"PUT",
+				"POST",
+				"DELETE",
+			]) {
+				expect(proxiesRoute(locations, method, accompanistDivisionsPath)).toBe(
+					false,
+				);
+			}
+			expect(
+				selectLocation(locations, accompanistDivisionsPath)?.children?.some(
+					(node) => node.name === "return" && node.args[0] === "404",
+				),
+			).toBe(true);
+		}
+	});
+
 	it("detects an omitted Docker location and an omitted supported method", async () => {
 		const locations = readLocations(
 			await readConfig("docker/nginx.festival.conf"),

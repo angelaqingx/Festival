@@ -606,12 +606,20 @@ describe("PostgresOrganizationRepository", () => {
 				createdAtIso: "2026-01-01T00:00:00.000Z",
 			});
 			const calls = normalizedCalls(unsafeSpy);
-			expect(calls).toContainEqual([
-				expect.stringContaining(
-					"WHERE e.organization_id=$1 AND e.customer_id=$2 AND e.entitlement_class='teacher_membership' AND ed.division_id=$3 AND e.revoked_at IS NULL AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date) AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date ORDER BY e.created_at ASC, e.id ASC LIMIT 1",
-				),
-				["org-1", "teacher-1", "div-1"],
-			]);
+			const [grantQuery, grantParams] = calls[0] ?? ["", []];
+			expect(grantParams).toEqual(["org-1", "teacher-1", "div-1"]);
+			expect(grantQuery).toContain(
+				"LEFT JOIN test_schema.teacher_profiles tp ON",
+			);
+			expect(grantQuery).toContain(
+				"LEFT JOIN test_schema.teacher_profile_divisions tpd ON",
+			);
+			expect(grantQuery).toMatch(
+				/\(\(tp\.id IS NOT NULL AND tpd\.division_id\s*=\s*\$3\) OR \(tp\.id IS NULL AND ed\.division_id\s*=\s*\$3\)\)/,
+			);
+			expect(grantQuery).toContain(
+				"AND e.revoked_at IS NULL AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date) AND e.starts_on <= (NOW() AT TIME ZONE o.timezone)::date AND e.ends_on > (NOW() AT TIME ZONE o.timezone)::date ORDER BY e.created_at ASC, e.id ASC LIMIT 1",
+			);
 		});
 
 		it("findActiveTeacherEntitlementGrant returns null when no active grant matches", async () => {
@@ -1144,11 +1152,21 @@ describe("PostgresOrganizationRepository", () => {
 				"div-1",
 			);
 			expect(teachers).toEqual([{ id: "teacher-1", name: "Teacher 1" }]);
-			expect(unsafeSpy).toHaveBeenCalledWith(
-				expect.stringContaining(
-					"AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date)",
-				),
-				["org-1", "div-1"],
+			const [activeTeachersQuery, activeTeachersParams] = normalizedCalls(
+				unsafeSpy,
+			)[0] ?? ["", []];
+			expect(activeTeachersParams).toEqual(["org-1", "div-1"]);
+			expect(activeTeachersQuery).toContain(
+				"LEFT JOIN test_schema.teacher_profiles tp ON",
+			);
+			expect(activeTeachersQuery).toContain(
+				"LEFT JOIN test_schema.teacher_profile_divisions tpd ON",
+			);
+			expect(activeTeachersQuery).toMatch(
+				/\(\(tp\.id IS NOT NULL AND tpd\.division_id\s*=\s*\$2\) OR \(tp\.id IS NULL AND ed\.division_id\s*=\s*\$2\)\)/,
+			);
+			expect(activeTeachersQuery).toContain(
+				"AND (e.superseded_on IS NULL OR e.superseded_on > (NOW() AT TIME ZONE o.timezone)::date)",
 			);
 
 			unsafeSpy

@@ -1,11 +1,14 @@
-import type {
-	CustomerMembershipStatusEntry,
-	PublicOrganizationDivision,
+import {
+	type CustomerMembershipStatusEntry,
+	type MembershipDivisionSelectionPolicy,
+	type PublicOrganizationDivision,
+	validateMembershipDivisionSelection,
 } from "@festival/common";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { Button } from "../components/Button.js";
 import {
 	ApiError,
+	getAccompanistMembershipForm,
 	getCustomerAccompanistProfile,
 	getCustomerProfile,
 	getCustomerTeacherProfile,
@@ -16,12 +19,14 @@ import {
 import {
 	buildTeacherDirectoryDraft,
 	clearPendingTeacherDirectoryOptIn,
+	formatAccompanistDivisionPolicyHint,
 	formatTeacherVisibilityBadge,
+	isAccompanistDivisionCheckboxDisabled,
 	readPendingTeacherDirectoryOptIn,
 	resolveActiveAccompanistGrantDivisionIds,
 	resolveActiveTeacherGrantDivisionIds,
 	type TeacherDirectoryDraftState,
-	toggleDivisionSelection,
+	toggleAccompanistDivisionSelection,
 } from "./teacherDirectoryHelpers.js";
 
 export type DirectoryCardRole = "teacher" | "accompanist";
@@ -31,12 +36,14 @@ export interface CustomerTeacherDirectoryCardProps {
 	csrfToken: string;
 	memberships: readonly CustomerMembershipStatusEntry[];
 	role?: DirectoryCardRole;
+	onSaved?: () => void;
 }
 
 const ROLE_CONFIG = {
 	teacher: {
 		headingId: "teacher-directory-card-heading",
 		heading: "Public Teacher Directory",
+		subtitle: "Manage your public directory display name and listing status.",
 		optInLabel: "Show my profile in the Public Teacher Directory",
 		loadingText: "Loading teacher directory profile…",
 		loadErrorText: "Teacher directory settings could not be loaded.",
@@ -45,6 +52,7 @@ const ROLE_CONFIG = {
 	accompanist: {
 		headingId: "accompanist-directory-card-heading",
 		heading: "Public Accompanist Directory",
+		subtitle: "Manage your public directory name and divisions.",
 		optInLabel: "Show my profile in the Public Accompanist Directory",
 		loadingText: "Loading accompanist directory profile…",
 		loadErrorText: "Accompanist directory settings could not be loaded.",
@@ -52,38 +60,69 @@ const ROLE_CONFIG = {
 	},
 } as const;
 
+async function fetchAccompanistDirectoryBundle(
+	slug: string,
+	memberships: readonly CustomerMembershipStatusEntry[],
+) {
+	const [profile, customerResp, form] = await Promise.all([
+		getCustomerAccompanistProfile(slug),
+		getCustomerProfile(slug).catch(() => null),
+		getAccompanistMembershipForm(slug),
+	]);
+	const divisions: PublicOrganizationDivision[] = form.divisions
+		.filter((div) => div.isActive)
+		.map(({ id, displayName, displayOrder }) => ({
+			id,
+			displayName,
+			displayOrder,
+		}));
+	const draft = buildTeacherDirectoryDraft({
+		profile,
+		customerName: customerResp?.profile.name ?? null,
+		activeDivisionIds: resolveActiveAccompanistGrantDivisionIds(
+			memberships,
+			divisions,
+		),
+		pendingOptIn: null,
+	});
+	return {
+		divisions,
+		policy: form.policy.policy,
+		draft,
+		shouldAutoSave: false,
+	};
+}
+
 async function fetchInitialDirectoryBundle(
 	slug: string,
 	memberships: readonly CustomerMembershipStatusEntry[],
 	role: DirectoryCardRole,
 ) {
-	const isAcc = role === "accompanist";
+	if (role === "accompanist") {
+		return fetchAccompanistDirectoryBundle(slug, memberships);
+	}
 	const [profile, customerResp, divisionResp] = await Promise.all([
-		isAcc
-			? getCustomerAccompanistProfile(slug)
-			: getCustomerTeacherProfile(slug),
+		getCustomerTeacherProfile(slug),
 		getCustomerProfile(slug).catch(() => null),
 		getPublicDivisions(slug),
 	]);
 	const divisions = divisionResp.divisions;
-	const pendingOptIn = isAcc ? null : readPendingTeacherDirectoryOptIn(slug);
-	const activeDivisionIds = isAcc
-		? resolveActiveAccompanistGrantDivisionIds(memberships, divisions)
-		: resolveActiveTeacherGrantDivisionIds(memberships, divisions);
+	const pendingOptIn = readPendingTeacherDirectoryOptIn(slug);
 	const draft = buildTeacherDirectoryDraft({
 		profile,
 		customerName: customerResp?.profile.name ?? null,
-		activeDivisionIds,
+		activeDivisionIds: resolveActiveTeacherGrantDivisionIds(
+			memberships,
+			divisions,
+		),
 		pendingOptIn,
 	});
 	return {
 		divisions,
+		policy: "exactly_one" as MembershipDivisionSelectionPolicy,
 		draft,
 		shouldAutoSave:
-			!isAcc &&
-			profile === null &&
-			pendingOptIn !== null &&
-			Boolean(draft.displayName),
+			profile === null && pendingOptIn !== null && Boolean(draft.displayName),
 	};
 }
 
@@ -97,6 +136,8 @@ interface CardUiState {
 interface SaveDraftContext {
 	props: CustomerTeacherDirectoryCardProps;
 	role: () => DirectoryCardRole;
+	policy: () => MembershipDivisionSelectionPolicy;
+	divisions: () => readonly PublicOrganizationDivision[];
 	state: { disposed: boolean };
 	setDraft: (next: TeacherDirectoryDraftState) => void;
 	patchUi: (next: Partial<CardUiState>) => void;
@@ -111,9 +152,39 @@ async function upsertRoleDirectoryProfile(
 		divisionIds: string[];
 	},
 ) {
-	return role === "accompanist"
-		? upsertCustomerAccompanistProfile(props.slug, props.csrfToken, payload)
-		: upsertCustomerTeacherProfile(props.slug, props.csrfToken, payload);
+	if (role === "accompanist") {
+		return upsertCustomerAccompanistProfile(
+			props.slug,
+			props.csrfToken,
+			payload,
+		);
+	}
+	return upsertCustomerTeacherProfile(props.slug, props.csrfToken, {
+		displayName: payload.displayName,
+		publicDirectoryOptIn: payload.publicDirectoryOptIn,
+	});
+}
+
+function validateDraftBeforeSave(
+	ctx: SaveDraftContext,
+	target: TeacherDirectoryDraftState,
+): string | null {
+	if (!target.displayName.trim()) {
+		return "Display name is required.";
+	}
+	if (ctx.role() !== "accompanist") return null;
+	try {
+		validateMembershipDivisionSelection(
+			ctx.policy(),
+			target.divisionIds,
+			ctx.divisions().length,
+		);
+		return null;
+	} catch (err) {
+		return err instanceof Error
+			? err.message
+			: "Selected divisions do not satisfy the membership policy.";
+	}
 }
 
 async function saveCardDraft(
@@ -121,11 +192,12 @@ async function saveCardDraft(
 	target: TeacherDirectoryDraftState,
 	savedMessage: string,
 ): Promise<void> {
-	const displayName = target.displayName.trim();
-	if (!displayName) {
-		ctx.patchUi({ error: "Display name is required." });
+	const validationError = validateDraftBeforeSave(ctx, target);
+	if (validationError) {
+		ctx.patchUi({ error: validationError, savedMessage: "" });
 		return;
 	}
+	const displayName = target.displayName.trim();
 	ctx.patchUi({ saving: true, error: "", savedMessage: "" });
 	const currentRole = ctx.role();
 	try {
@@ -140,6 +212,7 @@ async function saveCardDraft(
 		}
 		ctx.setDraft(buildTeacherDirectoryDraft({ profile: saved }));
 		ctx.patchUi({ savedMessage });
+		ctx.props.onSaved?.();
 	} catch (e) {
 		const error =
 			e instanceof ApiError
@@ -154,6 +227,7 @@ async function saveCardDraft(
 function createTeacherCardController(props: CustomerTeacherDirectoryCardProps) {
 	const role = () => props.role ?? "teacher";
 	const cfg = () => ROLE_CONFIG[role()];
+	const memberships = () => props.memberships;
 	const [ui, setUi] = createSignal<CardUiState>({
 		loading: true,
 		saving: false,
@@ -165,6 +239,8 @@ function createTeacherCardController(props: CustomerTeacherDirectoryCardProps) {
 	const [divisions, setDivisions] = createSignal<PublicOrganizationDivision[]>(
 		[],
 	);
+	const [policy, setPolicy] =
+		createSignal<MembershipDivisionSelectionPolicy>("one_to_all");
 	const [draft, setDraft] = createSignal(
 		buildTeacherDirectoryDraft({ profile: null }),
 	);
@@ -172,14 +248,21 @@ function createTeacherCardController(props: CustomerTeacherDirectoryCardProps) {
 		setDraft((cur) => ({ ...cur, ...next }));
 	const state = { disposed: false };
 	const save = (target: TeacherDirectoryDraftState, msg: string) =>
-		saveCardDraft({ props, role, state, setDraft, patchUi }, target, msg);
+		saveCardDraft(
+			{ props, role, policy, divisions, state, setDraft, patchUi },
+			target,
+			msg,
+		);
 	return {
 		role,
 		cfg,
+		memberships,
 		ui,
 		patchUi,
 		divisions,
 		setDivisions,
+		policy,
+		setPolicy,
 		draft,
 		setDraft,
 		patchDraft,
@@ -188,25 +271,79 @@ function createTeacherCardController(props: CustomerTeacherDirectoryCardProps) {
 	};
 }
 type TeacherCardCtrl = ReturnType<typeof createTeacherCardController>;
-function DivisionCheckboxes(props: { ctrl: TeacherCardCtrl }) {
-	const ids = () => props.ctrl.draft().divisionIds;
+
+function resolveReadOnlyTeacherDivisionNames(
+	divisionIds: readonly string[],
+	divisions: readonly PublicOrganizationDivision[],
+	memberships: readonly CustomerMembershipStatusEntry[],
+): string[] {
+	const byId = new Map(divisions.map((div) => [div.id, div.displayName]));
+	const mapped = divisionIds
+		.map((id) => byId.get(id))
+		.filter((name): name is string => Boolean(name));
+	if (mapped.length > 0) return mapped;
+	return memberships
+		.filter(
+			(entry) =>
+				entry.entitlementClass === "teacher_membership" &&
+				entry.status === "active" &&
+				Boolean(entry.divisionName?.trim()),
+		)
+		.map((entry) => entry.divisionName?.trim() ?? "");
+}
+
+function TeacherAssignedDivisions(props: { ctrl: TeacherCardCtrl }) {
+	const names = () =>
+		resolveReadOnlyTeacherDivisionNames(
+			props.ctrl.draft().divisionIds,
+			props.ctrl.divisions(),
+			props.ctrl.memberships(),
+		);
 	return (
-		<Show when={props.ctrl.divisions().length > 0}>
+		<div class="field">
+			<span>Assigned division</span>
+			<Show
+				when={names().length > 0}
+				fallback={<p class="muted">Assigned by organization administrator.</p>}
+			>
+				<div class="directory-profile-divisions">
+					<For each={names()}>
+						{(name) => <span class="directory-division-tag">{name}</span>}
+					</For>
+				</div>
+			</Show>
+		</div>
+	);
+}
+
+function AccompanistDivisionCheckboxes(props: { ctrl: TeacherCardCtrl }) {
+	const c = props.ctrl;
+	const ids = () => c.draft().divisionIds;
+	return (
+		<Show when={c.divisions().length > 0}>
 			<fieldset class="field">
 				<legend>Approved divisions</legend>
-				<For each={props.ctrl.divisions()}>
+				<p class="muted">{formatAccompanistDivisionPolicyHint(c.policy())}</p>
+				<For each={c.divisions()}>
 					{(div) => (
 						<label class="membership-consent">
 							<input
 								type="checkbox"
 								checked={ids().includes(div.id)}
-								disabled={props.ctrl.ui().saving}
-								onChange={(e) =>
-									props.ctrl.patchDraft({
-										divisionIds: toggleDivisionSelection(
+								disabled={
+									c.ui().saving ||
+									isAccompanistDivisionCheckboxDisabled(
+										c.policy(),
+										ids(),
+										div.id,
+									)
+								}
+								onChange={() =>
+									c.patchDraft({
+										divisionIds: toggleAccompanistDivisionSelection(
+											c.policy(),
 											ids(),
 											div.id,
-											e.currentTarget.checked,
 										),
 									})
 								}
@@ -219,6 +356,7 @@ function DivisionCheckboxes(props: { ctrl: TeacherCardCtrl }) {
 		</Show>
 	);
 }
+
 function TeacherDirectoryForm(props: { ctrl: TeacherCardCtrl }) {
 	const c = props.ctrl;
 	return (
@@ -238,7 +376,12 @@ function TeacherDirectoryForm(props: { ctrl: TeacherCardCtrl }) {
 					onInput={(e) => c.patchDraft({ displayName: e.currentTarget.value })}
 				/>
 			</label>
-			<DivisionCheckboxes ctrl={c} />
+			<Show
+				when={c.role() === "accompanist"}
+				fallback={<TeacherAssignedDivisions ctrl={c} />}
+			>
+				<AccompanistDivisionCheckboxes ctrl={c} />
+			</Show>
 			<label class="membership-consent">
 				<input
 					type="checkbox"
@@ -263,9 +406,10 @@ function loadBundle(
 	ctrl: TeacherCardCtrl,
 ) {
 	void fetchInitialDirectoryBundle(props.slug, props.memberships, ctrl.role())
-		.then(async ({ divisions, draft, shouldAutoSave }) => {
+		.then(async ({ divisions, policy, draft, shouldAutoSave }) => {
 			if (ctrl.state.disposed) return;
 			ctrl.setDivisions(divisions);
+			ctrl.setPolicy(policy);
 			ctrl.setDraft(draft);
 			if (shouldAutoSave)
 				await ctrl.save(draft, "Directory listing preference saved.");
@@ -294,7 +438,7 @@ export function CustomerTeacherDirectoryCard(
 			<header class="customer-membership-section-header">
 				<div>
 					<h2 id={ctrl.cfg().headingId}>{ctrl.cfg().heading}</h2>
-					<p class="muted">Manage your public directory name and divisions.</p>
+					<p class="muted">{ctrl.cfg().subtitle}</p>
 				</div>
 				<span class={`directory-status-tag ${badge().badgeClass}`}>
 					{badge().label}

@@ -19,6 +19,7 @@ export class MembershipStatusService {
 			entitlements: organizations,
 			products: organizations,
 			organizations,
+			directory: organizations,
 			commerce,
 			now,
 		});
