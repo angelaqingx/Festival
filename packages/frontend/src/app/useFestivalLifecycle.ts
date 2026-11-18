@@ -29,6 +29,7 @@ const ORGANIZATION_LOAD_ROUTE_KINDS = new Set<AppRoute["kind"]>([
 	"org-admin-divisions",
 	"org-admin-volunteers",
 	"org-admin-rooms",
+	"org-admin-concerto-repertoire",
 	"org-admin-accompanists",
 	"org-admin-roster",
 	"org-music-review",

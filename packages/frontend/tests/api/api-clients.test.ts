@@ -16,6 +16,13 @@ import { getAdminUsers, listStaffRoster } from "../../src/lib/api/org-admin.js";
 import { startClassCheckout } from "../../src/lib/api/registration.js";
 import { getVolunteerRoles } from "../../src/lib/api/volunteers.js";
 import * as apiBarrel from "../../src/lib/api.js";
+import {
+	ConcertoCsvApiError,
+	downloadConcertoRepertoireTemplateCsv,
+	exportConcertoRepertoireCsv,
+	importConcertoRepertoireCsv,
+	previewConcertoRepertoireCsv,
+} from "../../src/lib/api.js";
 
 function withMockFetch<T>(
 	handler: (url: string, init?: RequestInit) => Response | Promise<Response>,
@@ -48,8 +55,11 @@ describe("split Hono RPC frontend API modules and barrel", () => {
 		const expectedExports = [
 			"ApiError",
 			"BILLING_ADJUSTMENT_TYPES",
+			"ConcertoCsvApiError",
 			"acquireAccompanistMembership",
 			"createOrganization",
+			"downloadConcertoRepertoireTemplateCsv",
+			"exportConcertoRepertoireCsv",
 			"getAdminEntitlementReport",
 			"getBootstrap",
 			"getCustomerFestivalAvailability",
@@ -57,10 +67,12 @@ describe("split Hono RPC frontend API modules and barrel", () => {
 			"getMembershipProducts",
 			"getPublicDirectoryProfiles",
 			"getVolunteerRoles",
+			"importConcertoRepertoireCsv",
 			"listAccompanists",
 			"listDivisions",
 			"listRegistrationTeachers",
 			"logoutCustomer",
+			"previewConcertoRepertoireCsv",
 			"renderTemplate",
 			"saveCustomerFestivalAvailability",
 			"startClassCheckout",
@@ -358,6 +370,149 @@ describe("split Hono RPC frontend API modules and barrel", () => {
 			expect(submitted).toBe(true);
 		} finally {
 			globalThis.document = originalDocument;
+		}
+	});
+
+	it("maps concerto repertoire CSV template, export, preview, and import endpoints", async () => {
+		const calls: Array<{ url: string; init?: RequestInit }> = [];
+		const sampleCsv = "work_id,title,composer,imslp_url\nw-1,Concerto,Grieg,\n";
+		const summary = {
+			totalRows: 1,
+			addedCount: 1,
+			updatedCount: 0,
+			unchangedCount: 0,
+			removedCount: 0,
+		};
+		const previewFixture = {
+			valid: true,
+			errors: [],
+			summary: { ...summary, errorCount: 0 },
+			added: [],
+			updated: [],
+			unchangedCount: 0,
+			unchanged: [],
+			removed: [],
+			clearsEntireCatalog: false,
+			requiresClearAllConfirmation: false,
+			catalogDigest: "sha256:digest-1",
+		};
+		const importFixture = {
+			applied: true as const,
+			summary,
+			addedWorkIds: ["w-1"],
+			updatedWorkIds: [],
+			unchangedWorkIds: [],
+			removedWorkIds: [],
+			clearsEntireCatalog: false,
+			catalogDigest: "sha256:digest-2",
+		};
+		await withMockFetch(
+			(url, init) => {
+				calls.push({ url, init });
+				if (url.endsWith("/template"))
+					return new Response("work_id,title,composer,imslp_url\n");
+				if (url.endsWith("/export")) return new Response(sampleCsv);
+				return Response.json(
+					url.endsWith("/preview") ? previewFixture : importFixture,
+				);
+			},
+			async () => {
+				expect(
+					await downloadConcertoRepertoireTemplateCsv("tok-csv", "org one"),
+				).toBe("work_id,title,composer,imslp_url\n");
+				expect(await exportConcertoRepertoireCsv("tok-csv", "org one")).toBe(
+					sampleCsv,
+				);
+				expect(
+					await previewConcertoRepertoireCsv("tok-csv", "org one", sampleCsv),
+				).toEqual(previewFixture);
+				expect(
+					await importConcertoRepertoireCsv("tok-csv", "org one", {
+						csvText: sampleCsv,
+						expectedCatalogDigest: "sha256:digest-1",
+						confirmClearAll: false,
+					}),
+				).toEqual(importFixture);
+			},
+		);
+		const base = "/api/organizations/org%20one/admin/concerto-repertoire";
+		expect(
+			calls.map((c) => [
+				c.init?.method ?? "GET",
+				c.url,
+				new Headers(c.init?.headers).get("Authorization"),
+			]),
+		).toEqual([
+			["GET", `${base}/template`, "Bearer tok-csv"],
+			["GET", `${base}/export`, "Bearer tok-csv"],
+			["POST", `${base}/preview`, "Bearer tok-csv"],
+			["POST", `${base}/import`, "Bearer tok-csv"],
+		]);
+		expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({
+			csvText: sampleCsv,
+		});
+		expect(JSON.parse(String(calls[3]?.init?.body))).toEqual({
+			csvText: sampleCsv,
+			expectedCatalogDigest: "sha256:digest-1",
+			confirmClearAll: false,
+		});
+	});
+
+	it("rejects concerto CSV 409 stale preview and 422 validation responses with ConcertoCsvApiError", async () => {
+		const rowErrors = [
+			{
+				rowNumber: 2,
+				field: "title" as const,
+				code: "TITLE_REQUIRED",
+				message: "title is required.",
+			},
+		];
+		for (const scenario of [
+			{
+				status: 409,
+				payload: {
+					error:
+						"Concerto catalog changed since preview. Please preview again.",
+					code: "stale_catalog_preview",
+					catalogDigest: "sha256:fresh-digest",
+					details: { catalogDigest: "sha256:fresh-digest" },
+				},
+				expected: {
+					status: 409,
+					code: "stale_catalog_preview",
+					catalogDigest: "sha256:fresh-digest",
+					errors: [],
+				},
+			},
+			{
+				status: 422,
+				payload: {
+					error: "Concerto CSV validation failed.",
+					code: "concerto_csv_validation_failed",
+					errors: rowErrors,
+					details: { errors: rowErrors },
+				},
+				expected: {
+					status: 422,
+					code: "concerto_csv_validation_failed",
+					catalogDigest: undefined,
+					errors: rowErrors,
+				},
+			},
+		]) {
+			await withMockFetch(
+				() => Response.json(scenario.payload, { status: scenario.status }),
+				async () => {
+					const err = await importConcertoRepertoireCsv("tok-csv", "pafe", {
+						csvText: "work_id,title,composer,imslp_url\n",
+						expectedCatalogDigest: "sha256:stale",
+						confirmClearAll: true,
+					}).catch((caught: unknown) => caught);
+					expect(err).toBeInstanceOf(ApiError);
+					expect(err).toBeInstanceOf(ConcertoCsvApiError);
+					expect(err).toMatchObject(scenario.expected);
+				},
+			);
 		}
 	});
 });

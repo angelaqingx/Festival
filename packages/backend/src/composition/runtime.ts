@@ -34,9 +34,15 @@ export interface RuntimeDependencies {
 }
 
 export function bindDomainCacheInvalidators(deps: RuntimeDependencies): void {
-	const { cacheInvalidator, tenantOrg, customerIdentity, commerceProjection } =
-		deps;
+	const {
+		cacheInvalidator,
+		tenantOrg,
+		catalogRepertoire,
+		customerIdentity,
+		commerceProjection,
+	} = deps;
 	tenantOrg.organizationService.bindCacheInvalidator?.(cacheInvalidator);
+	catalogRepertoire.repertoireService.bindCacheInvalidator(cacheInvalidator);
 	customerIdentity.customerAccountService?.bindCacheInvalidator?.(
 		cacheInvalidator,
 	);
@@ -125,6 +131,7 @@ function mountApiRouter(app: Hono, deps: RuntimeDependencies): void {
 			pendingClassCheckoutService: classCheckout.pendingClassCheckoutService,
 			customClaimsWriter: auth.customClaimsWriter,
 			repertoireRepository: catalogRepertoire.repertoireRepository,
+			repertoireService: catalogRepertoire.repertoireService,
 			dropTransferService: classCheckout.dropTransferService,
 			enableDropTransfer: Boolean(env.enableDropTransfer),
 			registrationChangeRepository: classCheckout.registrationChangeRepository,

@@ -39,6 +39,7 @@ export type AppRoute =
 	| { kind: "org-admin-roster"; slug: string }
 	| { kind: "org-admin-volunteers"; slug: string }
 	| { kind: "org-admin-rooms"; slug: string }
+	| { kind: "org-admin-concerto-repertoire"; slug: string }
 	| { kind: "org-music-review"; slug: string }
 	| { kind: "org-billing"; slug: string }
 	| { kind: "org-communications"; slug: string }
@@ -190,6 +191,10 @@ export function buildOrgAdminVolunteersPath(slug: string): string {
 
 export function buildOrgAdminRoomsPath(slug: string): string {
 	return `/org/${slug}/admin/rooms`;
+}
+
+export function buildOrgAdminConcertoRepertoirePath(slug: string): string {
+	return `/org/${slug}/admin/concerto-repertoire`;
 }
 
 export function buildOrgMusicReviewPath(slug: string): string {

@@ -130,6 +130,18 @@ export function adminRoutes() {
 				))}
 			/>
 			<Route
+				path="/admin/concerto-repertoire"
+				component={() => {
+					const slug = useParams().slug ?? "";
+					return (
+						<Pages.AdminConcertoRepertoirePage
+							app={useFestivalShell()}
+							slug={slug}
+						/>
+					);
+				}}
+			/>
+			<Route
 				path="/admin/checkout-recovery"
 				component={() => {
 					const p = useParams();

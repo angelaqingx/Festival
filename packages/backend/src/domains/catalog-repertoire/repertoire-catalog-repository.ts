@@ -7,7 +7,14 @@ import {
 	postgresSchemaName,
 } from "../../infra/s09-infra.js";
 import {
+	acquireConcertoCsvAdvisoryLockTx,
+	createPgConcertoCatalogTxRepository,
+	fetchOrgCatalogWorkSnapshot,
+} from "./concerto-catalog-csv-queries.js";
+import {
 	type AddCatalogWorkInput,
+	type ConcertoCatalogTxRepository,
+	type ConcertoCatalogWorkSnapshot,
 	mapCanonicalWorkRow,
 	normalizeClassifications,
 	type RepertoireCatalogRepository,
@@ -350,6 +357,26 @@ export class PostgresRepertoireCatalogRepository
 					composer_name: contributor?.displayName ?? null,
 					classifications: classifications.map((c) => c.toLowerCase()),
 				})
+			);
+		});
+	}
+
+	async listCatalogConcertoSnapshot(
+		organizationId: string,
+	): Promise<ConcertoCatalogWorkSnapshot[]> {
+		await this.ensureReady();
+		return fetchOrgCatalogWorkSnapshot(sql, this.schema, organizationId);
+	}
+
+	async runConcertoCatalogCsvTransaction<T>(
+		organizationId: string,
+		operation: (txRepo: ConcertoCatalogTxRepository) => Promise<T>,
+	): Promise<T> {
+		await this.ensureReady();
+		return sql.begin(async (tx) => {
+			await acquireConcertoCsvAdvisoryLockTx(tx, organizationId);
+			return operation(
+				createPgConcertoCatalogTxRepository(tx, this.schema, organizationId),
 			);
 		});
 	}

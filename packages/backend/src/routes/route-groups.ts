@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import { ParticipantProfileService } from "../services/participant-profile-service.js";
 import {
+	ADMIN_CONCERTO_REPERTOIRE_ROUTE_SECURITY,
+	buildAdminConcertoRepertoireRoutes,
+} from "./admin-org/admin-concerto-repertoire.routes.js";
+import {
 	ADMIN_FESTIVAL_CATALOG_ROUTE_SECURITY,
 	buildAdminFestivalCatalogRoutes,
 } from "./admin-org/admin-festival-catalog.routes.js";
@@ -141,6 +145,7 @@ export const CATALOG_GROUP_ROUTE_SECURITY = [
 	...withRouteSecurity("/organizations/:slug", ORG_INFO_PUBLIC_ROUTE_SECURITY),
 	...ADMIN_FESTIVAL_CATALOG_ROUTE_SECURITY,
 	...ADMIN_REGISTRATION_CATALOG_ROUTE_SECURITY,
+	...ADMIN_CONCERTO_REPERTOIRE_ROUTE_SECURITY,
 	...withRouteSecurity(
 		"/organizations/:slug/repertoire",
 		REPERTOIRE_ROUTE_SECURITY,
@@ -153,6 +158,7 @@ export function buildCatalogGroupRoutes(options: ApiRouterOptions) {
 		authVerifier,
 		publicMembershipProductService,
 		repertoireRepository,
+		repertoireService,
 	} = options;
 	const repository = organizationService.repository;
 
@@ -174,6 +180,15 @@ export function buildCatalogGroupRoutes(options: ApiRouterOptions) {
 			buildAdminRegistrationCatalogRoutes({
 				organizationService,
 				authVerifier,
+			}),
+		)
+		.route(
+			"/",
+			buildAdminConcertoRepertoireRoutes({
+				authVerifier,
+				repository,
+				repertoireRepository,
+				repertoireService,
 			}),
 		)
 		.route(

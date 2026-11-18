@@ -9,6 +9,7 @@ import {
 	buildInvitePath,
 	buildOrgAdminAccompanistsPath,
 	buildOrgAdminCheckoutRecoveryPath,
+	buildOrgAdminConcertoRepertoirePath,
 	buildOrgAdminDivisionsPath,
 	buildOrgAdminFestivalsPath,
 	buildOrgAdminIntegrationsPath,
@@ -209,6 +210,26 @@ describe("route helpers", () => {
 				slug: "festival-admins",
 			},
 		);
+		expect(parseRoute("/org/pafe/admin/concerto-repertoire")).toEqual({
+			kind: "org-admin-concerto-repertoire",
+			slug: "pafe",
+		});
+		expect(parseRoute("/org/pafe/admin/concerto-repertoire/")).toEqual({
+			kind: "org-admin-concerto-repertoire",
+			slug: "pafe",
+		});
+		expect(parseRoute("/organizations/pafe/admin/concerto-repertoire")).toEqual(
+			{
+				kind: "org-admin-concerto-repertoire",
+				slug: "pafe",
+			},
+		);
+		expect(
+			parseRoute("/organizations/pafe/admin/concerto-repertoire/"),
+		).toEqual({
+			kind: "org-admin-concerto-repertoire",
+			slug: "pafe",
+		});
 		expect(
 			parseRoute("/org/festival-admins/checkout-recovery/tok-abc"),
 		).toEqual({
@@ -266,6 +287,17 @@ describe("route helpers", () => {
 		expect(
 			isOrganizationPageRoute(
 				parseRoute("/org/festival-admins/admin/checkout-recovery"),
+			),
+		).toBe(false);
+		expect(
+			isOrganizationPageRoute({
+				kind: "org-admin-concerto-repertoire",
+				slug: "pafe",
+			}),
+		).toBe(false);
+		expect(
+			isOrganizationPageRoute(
+				parseRoute("/org/pafe/admin/concerto-repertoire"),
 			),
 		).toBe(false);
 		expect(
@@ -354,6 +386,12 @@ describe("route helpers", () => {
 		);
 		expect(buildOrgAdminCheckoutRecoveryPath("festival-admins")).toBe(
 			"/org/festival-admins/admin/checkout-recovery",
+		);
+		expect(buildOrgAdminConcertoRepertoirePath("pafe")).toBe(
+			"/org/pafe/admin/concerto-repertoire",
+		);
+		expect(buildOrgAdminConcertoRepertoirePath("festival-admins")).toBe(
+			"/org/festival-admins/admin/concerto-repertoire",
 		);
 		expect(buildOrgCheckoutRecoveryPath("festival-admins", "tok-abc")).toBe(
 			"/org/festival-admins/checkout-recovery/tok-abc",

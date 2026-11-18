@@ -36,7 +36,7 @@ async function createInventoryTestApp() {
 }
 
 describe("co-located route security inventory", () => {
-	it("places GET /health private-health at index 0 and keeps complete metadata for all 174 routes", async () => {
+	it("places GET /health private-health at index 0 and keeps complete metadata for all 178 routes", async () => {
 		expect(CURRENT_ROUTE_SECURITY[0]).toEqual({
 			method: "GET",
 			path: "/health",
@@ -44,7 +44,7 @@ describe("co-located route security inventory", () => {
 			csrfRequired: false,
 			browserAllowed: false,
 		});
-		expect(CURRENT_ROUTE_SECURITY).toHaveLength(174);
+		expect(CURRENT_ROUTE_SECURITY).toHaveLength(178);
 
 		const { app } = await createInventoryTestApp();
 		assertRouteSecurityInventory(app.routes, CURRENT_ROUTE_SECURITY);
@@ -64,13 +64,13 @@ describe("co-located route security inventory", () => {
 
 	it("aggregates all 7 backend route groups plus auth and private runtime modules without gaps", () => {
 		expect(ORG_ADMIN_GROUP_ROUTE_SECURITY).toHaveLength(27);
-		expect(CATALOG_GROUP_ROUTE_SECURITY).toHaveLength(32);
+		expect(CATALOG_GROUP_ROUTE_SECURITY).toHaveLength(36);
 		expect(CUSTOMER_GROUP_ROUTE_SECURITY).toHaveLength(12);
 		expect(DIRECTORY_GROUP_ROUTE_SECURITY).toHaveLength(9);
 		expect(REGISTRATION_GROUP_ROUTE_SECURITY).toHaveLength(27);
 		expect(COMMERCE_GROUP_ROUTE_SECURITY).toHaveLength(36);
 		expect(VOLUNTEERS_GROUP_ROUTE_SECURITY).toHaveLength(19);
-		expect(API_ROUTE_SECURITY).toHaveLength(162);
+		expect(API_ROUTE_SECURITY).toHaveLength(166);
 		expect(AUTH_ROUTE_SECURITY).toHaveLength(3);
 		expect(PRIVATE_RUNTIME_ROUTE_SECURITY).toHaveLength(7);
 
@@ -103,6 +103,45 @@ describe("co-located route security inventory", () => {
 				method: "POST",
 				path: "/api/organizations",
 				authenticationClass: "firebase",
+				csrfRequired: false,
+				browserAllowed: true,
+			},
+		]);
+	});
+
+	it("declares Admin concerto repertoire CSV endpoints in catalog group security", () => {
+		expect(
+			CURRENT_ROUTE_SECURITY.filter((entry) =>
+				entry.path.startsWith(
+					"/api/organizations/:slug/admin/concerto-repertoire/",
+				),
+			),
+		).toEqual([
+			{
+				method: "GET",
+				path: "/api/organizations/:slug/admin/concerto-repertoire/template",
+				authenticationClass: "admin",
+				csrfRequired: false,
+				browserAllowed: true,
+			},
+			{
+				method: "GET",
+				path: "/api/organizations/:slug/admin/concerto-repertoire/export",
+				authenticationClass: "admin",
+				csrfRequired: false,
+				browserAllowed: true,
+			},
+			{
+				method: "POST",
+				path: "/api/organizations/:slug/admin/concerto-repertoire/preview",
+				authenticationClass: "admin",
+				csrfRequired: false,
+				browserAllowed: true,
+			},
+			{
+				method: "POST",
+				path: "/api/organizations/:slug/admin/concerto-repertoire/import",
+				authenticationClass: "admin",
 				csrfRequired: false,
 				browserAllowed: true,
 			},

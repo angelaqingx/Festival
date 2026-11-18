@@ -714,4 +714,28 @@ describe("organization onboarding integration", () => {
 			"Membership products are temporarily unavailable. Please try again.",
 		);
 	});
+
+	it("wires Concerto Repertoire workflow card on AdminHomePage and route in AdminRoutes", async () => {
+		const homeSource = await Bun.file(
+			new URL("../src/pages/AdminHomePage.tsx", import.meta.url),
+		).text();
+		const adminRoutesSource = await Bun.file(
+			new URL("../src/app/AdminRoutes.tsx", import.meta.url),
+		).text();
+
+		expect(homeSource).toContain("buildOrgAdminConcertoRepertoirePath");
+		expect(homeSource).toContain("<strong>Concerto Repertoire</strong>");
+		const cardSection = homeSource.slice(
+			Math.max(
+				0,
+				homeSource.indexOf("buildOrgAdminConcertoRepertoirePath") - 220,
+			),
+			homeSource.indexOf("<strong>Concerto Repertoire</strong>") + 120,
+		);
+		expect(cardSection).toContain("disabled={!props.app.isAdminMember()}");
+		expect(cardSection).toContain("!props.app.isAdminMember()");
+
+		expect(adminRoutesSource).toContain('path="/admin/concerto-repertoire"');
+		expect(adminRoutesSource).toContain("<Pages.AdminConcertoRepertoirePage");
+	});
 });

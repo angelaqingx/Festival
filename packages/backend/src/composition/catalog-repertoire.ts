@@ -1,6 +1,7 @@
 import type { CreateAppOptions } from "../app.js";
 import type { MembershipCommerceRepository } from "../commerce/membership-commerce-repository.js";
 import type { AppEnv } from "../config/env.js";
+import { RepertoireService } from "../domains/catalog-repertoire/index.js";
 import {
 	InMemoryRepertoireRepository,
 	PostgresRepertoireRepository,
@@ -13,6 +14,7 @@ import type { AdminClassShopifySync } from "../services/admin-class-shopify-sync
 export interface CatalogRepertoireComposition {
 	adminClassCatalogService: AdminClassCatalogService;
 	repertoireRepository: RepertoireRepository;
+	repertoireService: RepertoireService;
 }
 
 export async function createRepertoireRepository(
@@ -55,5 +57,12 @@ export async function createCatalogRepertoireComposition(params: {
 	const repertoireRepository =
 		params.repertoireRepository ??
 		(await createRepertoireRepository(options, env));
-	return { adminClassCatalogService, repertoireRepository };
+	const repertoireService =
+		options.repertoireService ??
+		new RepertoireService(repertoireRepository, repertoireRepository);
+	return {
+		adminClassCatalogService,
+		repertoireRepository,
+		repertoireService,
+	};
 }
