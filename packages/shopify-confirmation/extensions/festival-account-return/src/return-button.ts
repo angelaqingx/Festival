@@ -22,7 +22,7 @@ export function festivalAccountReturnUrl(
 			url.hash
 		)
 			return null;
-		return `${url.origin}/org/${slug}/account/orders`;
+		return `${url.origin}/org/${slug}/account?checkout=processing`;
 	} catch {
 		return null;
 	}

@@ -59,14 +59,14 @@ function fixture(value: Record<string, unknown>, editor = false) {
 }
 
 describe("Shopify confirmation return", () => {
-	it("renders the exact label, tenant orders destination, and two blank lines below", () => {
+	it("renders the exact label, tenant account handoff, and two blank lines below", () => {
 		const f = fixture({ organization_slug: "pafe" });
 		const container = f.body.children[0];
 		const [button, spacer] = container.children;
 		expect(button.tagName).toBe("s-button");
 		expect(button.textContent).toBe("Return to Festival account");
 		expect(button.attributes).toEqual({
-			href: "https://festival.passmore.xyz/org/pafe/account/orders",
+			href: "https://festival.passmore.xyz/org/pafe/account?checkout=processing",
 			variant: "primary",
 		});
 		expect(container.attributes.gap).toBe("none");
@@ -81,13 +81,17 @@ describe("Shopify confirmation return", () => {
 				festival_origin: "https://festival.example.com/",
 				organization_slug: "north-west",
 			}),
-		).toBe("https://festival.example.com/org/north-west/account/orders");
+		).toBe(
+			"https://festival.example.com/org/north-west/account?checkout=processing",
+		);
 		expect(
 			fixture({
 				festival_origin: "https://int.artsfestival.online",
 				organization_slug: "pafe",
 			}).body.children[0].children[0].attributes.href,
-		).toBe("https://int.artsfestival.online/org/pafe/account/orders");
+		).toBe(
+			"https://int.artsfestival.online/org/pafe/account?checkout=processing",
+		);
 	});
 	it.each([
 		undefined,
@@ -128,7 +132,7 @@ describe("Shopify confirmation return", () => {
 		expect(f.body.children[0].children[0].tagName).toBe("s-button");
 		f.update({ organization_slug: "north" });
 		expect(f.body.children[0].children[0].attributes.href).toBe(
-			"https://festival.passmore.xyz/org/north/account/orders",
+			"https://festival.passmore.xyz/org/north/account?checkout=processing",
 		);
 		expect(f.body.children[0].children).toHaveLength(2);
 		f.update({ organization_slug: "../invalid" });

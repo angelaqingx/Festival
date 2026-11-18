@@ -1,12 +1,12 @@
 # Return to Festival account
 
-This Shopify UI extension adds **Return to Festival account** to the Thank you and Order status pages. It links to `/org/:shortname/account/orders` and adds 40px of whitespace below the button, approximately two blank text lines. For PAFE on the integration site, the destination is:
+This Shopify UI extension adds **Return to Festival account** to the Thank you and Order status pages. It links to `/org/:shortname/account?checkout=processing` and adds 40px of whitespace below the button, approximately two blank text lines. For PAFE on the integration site, the destination is:
 
 ```text
-https://int.artsfestival.online/org/pafe/account/orders
+https://int.artsfestival.online/org/pafe/account?checkout=processing
 ```
 
-The button uses Shopify's native link-button navigation. Festival uses its own customer session and server-confirmed order status.
+The button uses Shopify's native link-button navigation. It does not automatically redirect, read an order, transmit customer data, or grant membership. Festival uses its own customer session and server-confirmed status. If sign-in is needed, Festival preserves this exact processing return through OAuth.
 
 ## Local verification
 
@@ -44,11 +44,11 @@ These are operator instructions; this change has not deployed or activated the e
    shopify app deploy
    ```
 
-   Review the CLI's selected app and proposed changes before confirming. `shopify app deploy` builds and releases the app configuration and extensions. It does not deploy the Festival web application. The integration web application must already provide the orders route.
+   Review the CLI's selected app and proposed changes before confirming. `shopify app deploy` builds and releases the app configuration and extensions. It does not deploy the Festival web application. The integration web application must already provide the `/org/:shortname/account?checkout=processing` handoff route.
 3. In the integration store's **Settings → Checkout → Customize**, select **Thank you** and add the **Return to Festival account** app block below the order confirmation.
 4. Configure the block with **Festival application origin** = `https://int.artsfestival.online` and **Festival organization slug** = `pafe`, then save.
 5. Select **Order status**, add the same app block, enter the same settings, and save. Configure both placements separately.
-6. Complete a test checkout and verify that the button opens `https://int.artsfestival.online/org/pafe/account/orders`, with approximately two blank lines below it. Revisit the order to check the Order status placement too. Repeat with an expired Festival session to check sign-in behavior.
+6. Complete a test checkout and verify that the button opens `https://int.artsfestival.online/org/pafe/account?checkout=processing`, with approximately two blank lines below it. Revisit the order to check the Order status placement too. Repeat with an expired Festival session to check sign-in behavior.
 
 The origin setting accepts an HTTPS origin only (no credentials, path, query, or fragment). It defaults to `https://festival.passmore.xyz`, so explicitly set the integration origin in both blocks. The organization slug is required. Invalid or missing settings hide the button and its spacing for customers and show configuration guidance in the editor. No additional API, network, customer-data, or checkout-blocking capability is requested.
 
