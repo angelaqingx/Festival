@@ -63,6 +63,7 @@ bun run --cwd packages/backend perf:scenarios
     - `ghcr.io/pafenorthwest/festival-backend:v0.4.0` + `:latest` (`sha256:9d4f955d9677e4ad1de195d316eae56ad9c60ce22294a044332c1eefd05ae3a2`)
     - `ghcr.io/pafenorthwest/festival-frontend:v0.4.0` + `:latest` (`sha256:c32bbd3266e2ecbe7b234f194eecfa98746cff9dc051f33b946778294ec6ac9d`)
 - `[G4]` Ready for `S05` live bring-up: `Deploy to Target Host` and `Post-Deploy Health & Smoke Verification` on `refs/tags/v0.4.0` (Run `44432128555`) skipped cleanly with `configured=false` because `production` environment secrets (`DEPLOY_HOST`, `DEPLOY_SSH_PRIVATE_KEY`, `DEPLOY_PUBLIC_URL` / `D4`) are not yet configured.
+- Integration UI walkthrough (`https://int.artsfestival.online`, `2026-11-18`, SHA `8d0c5bb`): Phases 1 (Public) & 2 (Authenticated Customer) PASS after PR `#435` (`8d0c5bb`, `Integration Deployment` Run `44457776486`) shipped and verified live fixes closing Issues `#431`–`#434`; Phase 3 (Authenticated Admin) is paused awaiting `pafe` Firebase Admin access.
 
 ## Quality gate results
 - `bun run verify:toolchain`: exit 0 (`Bun 1.4.2`, `TypeScript 5.9.3`)
@@ -79,6 +80,9 @@ bun run --cwd packages/backend perf:scenarios
 - GitHub Actions `Pull Request Checks / verify` (PostgreSQL 17 integration + schema parity):
   - Release Prep PR `#428` (`main`): Run `44416260584` `SUCCESS`
   - Promotion PR `#429` (`main -> release`): Run `44430999183` `SUCCESS`
+  - Integration Walkthrough Fixes PR `#435` (`main`, `8d0c5bb`): Runs `44456521852`, `44457286532` `SUCCESS`
+- GitHub Actions `Integration Deployment`:
+  - `main` (`8d0c5bb`, PR `#435`): Run `44457776486` `success`
 - GitHub Actions `Continuous Deployment` (`deploy.yml`):
   - `release` branch (`364e543bb5ceac1f2a9b2205f7145921f0da62fa`): Run `44431387848` `success` (all 4 jobs `success`)
   - `refs/tags/v0.4.0` (`target_environment=production`): Run `44432128555` `success` (all 4 jobs `success`; GHCR images published; host deploy/smoke skipped cleanly with `configured=false` pending `D4` secrets)
