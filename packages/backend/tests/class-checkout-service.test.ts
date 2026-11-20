@@ -6483,6 +6483,62 @@ describe("ClassCheckoutService", () => {
 			});
 		});
 
+		it("rejects an oversized later checkout line before resolving any catalog works", async () => {
+			const f = await createFixture({ maximumPerformancePieces: 2 });
+			const secondClass =
+				await f.organizations.createFestivalClassConfiguration({
+					organizationId: f.organization.id,
+					festivalId: required(f.festival).id,
+					divisionId: f.division.id,
+					displayName: "Junior Solo Piano Level 2",
+					classSubtypeId: f.classConfig.classSubtypeId,
+					minimumAge: 8,
+					maximumAge: 12,
+					price: "45.00",
+					maximumPerformancePieces: 1,
+					performanceMinutes: 10,
+					capacity: 25,
+					isActive: true,
+					shopifyProductGid: "gid://shopify/Product/101",
+					shopifyVariantGid: "gid://shopify/ProductVariant/201",
+				});
+			const piece = required(f.defaultPieces[0]);
+			const catalogWorkId = "work-multi-line";
+			f.repertoire.seedCanonicalWork({
+				id: catalogWorkId,
+				organizationId: f.organization.id,
+				title: piece.title,
+				composerName: piece.composer,
+				isActive: true,
+			});
+			const pieces = [
+				{ ...piece, catalogWorkId },
+				{ ...piece, title: "Second work" },
+			];
+			const lookupSpy = spyOn(f.repertoire, "getCatalogWorkById");
+			try {
+				await expect(
+					f.service.start({
+						...f.defaultInput,
+						lineItems: [f.classConfig.id, secondClass.id].map(
+							(festivalClassId) => ({
+								festivalClassId,
+								childId: f.child.id,
+								teacherId: f.teacherId,
+								pieces,
+							}),
+						),
+					}),
+				).rejects.toMatchObject({
+					status: 400,
+					message: "Number of pieces (2) exceeds the maximum allowed (1).",
+				});
+				expect(lookupSpy).not.toHaveBeenCalled();
+			} finally {
+				lookupSpy.mockRestore();
+			}
+		});
+
 		it("rejects oversized and structurally invalid repertoire submissions before resolving any catalog works", async () => {
 			const f = await createFixture({ maximumPerformancePieces: 2 });
 			const lookupSpy = spyOn(f.repertoire, "getCatalogWorkById");

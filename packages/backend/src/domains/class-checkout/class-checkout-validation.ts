@@ -125,6 +125,18 @@ export function validateRepertoirePiece(piece: unknown): void {
 	}
 }
 
+export function validateRepertoirePieceCount(
+	pieceCount: number,
+	maximumPerformancePieces: number,
+): void {
+	if (pieceCount > maximumPerformancePieces) {
+		throw new AppError(
+			`Number of pieces (${pieceCount}) exceeds the maximum allowed (${maximumPerformancePieces}).`,
+			400,
+		);
+	}
+}
+
 export function prevalidateRepertoirePieces(
 	pieces: unknown,
 	festivalClass: Pick<FestivalClassConfiguration, "maximumPerformancePieces">,
@@ -132,12 +144,10 @@ export function prevalidateRepertoirePieces(
 	if (!Array.isArray(pieces) || pieces.length === 0) {
 		throw new AppError("Repertoire pieces must be a non-empty array.", 400);
 	}
-	if (pieces.length > festivalClass.maximumPerformancePieces) {
-		throw new AppError(
-			`Number of pieces (${pieces.length}) exceeds the maximum allowed (${festivalClass.maximumPerformancePieces}).`,
-			400,
-		);
-	}
+	validateRepertoirePieceCount(
+		pieces.length,
+		festivalClass.maximumPerformancePieces,
+	);
 	for (const piece of pieces) {
 		validateRepertoirePiece(piece);
 	}

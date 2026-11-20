@@ -19,6 +19,7 @@
 - Backend (`#329`):
   - `packages/backend/src/domains/class-checkout/class-checkout-validation.ts`
   - `packages/backend/src/domains/class-checkout/class-checkout-line-helpers.ts`
+  - `packages/backend/src/domains/class-checkout/class-checkout-line-runner.ts` (multi-line piece-count review follow-up)
   - `packages/backend/src/customer/customer-registration-legacy-helper.ts`
   - `packages/backend/src/checkout/class-checkout-helpers.ts`
   - `packages/backend/tests/class-checkout-service.test.ts`
@@ -81,9 +82,11 @@ pwsh -NoProfile -File .agents/skills/festival-session/scripts/validate-packet.ps
   - Added `prevalidateRepertoirePieces` in `packages/backend/src/domains/class-checkout/class-checkout-validation.ts` (and exported via `packages/backend/src/checkout/class-checkout-helpers.ts`) to validate non-empty array shape, `maximumPerformancePieces`, and per-piece basic fields (including rejecting array items) before any `catalogWorkId` resolution.
   - Wired `prevalidateRepertoirePieces` ahead of `resolvePieceCatalogWorks` in both checkout (`packages/backend/src/domains/class-checkout/class-checkout-line-helpers.ts`) and registration metadata updates (`packages/backend/src/customer/customer-registration-legacy-helper.ts`), preserving existing error codes, HTTP statuses, and downstream duration/concerto/active-work validation precedence.
   - Added zero-lookup regression tests spying on `getCatalogWorkById` in `packages/backend/tests/class-checkout-service.test.ts` and `packages/backend/tests/customer-account-service.test.ts`.
+  - Review follow-up: Check every registration's piece count before resolving any catalog works in a multi-line checkout. Reuse the existing class configurations and cover an oversized later line with a zero-lookup regression test. The early check covers counts only.
 - **Modified files**:
   - `packages/backend/src/domains/class-checkout/class-checkout-validation.ts`
   - `packages/backend/src/domains/class-checkout/class-checkout-line-helpers.ts`
+  - `packages/backend/src/domains/class-checkout/class-checkout-line-runner.ts`
   - `packages/backend/src/checkout/class-checkout-helpers.ts`
   - `packages/backend/src/customer/customer-registration-legacy-helper.ts`
   - `packages/backend/tests/class-checkout-service.test.ts`
@@ -111,3 +114,4 @@ All 11 verification checks passed with 0 errors and 0 warnings:
 10. Targeted frontend tests (`admin-entitlement-report-panel.test.ts`, `admin-layout.test.ts`): PASS (9/9)
 11. Full test suite (`bun run test`): PASS (`common`: 382 pass; `backend`: 1753 pass, 159 skip; `frontend`: 597 pass; `shopify-confirmation`: 21 pass)
 - Independent code review (`tasks/s21-v0-4-2-membership-admin-ui-and-repertoire-limits/code-review.md`): `Verdict: patch is correct`, `Findings status: none`.
+- Piece-count follow-up: The new regression test recorded one catalog lookup before the fix and zero after it. All 224 targeted backend tests, the backend type check, and Biome checks on the changed TypeScript files passed.
