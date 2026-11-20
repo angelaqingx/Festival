@@ -25,7 +25,10 @@ export default function App(props: RouteSectionProps) {
 			<CustomerIdentityProvider>
 				<main
 					class="shell"
-					classList={{ "parent-shell": organizationSlug() !== null }}
+					classList={{
+						"home-shell": app.route().kind === "home",
+						"parent-shell": organizationSlug() !== null,
+					}}
 					onPointerOver={preloadNavigation}
 					onFocusIn={preloadNavigation}
 				>
