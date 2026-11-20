@@ -14,7 +14,6 @@ import {
 	buildOrgAdminRosterPath,
 } from "../lib/routes.js";
 import { AdminEntitlementReportPanel } from "./AdminEntitlementReportPanel.js";
-import { AdminTeacherDirectoryPanel } from "./AdminTeacherDirectoryPanel.js";
 import {
 	AdminTeacherOfferingEditForm,
 	canEditTeacherOffering,
@@ -454,7 +453,6 @@ export function AdminMembershipProductsPage(
 					</For>
 				</fieldset>
 			</section>
-			<AdminTeacherDirectoryPanel app={props.app} />
 			<AdminEntitlementReportPanel app={props.app} />
 		</Show>
 	);
