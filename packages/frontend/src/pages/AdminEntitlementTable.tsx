@@ -20,6 +20,8 @@ interface AdminEntitlementTableProps {
 	editableDivisions: readonly EntitlementReportDivisionOption[];
 	hasFilters: boolean;
 	canEdit: boolean;
+	mutationPending: boolean;
+	onMutationPendingChange: (pending: boolean) => void;
 	onDivisionChange: (profileId: string, divisionId: string) => Promise<void>;
 	onDirectoryChange: (
 		entry: EntitlementReportEntry,
@@ -217,7 +219,6 @@ function EntitlementTableRow(props: {
 
 export function AdminEntitlementTable(props: AdminEntitlementTableProps) {
 	const [editingId, setEditingId] = createSignal<string>();
-	const [busy, setBusy] = createSignal(false);
 	const [feedback, setFeedback] = createSignal("");
 	const [error, setError] = createSignal("");
 	const [revoking, setRevoking] = createSignal<EntitlementReportEntry>();
@@ -231,8 +232,8 @@ export function AdminEntitlementTable(props: AdminEntitlementTableProps) {
 	) => {
 		const profile = entry.directoryProfile;
 		const divisionId = select.value;
-		if (!profile || !divisionId || busy()) return;
-		setBusy(true);
+		if (!profile || !divisionId || props.mutationPending) return;
+		props.onMutationPendingChange(true);
 		setError("");
 		setFeedback("");
 		try {
@@ -245,7 +246,7 @@ export function AdminEntitlementTable(props: AdminEntitlementTableProps) {
 				mutationError(failure, "Teacher division could not be updated."),
 			);
 		} finally {
-			setBusy(false);
+			props.onMutationPendingChange(false);
 		}
 	};
 
@@ -253,8 +254,9 @@ export function AdminEntitlementTable(props: AdminEntitlementTableProps) {
 		entry: EntitlementReportEntry,
 		approvalStatus: ProfileApprovalStatus,
 	) => {
-		if (busy() || !entry.directoryProfile?.publicDirectoryOptIn) return;
-		setBusy(true);
+		if (props.mutationPending || !entry.directoryProfile?.publicDirectoryOptIn)
+			return;
+		props.onMutationPendingChange(true);
 		setError("");
 		setFeedback("");
 		try {
@@ -269,7 +271,7 @@ export function AdminEntitlementTable(props: AdminEntitlementTableProps) {
 				mutationError(failure, "Directory visibility could not be updated."),
 			);
 		} finally {
-			setBusy(false);
+			props.onMutationPendingChange(false);
 		}
 	};
 
@@ -283,12 +285,12 @@ export function AdminEntitlementTable(props: AdminEntitlementTableProps) {
 	const revoke = async () => {
 		const entry = revoking();
 		const text = reason().trim();
-		if (!entry || busy()) return;
+		if (!entry || props.mutationPending) return;
 		if (!text) {
 			setRevokeError("Enter a revocation reason.");
 			return;
 		}
-		setBusy(true);
+		props.onMutationPendingChange(true);
 		setRevokeError("");
 		setError("");
 		setFeedback("");
@@ -302,7 +304,7 @@ export function AdminEntitlementTable(props: AdminEntitlementTableProps) {
 				mutationError(failure, "Membership could not be revoked."),
 			);
 		} finally {
-			setBusy(false);
+			props.onMutationPendingChange(false);
 		}
 	};
 
@@ -350,7 +352,7 @@ export function AdminEntitlementTable(props: AdminEntitlementTableProps) {
 								editableDivisions={props.editableDivisions}
 								canEdit={props.canEdit}
 								editing={props.canEdit && editingId() === entry.id}
-								busy={busy()}
+								busy={props.mutationPending}
 								onToggleEdit={() => {
 									setError("");
 									setFeedback("");
@@ -384,7 +386,7 @@ export function AdminEntitlementTable(props: AdminEntitlementTableProps) {
 				aria-labelledby="entitlement-revoke-title"
 				onClose={() => setRevoking(undefined)}
 				onCancel={(event) => {
-					if (busy()) event.preventDefault();
+					if (props.mutationPending) event.preventDefault();
 				}}
 			>
 				<form
@@ -407,7 +409,7 @@ export function AdminEntitlementTable(props: AdminEntitlementTableProps) {
 						<input
 							required
 							value={reason()}
-							disabled={busy()}
+							disabled={props.mutationPending}
 							onInput={(event) => setReason(event.currentTarget.value)}
 						/>
 					</label>
@@ -420,7 +422,7 @@ export function AdminEntitlementTable(props: AdminEntitlementTableProps) {
 						<button
 							type="button"
 							class="secondary-button"
-							disabled={busy()}
+							disabled={props.mutationPending}
 							onClick={() => dialog.close()}
 						>
 							Cancel
@@ -428,9 +430,9 @@ export function AdminEntitlementTable(props: AdminEntitlementTableProps) {
 						<button
 							type="submit"
 							class="secondary-button entitlement-report-revoke"
-							disabled={busy()}
+							disabled={props.mutationPending}
 						>
-							{busy() ? "Revoking…" : "Confirm revocation"}
+							{props.mutationPending ? "Revoking…" : "Confirm revocation"}
 						</button>
 					</div>
 				</form>

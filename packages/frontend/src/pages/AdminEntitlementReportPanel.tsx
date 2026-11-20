@@ -86,6 +86,8 @@ export function AdminEntitlementReportPanel(props: {
 		editableDivisions: [] as EntitlementReportDivisionOption[],
 	});
 	const [loading, setLoading] = createSignal(false);
+	// Filter and page loads remount the table before a row mutation may finish.
+	const [mutationPending, setMutationPending] = createSignal(false);
 	const [error, setError] = createSignal("");
 	const [search, setSearch] = createSignal("");
 	const [entitlementClass, setEntitlementClass] = createSignal<
@@ -385,6 +387,8 @@ export function AdminEntitlementReportPanel(props: {
 					editableDivisions={report.editableDivisions}
 					hasFilters={hasFilters()}
 					canEdit={props.app.isAdminMember()}
+					mutationPending={mutationPending()}
+					onMutationPendingChange={setMutationPending}
 					onDivisionChange={saveDivision}
 					onDirectoryChange={saveDirectory}
 					onRevoke={revoke}

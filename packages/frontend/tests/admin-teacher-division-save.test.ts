@@ -12,6 +12,7 @@ import type {
 	TeacherProfileRecord,
 } from "@festival/common";
 import solidPreset from "babel-preset-solid";
+import { createSignal } from "solid-js";
 import { createRenderer } from "solid-js/universal";
 import TypeScript from "typescript";
 import type { FestivalAppController } from "../src/app/useFestivalAppController.js";
@@ -134,6 +135,10 @@ const panelMod = (await import(
 	"@teacher-dir-dom/pages/AdminTeacherDirectoryPanel.tsx"
 )) as Record<string, PanelFn>;
 const RenderedAdminTeacherDirectoryPanel = panelMod.AdminTeacherDirectoryPanel;
+const { AdminEntitlementReportPanel: RenderedEntitlementReportPanel } =
+	(await import("@teacher-dir-dom/pages/AdminEntitlementReportPanel.tsx")) as {
+		AdminEntitlementReportPanel: PanelFn;
+	};
 const { createStore } = (await import(
 	"solid-js/store/dist/store.js"
 )) as typeof import("solid-js/store");
@@ -350,6 +355,102 @@ function click(button: DNode) {
 	(button.props.onClick as () => void)();
 }
 
+function changeSelect(select: DNode | undefined, value: string) {
+	if (!select) throw new Error("Missing select.");
+	(
+		select.props.onChange as (event: {
+			currentTarget: { value: string };
+		}) => void
+	)({ currentTarget: { value } });
+}
+
+describe("AdminEntitlementReportPanel edits", () => {
+	it("keeps a pending division save locked through a filter reload", async () => {
+		let savedDivision = DIV_PIANO;
+		const pendingSave = Promise.withResolvers<Response>();
+		const saveCalls = mock(() => pendingSave.promise);
+		globalThis.fetch = (async (
+			input: RequestInfo | URL,
+			init?: RequestInit,
+		) => {
+			const { pathname } = new URL(String(input), "http://localhost");
+			if (
+				pathname.endsWith("/profiles/teachers/prof-1/divisions") &&
+				init?.method === "PATCH"
+			) {
+				return saveCalls();
+			}
+			if (pathname.endsWith("/admin/entitlements")) {
+				return Response.json({
+					entries: [
+						reportEntry("Clara", {
+							divisions: editableDivisions.filter(
+								(division) => division.divisionId === savedDivision,
+							),
+							directoryProfile: {
+								id: "prof-1",
+								publicDirectoryOptIn: true,
+								approvalStatus: "approved",
+							},
+						}),
+					],
+					divisions: editableDivisions,
+					editableDivisions,
+					page: 1,
+					total: 1,
+					totalPages: 1,
+				});
+			}
+			return Response.json({ error: "Unexpected request" }, { status: 404 });
+		}) as typeof fetch;
+		const user = { getIdToken: async () => "admin-token" };
+		const app = {
+			...mockAppController(),
+			firebaseUser: () => user,
+			isAdminMember: () => true,
+		} as unknown as FestivalAppController;
+		const root = mkNode("div");
+		const dispose = solidDom.render(
+			() => RenderedEntitlementReportPanel({ app }),
+			root,
+		);
+		const editClara = (row: DNode) =>
+			rowButton(row, "Edit membership for Clara");
+		try {
+			await flushUi();
+			const initialRow = rowFor(root, "Clara");
+			click(editClara(initialRow));
+			changeSelect(
+				allEls(initialRow).find((node) => node.tag === "select"),
+				DIV_VOICE,
+			);
+			await flushUi();
+			expect(saveCalls).toHaveBeenCalledTimes(1);
+			expect(editClara(initialRow).props.disabled).toBe(true);
+
+			changeSelect(
+				allEls(root).find(
+					(node) => node.tag === "select" && textOf(node).includes("All types"),
+				),
+				"teacher_membership",
+			);
+			await flushUi();
+			const reloadedRow = rowFor(root, "Clara");
+			expect(reloadedRow).not.toBe(initialRow);
+			expect(editClara(reloadedRow).props.disabled).toBe(true);
+
+			savedDivision = DIV_VOICE;
+			pendingSave.resolve(Response.json(sampleTeacher(savedDivision)));
+			await flushUi();
+			expect(editClara(rowFor(root, "Clara")).props.disabled).toBe(false);
+			expect(textOf(rowFor(root, "Clara"))).toContain("Voice");
+			expect(saveCalls).toHaveBeenCalledTimes(1);
+		} finally {
+			dispose();
+		}
+	});
+});
+
 describe("AdminEntitlementTable row editing", () => {
 	it("uses one Edit column and saves a Teacher division immediately while Accompanist divisions stay read-only", async () => {
 		const root = mkNode("div");
@@ -367,6 +468,7 @@ describe("AdminEntitlementTable row editing", () => {
 			divisions: editableDivisions,
 		});
 		const [entries, setEntries] = createStore([teacher, accompanist]);
+		const [mutationPending, setMutationPending] = createSignal(false);
 		const onDivisionChange = mock(
 			async (_profileId: string, divisionId: string) => {
 				const division = editableDivisions.find(
@@ -383,6 +485,10 @@ describe("AdminEntitlementTable row editing", () => {
 					editableDivisions,
 					hasFilters: false,
 					canEdit: true,
+					get mutationPending() {
+						return mutationPending();
+					},
+					onMutationPendingChange: setMutationPending,
 					onDivisionChange,
 					onDirectoryChange: async () => {},
 					onRevoke: async () => {},
@@ -436,10 +542,7 @@ describe("AdminEntitlementTable row editing", () => {
 
 			const select = allEls(teacherRow).find((node) => node.tag === "select");
 			expect(select?.props["aria-label"]).toBe("Division for Clara");
-			const onChange = select?.props.onChange as (event: {
-				currentTarget: { value: string };
-			}) => void;
-			onChange({ currentTarget: { value: DIV_VOICE } });
+			changeSelect(select, DIV_VOICE);
 			expect(onDivisionChange).toHaveBeenCalledWith(
 				"teacher-profile",
 				DIV_VOICE,
@@ -486,6 +589,7 @@ describe("AdminEntitlementTable row editing", () => {
 			}),
 			reportEntry("No profile"),
 		]);
+		const [mutationPending, setMutationPending] = createSignal(false);
 		const onDirectoryChange = mock(
 			async (entry: EntitlementReportEntry, status: ProfileApprovalStatus) => {
 				setEntries(
@@ -503,6 +607,10 @@ describe("AdminEntitlementTable row editing", () => {
 					editableDivisions,
 					hasFilters: false,
 					canEdit: true,
+					get mutationPending() {
+						return mutationPending();
+					},
+					onMutationPendingChange: setMutationPending,
 					onDivisionChange: async () => {},
 					onDirectoryChange,
 					onRevoke: async () => {},
