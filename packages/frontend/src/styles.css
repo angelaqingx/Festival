@@ -581,6 +581,14 @@ button.compact-header-button {
 	font-size: 0.95rem;
 }
 
+.site-footer .site-footer-disclaimer {
+	max-width: min(60ch, calc(100% - 2rem));
+	margin: 0.5rem auto 0;
+	color: var(--bullet-soft-ink);
+	font-size: 0.825rem;
+	line-height: 1.45;
+}
+
 .invite-list {
 	list-style: none;
 	padding: 0;
