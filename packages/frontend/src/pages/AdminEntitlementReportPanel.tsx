@@ -95,21 +95,21 @@ function SummaryCountsSection(props: {
 	summaryCounts: EntitlementSummaryCounts;
 }) {
 	return (
-		<section
+		<ul
 			class="entitlement-summary-counts"
 			aria-label="Entitlement status summary"
 		>
 			<For each={ENTITLEMENT_STATUS_FILTER_OPTIONS}>
 				{(item) => (
-					<div class="entitlement-summary-card">
+					<li class="entitlement-summary-card">
 						<span class={entitlementStatusBadgeClass(item.value)}>
 							{item.label}
 						</span>
 						<strong>{props.summaryCounts[item.value]}</strong>
-					</div>
+					</li>
 				)}
 			</For>
-		</section>
+		</ul>
 	);
 }
 

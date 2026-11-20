@@ -1355,8 +1355,13 @@ form.shopify-integration-card {
 }
 
 .admin-membership-list {
-	display: grid;
-	gap: 0.65rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+	min-width: 0;
+	height: auto;
+	max-height: none;
+	overflow: visible;
 }
 
 .admin-membership-item {
@@ -1368,6 +1373,58 @@ form.shopify-integration-card {
 	border: 1px solid rgba(31, 36, 49, 0.08);
 	border-radius: 8px;
 	background: rgba(31, 122, 87, 0.08);
+}
+
+.admin-membership-item.admin-membership-card {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0.75rem;
+	min-width: 0;
+}
+
+.admin-membership-card-details {
+	display: grid;
+	gap: 0.35rem;
+	min-width: 0;
+}
+
+.admin-membership-card-heading {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.35rem 0.75rem;
+	min-width: 0;
+}
+
+.admin-membership-card-title,
+.admin-membership-card-description {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.admin-membership-card-price {
+	white-space: nowrap;
+}
+
+.admin-membership-card-meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.35rem 0.75rem;
+	color: var(--bullet-soft-ink);
+}
+
+.admin-membership-card-actions {
+	display: flex;
+	flex-direction: row-reverse;
+	flex-wrap: wrap;
+	justify-content: flex-start;
+	align-items: center;
+	gap: 0.5rem;
+	padding-top: 0.65rem;
+	border-top: 1px solid rgba(31, 36, 49, 0.08);
 }
 
 .admin-membership-item > div:not([class]),
@@ -1638,6 +1695,36 @@ form.shopify-integration-card {
 .listing-table-empty {
 	padding: 1rem;
 	color: var(--bullet-soft-ink);
+}
+
+.entitlement-summary-counts {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem 0.75rem;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	min-width: 0;
+}
+
+.entitlement-summary-card {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
+	padding: 0.3rem 0.65rem 0.3rem 0.35rem;
+	border: 1px solid rgba(31, 36, 49, 0.1);
+	border-radius: 999px;
+	background: rgba(31, 36, 49, 0.03);
+	white-space: nowrap;
+	flex: 0 0 auto;
+	max-width: 100%;
+}
+
+.entitlement-summary-card strong {
+	font-variant-numeric: tabular-nums;
+	min-width: 1.25ch;
+	text-align: right;
 }
 
 .entitlement-report-filters {

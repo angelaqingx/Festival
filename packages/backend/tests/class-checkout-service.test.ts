@@ -6482,5 +6482,131 @@ describe("ClassCheckoutService", () => {
 				code: "concerto_catalog_work_required",
 			});
 		});
+
+		it("rejects oversized and structurally invalid repertoire submissions before resolving any catalog works", async () => {
+			const f = await createFixture({ maximumPerformancePieces: 2 });
+			const lookupSpy = spyOn(f.repertoire, "getCatalogWorkById");
+			try {
+				await expect(
+					f.service.start({
+						...f.defaultInput,
+						idempotencyKey: "idem-oversized-pieces",
+						pieces: [
+							{
+								title: "Piece 1",
+								composer: "Composer 1",
+								durationSeconds: 60,
+								catalogWorkId: "work-1",
+							},
+							{
+								title: "Piece 2",
+								composer: "Composer 2",
+								durationSeconds: 60,
+								catalogWorkId: "work-2",
+							},
+							{
+								title: "Piece 3",
+								composer: "Composer 3",
+								durationSeconds: 60,
+								catalogWorkId: "work-3",
+							},
+						],
+					}),
+				).rejects.toMatchObject({
+					status: 400,
+					message: "Number of pieces (3) exceeds the maximum allowed (2).",
+				});
+				expect(lookupSpy).toHaveBeenCalledTimes(0);
+
+				await expect(
+					f.service.start({
+						...f.defaultInput,
+						idempotencyKey: "idem-empty-pieces",
+						pieces: [],
+					}),
+				).rejects.toMatchObject({
+					status: 400,
+					message: "Repertoire pieces must be a non-empty array.",
+				});
+				expect(lookupSpy).toHaveBeenCalledTimes(0);
+
+				const { resolveLinePiecesAndInstrument } = await import(
+					"../src/domains/class-checkout/class-checkout-line-helpers.js"
+				);
+				const fullClassConfig = required(
+					await f.organizations.findFestivalClassConfigurationById(
+						f.organization.id,
+						required(f.festival).id,
+						f.classConfig.id,
+					),
+				);
+				await expect(
+					resolveLinePiecesAndInstrument({
+						repertoire: f.repertoire,
+						organizationId: f.organization.id,
+						line: {
+							festivalClassId: f.classConfig.id,
+							childId: f.child.id,
+							teacherId: f.teacherId,
+							pieces: "not-an-array" as unknown as RepertoirePiece[],
+						},
+						festivalClass: fullClassConfig,
+						subtype: null,
+						instrumentMap: new Map(),
+					}),
+				).rejects.toMatchObject({
+					status: 400,
+					message: "Repertoire pieces must be a non-empty array.",
+				});
+				expect(lookupSpy).toHaveBeenCalledTimes(0);
+
+				await expect(
+					f.service.start({
+						...f.defaultInput,
+						idempotencyKey: "idem-invalid-piece-shape",
+						pieces: [
+							{
+								title: "Piece 1",
+								composer: "Composer 1",
+								durationSeconds: 60,
+								catalogWorkId: "work-1",
+							},
+							null as unknown as RepertoirePiece,
+						],
+					}),
+				).rejects.toMatchObject({
+					status: 400,
+					message: "Each repertoire piece must be an object.",
+				});
+				expect(lookupSpy).toHaveBeenCalledTimes(0);
+
+				await expect(
+					f.service.start({
+						...f.defaultInput,
+						idempotencyKey: "idem-invalid-piece-fields",
+						pieces: [
+							{
+								title: "Piece 1",
+								composer: "Composer 1",
+								durationSeconds: 60,
+								catalogWorkId: "work-1",
+							},
+							{
+								title: "Piece 2",
+								composer: "   ",
+								durationSeconds: 60,
+								catalogWorkId: "work-2",
+							},
+						],
+					}),
+				).rejects.toMatchObject({
+					status: 400,
+					message: "Each repertoire piece must have a valid composer.",
+				});
+				expect(lookupSpy).toHaveBeenCalledTimes(0);
+			} finally {
+				lookupSpy.mockRestore();
+			}
+		});
 	});
 });
