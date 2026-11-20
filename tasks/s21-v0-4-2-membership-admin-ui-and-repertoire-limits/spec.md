@@ -1,0 +1,75 @@
+# S21 — Issues `#335`, `#334` & `#329`: Membership Admin UI & Repertoire Piece Limits (`v0.4.2`)
+
+## Goal reference
+- Locked goals: `goals/s21-v0-4-2-membership-admin-ui-and-repertoire-limits/goals.v0.md`
+- Goal establishment record: `goals/s21-v0-4-2-membership-admin-ui-and-repertoire-limits/establish-goals.v0.md`
+- Master program ledger: `specs/pre-thanksgiving-program.md` (Wave 4 `v0.4.2`, `READY`, depends on `S14` (`v0.4.1`), Decision `D7`)
+- Bounded context architecture: `specs/bounded-contexts-2026.md` (`teacher-directory` admin membership UI & `class-checkout` repertoire validation)
+
+## Scope
+
+### In scope
+- Frontend (`#334`, `#335`):
+  - `packages/frontend/src/pages/AdminMembershipProductsPage.tsx`
+  - `packages/frontend/src/pages/AdminEntitlementReportPanel.tsx`
+  - `packages/frontend/src/pages/adminEntitlementReportHelpers.ts`
+  - `packages/frontend/src/styles.css`
+  - `packages/frontend/tests/admin-entitlement-report-panel.test.ts`
+  - `packages/frontend/tests/admin-layout.test.ts` (and related admin membership tests)
+- Backend (`#329`):
+  - `packages/backend/src/domains/class-checkout/class-checkout-validation.ts`
+  - `packages/backend/src/domains/class-checkout/class-checkout-line-helpers.ts`
+  - `packages/backend/src/customer/customer-registration-legacy-helper.ts`
+  - `packages/backend/src/checkout/class-checkout-helpers.ts`
+  - `packages/backend/tests/class-checkout-service.test.ts`
+  - `packages/backend/tests/customer-account-service.test.ts`
+- Packet & release readiness artifacts:
+  - `CHANGELOG.md` (if updated for `v0.4.2` prep), `tasks/s21-v0-4-2-membership-admin-ui-and-repertoire-limits/spec.md`, `tasks/s21-v0-4-2-membership-admin-ui-and-repertoire-limits/code-review.md`, and `specs/pre-thanksgiving-program.md`
+
+### Out of scope
+- `#328` (held off to December Week 2 per Admin request)
+- `#410`, `#357`, `#260` (December Week 1)
+- `#333`, `#340`, `#341` (December Week 2)
+- `database/migrations/**` (`0` DB migrations)
+- `docker/**`
+
+## Approach
+1. **Preflight & Isolated Branch**:
+   - Confirm `S14` (`v0.4.1`) is on `origin/main` and validate `s21-v0-4-2-membership-admin-ui-and-repertoire-limits` via `validate-packet.ps1` (exit `0`).
+   - Branch `fix/s21-v0-4-2-membership-admin-ui-and-repertoire-limits` off `origin/main` and restrict edits strictly to `In scope` paths.
+2. **Issue `#335` — Admin Membership Card Layout (`AdminMembershipProductsPage.tsx` & `styles.css`)**:
+   - Restructure each membership card inside `div.admin-membership-list` on `/org/:slug/admin/memberships` into a top details section and a bottom right-aligned wrapping horizontal action row.
+   - Ensure multiple membership cards stack vertically without clipping or fixed-height overflow across viewports.
+   - Add/update layout regression assertions in `packages/frontend/tests/admin-layout.test.ts` (and related admin membership tests).
+3. **Issue `#334` — Entitlements State Badges Wrapping List (`AdminEntitlementReportPanel.tsx`, `adminEntitlementReportHelpers.ts` & `styles.css`)**:
+   - Update Entitlements state badges (`Active`, `Scheduled`, `Superseded`, `Expired`, `Revoked`) and counts on `/org/:slug/admin/memberships` to render in a consistently spaced wrapping horizontal list across viewports.
+   - Preserve all existing badge labels, colors, counts, and interactive behavior.
+   - Add/update deterministic rendering and CSS contract tests in `packages/frontend/tests/admin-entitlement-report-panel.test.ts` and `packages/frontend/tests/admin-layout.test.ts`.
+4. **Issue `#329` — Pre-Lookup Repertoire Piece Validation (`class-checkout-validation.ts` & Callers)**:
+   - Enforce repertoire piece array shape, max piece count, and basic piece field validation prior to any `catalogWorkId` resolution in `packages/backend/src/domains/class-checkout/class-checkout-validation.ts` and all callers across checkout (`class-checkout-line-helpers.ts`, `class-checkout-helpers.ts`) and registration metadata edits (`customer-registration-legacy-helper.ts`).
+   - Write Red-Green regression tests in `packages/backend/tests/class-checkout-service.test.ts` and `packages/backend/tests/customer-account-service.test.ts` proving oversized or structurally invalid repertoire submissions fail fast with zero catalog work lookups.
+5. **Verification & `v0.4.2` Release Readiness**:
+   - Run full deterministic verification (`validate-packet.ps1`, `verify:toolchain`, `format:check`, `lint`, `build`, frontend/backend `tsc`, `check:sql`, targeted suites, and full `bun run test`) and complete independent subagent code review (`code-review.md`).
+
+## Verification commands
+Execute natively in Windows PowerShell (`pwsh`):
+```powershell
+pwsh -NoProfile -File .agents/skills/festival-session/scripts/validate-packet.ps1 -TaskName s21-v0-4-2-membership-admin-ui-and-repertoire-limits
+bun run verify:toolchain
+bun run format:check
+bun run lint
+bun run build
+bun run --cwd packages/frontend check:types
+bunx --bun tsc -p packages/backend/tsconfig.json --noEmit
+bun run check:sql
+bun test packages/backend/tests/class-checkout-service.test.ts packages/backend/tests/customer-account-service.test.ts packages/backend/tests/architecture-boundaries.test.ts packages/backend/tests/file-size-ratchet.test.ts
+bun --cwd packages/frontend test tests/admin-entitlement-report-panel.test.ts tests/admin-layout.test.ts
+bun run test
+pwsh -NoProfile -File .agents/skills/festival-session/scripts/validate-packet.ps1 -TaskName s21-v0-4-2-membership-admin-ui-and-repertoire-limits -RequireCodeReview
+```
+
+## Delivery
+Pending execution.
+
+## Quality gate results
+Pending execution.
