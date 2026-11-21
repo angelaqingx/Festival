@@ -19,6 +19,7 @@
 - Backend (`#329`):
   - `packages/backend/src/domains/class-checkout/class-checkout-validation.ts`
   - `packages/backend/src/domains/class-checkout/class-checkout-line-helpers.ts`
+  - `packages/backend/src/domains/class-checkout/class-checkout-line-runner.ts` (multi-line piece-count review follow-up)
   - `packages/backend/src/customer/customer-registration-legacy-helper.ts`
   - `packages/backend/src/checkout/class-checkout-helpers.ts`
   - `packages/backend/tests/class-checkout-service.test.ts`
@@ -69,7 +70,48 @@ pwsh -NoProfile -File .agents/skills/festival-session/scripts/validate-packet.ps
 ```
 
 ## Delivery
-Pending execution.
+- Branch: `feat/s21-v0-4-2-membership-admin-ui-and-repertoire-limits`
+- **Issue `#335` (Admin Membership Card Layout)**:
+  - Restructured each membership card inside `div.admin-membership-list` in `packages/frontend/src/pages/AdminMembershipProductsPage.tsx` into a top `.admin-membership-card-details` section and a bottom right-aligned wrapping `.admin-membership-card-actions` row (`flex-direction: row-reverse; flex-wrap: wrap; justify-content: flex-start`) in `packages/frontend/src/styles.css`.
+  - Updated `.admin-membership-list` to stack multiple membership cards vertically (`flex-direction: column; height: auto; max-height: none; overflow: visible`) without clipping or fixed-height overflow across viewports.
+  - Added layout and CSS contract regression tests in `packages/frontend/tests/admin-layout.test.ts`.
+- **Issue `#334` (Entitlements State Badges Wrapping List)**:
+  - Updated `SummaryCountsSection` in `packages/frontend/src/pages/AdminEntitlementReportPanel.tsx` to render the five state badges (`Active`, `Scheduled`, `Superseded`, `Expired`, `Revoked`) and counts as a semantic `<ul class="entitlement-summary-counts">` wrapping horizontal flex list in `packages/frontend/src/styles.css`, preserving all existing badge labels, classes, counts, and interactive behavior.
+  - Added rendering and CSS contract tests in `packages/frontend/tests/admin-entitlement-report-panel.test.ts`.
+- **Issue `#329` (Pre-Lookup Repertoire Piece Validation)**:
+  - Added `prevalidateRepertoirePieces` in `packages/backend/src/domains/class-checkout/class-checkout-validation.ts` (and exported via `packages/backend/src/checkout/class-checkout-helpers.ts`) to validate non-empty array shape, `maximumPerformancePieces`, and per-piece basic fields (including rejecting array items) before any `catalogWorkId` resolution.
+  - Wired `prevalidateRepertoirePieces` ahead of `resolvePieceCatalogWorks` in both checkout (`packages/backend/src/domains/class-checkout/class-checkout-line-helpers.ts`) and registration metadata updates (`packages/backend/src/customer/customer-registration-legacy-helper.ts`), preserving existing error codes, HTTP statuses, and downstream duration/concerto/active-work validation precedence.
+  - Added zero-lookup regression tests spying on `getCatalogWorkById` in `packages/backend/tests/class-checkout-service.test.ts` and `packages/backend/tests/customer-account-service.test.ts`.
+  - Review follow-up: Check every registration's piece count before resolving any catalog works in a multi-line checkout. Reuse the existing class configurations and cover an oversized later line with a zero-lookup regression test. The early check covers counts only.
+- **Modified files**:
+  - `packages/backend/src/domains/class-checkout/class-checkout-validation.ts`
+  - `packages/backend/src/domains/class-checkout/class-checkout-line-helpers.ts`
+  - `packages/backend/src/domains/class-checkout/class-checkout-line-runner.ts`
+  - `packages/backend/src/checkout/class-checkout-helpers.ts`
+  - `packages/backend/src/customer/customer-registration-legacy-helper.ts`
+  - `packages/backend/tests/class-checkout-service.test.ts`
+  - `packages/backend/tests/customer-account-service.test.ts`
+  - `packages/frontend/src/pages/AdminMembershipProductsPage.tsx`
+  - `packages/frontend/src/pages/AdminEntitlementReportPanel.tsx`
+  - `packages/frontend/src/styles.css`
+  - `packages/frontend/tests/admin-entitlement-report-panel.test.ts`
+  - `packages/frontend/tests/admin-layout.test.ts`
+  - `tasks/s21-v0-4-2-membership-admin-ui-and-repertoire-limits/spec.md`
+  - `tasks/s21-v0-4-2-membership-admin-ui-and-repertoire-limits/code-review.md`
+  - `specs/pre-thanksgiving-program.md`
 
 ## Quality gate results
-Pending execution.
+All 11 verification checks passed with 0 errors and 0 warnings:
+1. `pwsh -NoProfile -File .agents/skills/festival-session/scripts/validate-packet.ps1 -TaskName s21-v0-4-2-membership-admin-ui-and-repertoire-limits -RequireCodeReview`: PASS (exit 0)
+2. `bun run verify:toolchain`: PASS
+3. `bun run format:check`: PASS
+4. `bun run lint`: PASS (0 warnings, 0 errors)
+5. `bun run build`: PASS
+6. `bun run --cwd packages/frontend check:types`: PASS
+7. `bunx --bun tsc -p packages/backend/tsconfig.json --noEmit`: PASS
+8. `bun run check:sql`: PASS
+9. Targeted backend tests (`class-checkout-service.test.ts`, `customer-account-service.test.ts`, `architecture-boundaries.test.ts`, `file-size-ratchet.test.ts`): PASS (223/223)
+10. Targeted frontend tests (`admin-entitlement-report-panel.test.ts`, `admin-layout.test.ts`): PASS (9/9)
+11. Full test suite (`bun run test`): PASS (`common`: 382 pass; `backend`: 1753 pass, 159 skip; `frontend`: 597 pass; `shopify-confirmation`: 21 pass)
+- Independent code review (`tasks/s21-v0-4-2-membership-admin-ui-and-repertoire-limits/code-review.md`): `Verdict: patch is correct`, `Findings status: none`.
+- Piece-count follow-up: The new regression test recorded one catalog lookup before the fix and zero after it. All 224 targeted backend tests, the backend type check, and Biome checks on the changed TypeScript files passed.
