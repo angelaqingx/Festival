@@ -281,6 +281,20 @@ docker compose --env-file cloud-setup/.env -f cloud-setup/compose.yml exec -T po
   7. **Pending Checkout & Checkout Restart**: Fetching pending checkout state and executing checkout restart to validate idempotent cart/checkout session transitions under concurrency.
 - **Operations Under Test**: End-to-end read/write fan-out across public discovery, authenticated session & membership state, catalog queries, eligibility engine, registration writes, and checkout state transitions.
 
+### v0.4.2 Live Verification Results (2026-11-23)
+
+- **Integration Deployment Run**: `45097258940` (`main` SHA `134185c`, v0.4.2) — **PASS**
+- **Performance Benchmark Run**: `45099487934` (`concurrency=500`, `suite=all`, `apply_seed=true`) — **PASS** (0 errors across all suites)
+
+| Suite / Scenario | Scale & Status | Throughput | P50 | P95 | P99 / Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`perf:children`** | 500 req, 500x201 (0 errors) | 275.8 req/s | 1380.2ms | 1790.0ms | P99 1809.7ms |
+| **S1 Waitlist Join Race** | Step 1: 500x201; Step 2: 500x200 (0 errors) | — | Step 1: 985.8ms<br>Step 2: 1984.1ms | Step 1: 1436.0ms<br>Step 2: 2992.5ms | Contended waitlist race |
+| **S2 Full Multi-Step Funnel** | 500 users / 2000 req (0 errors) | — | 3929.5ms | 4075.7ms | End-to-end 4-step funnel |
+| **S3 Peak Flash-Mob Mixed Traffic** | 1000 peak req — 800 reads / 150 child writes / 50 waitlist writes (0 errors) | 562.6 req/s | 840.2ms | 1615.2ms | P99 1760.2ms |
+| **S4 Waitlist Queue Churn** | Phase 1: 500x200; Phase 2: 500x200 (0 errors) | — | Phase 1: 1999.1ms<br>Phase 2: 1568.1ms | Phase 1: 3100.5ms<br>Phase 2: 2580.0ms | Concurrent join/withdraw churn |
+| **S5 End-to-End Venue & Registration Journey** | 500 users / 7500 req across all 10 v0.4.2 steps (0 errors) | — | 16413.6ms | 16683.6ms | Individual steps: P50 296.8ms–1609.2ms, P95 434.6ms–2310.4ms |
+
 ---
 
 ## 5. Historical Baseline Benchmark Results (v0.3.0 / v0.4.0 Reference)
