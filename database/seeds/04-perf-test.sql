@@ -7,6 +7,87 @@ DELETE FROM orgs.festival_class_waitlist_entries WHERE organization_id = 'perf-t
 DELETE FROM orgs.festival_child_age_snapshots WHERE organization_id = 'perf-test' AND child_id != 'perf-child-seed-01';
 DELETE FROM orgs.festival_children WHERE organization_id = 'perf-test' AND id != 'perf-child-seed-01';
 
+-- Idempotent cleanup for legacy non-UUID 'perf-div-piano' division (strictly scoped to 'perf-test')
+DELETE FROM orgs.teacher_profile_divisions
+WHERE organization_id = 'perf-test' AND division_id = 'perf-div-piano';
+DELETE FROM orgs.accompanist_profile_divisions
+WHERE organization_id = 'perf-test' AND division_id = 'perf-div-piano';
+DELETE FROM orgs.membership_entitlement_divisions
+WHERE organization_id = 'perf-test' AND division_id = 'perf-div-piano';
+DELETE FROM orgs.registration_metadata
+WHERE organization_id = 'perf-test'
+  AND checkout_intent_id IN (
+    SELECT id FROM orgs.checkout_intents
+    WHERE organization_id = 'perf-test'
+      AND (
+        division_id = 'perf-div-piano'
+        OR festival_class_id IN (
+          SELECT id FROM orgs.festival_class_configurations
+          WHERE organization_id = 'perf-test' AND division_id = 'perf-div-piano'
+        )
+      )
+  );
+DELETE FROM orgs.class_checkout_executions
+WHERE organization_id = 'perf-test'
+  AND intent_id IN (
+    SELECT id FROM orgs.checkout_intents
+    WHERE organization_id = 'perf-test'
+      AND (
+        division_id = 'perf-div-piano'
+        OR festival_class_id IN (
+          SELECT id FROM orgs.festival_class_configurations
+          WHERE organization_id = 'perf-test' AND division_id = 'perf-div-piano'
+        )
+      )
+  );
+DELETE FROM orgs.class_entitlements
+WHERE organization_id = 'perf-test'
+  AND (
+    festival_class_id IN (
+      SELECT id FROM orgs.festival_class_configurations
+      WHERE organization_id = 'perf-test' AND division_id = 'perf-div-piano'
+    )
+    OR checkout_intent_id IN (
+      SELECT id FROM orgs.checkout_intents
+      WHERE organization_id = 'perf-test' AND division_id = 'perf-div-piano'
+    )
+  );
+DELETE FROM orgs.checkout_intent_lines
+WHERE checkout_intent_id IN (
+    SELECT id FROM orgs.checkout_intents
+    WHERE organization_id = 'perf-test'
+      AND (
+        division_id = 'perf-div-piano'
+        OR festival_class_id IN (
+          SELECT id FROM orgs.festival_class_configurations
+          WHERE organization_id = 'perf-test' AND division_id = 'perf-div-piano'
+        )
+      )
+  )
+  OR (
+    division_id = 'perf-div-piano'
+    AND checkout_intent_id IN (
+      SELECT id FROM orgs.checkout_intents WHERE organization_id = 'perf-test'
+    )
+  )
+  OR festival_class_id IN (
+    SELECT id FROM orgs.festival_class_configurations
+    WHERE organization_id = 'perf-test' AND division_id = 'perf-div-piano'
+  );
+DELETE FROM orgs.checkout_intents
+WHERE organization_id = 'perf-test'
+  AND (
+    division_id = 'perf-div-piano'
+    OR festival_class_id IN (
+      SELECT id FROM orgs.festival_class_configurations
+      WHERE organization_id = 'perf-test' AND division_id = 'perf-div-piano'
+    )
+  );
+DELETE FROM orgs.festival_class_configurations
+WHERE organization_id = 'perf-test' AND division_id = 'perf-div-piano';
+DELETE FROM orgs.organization_divisions
+WHERE organization_id = 'perf-test' AND id = 'perf-div-piano';
+
 -- 1. Organization
 INSERT INTO orgs.organizations (id, name, slug, timezone, default_currency_code)
 VALUES ('perf-test', 'Performance Test Organization', 'perf-test', 'America/Los_Angeles', 'USD')
@@ -82,7 +163,7 @@ ON CONFLICT (id) DO UPDATE SET
 
 -- 4b. Divisions, Subtypes, and Classes for Performance Testing
 INSERT INTO orgs.organization_divisions (id, organization_id, display_name, normalized_name, is_active, display_order)
-VALUES ('perf-div-piano', 'perf-test', 'Piano', 'piano', true, 1)
+VALUES ('11111111-1111-4111-8111-111111111111', 'perf-test', 'Piano', 'piano', true, 1)
 ON CONFLICT (id) DO UPDATE SET
   display_name = EXCLUDED.display_name,
   is_active = EXCLUDED.is_active;
@@ -105,16 +186,17 @@ INSERT INTO orgs.festival_class_configurations (
 VALUES
   (
     'perf-class-01', 'perf-test', 'seed-fest-perf-2026', 'Performance Test Piano Solo',
-    'perf-subtype-solo', 'perf-div-piano', 5, 18, '30.00', 1, 5,
+    'perf-subtype-solo', '11111111-1111-4111-8111-111111111111', 5, 18, '30.00', 1, 5,
     1, true, 'gid://shopify/Product/990099', 'gid://shopify/ProductVariant/99009901'
   ),
   (
     'perf-class-open-01', 'perf-test', 'seed-fest-perf-2026', 'Piano Solo Performance (Open)',
-    'perf-subtype-solo', 'perf-div-piano', 5, 18, '30.00', 2, 10,
+    'perf-subtype-solo', '11111111-1111-4111-8111-111111111111', 5, 18, '30.00', 2, 10,
     1000, true, 'gid://shopify/Product/990100', 'gid://shopify/ProductVariant/99010001'
   )
 ON CONFLICT (id) DO UPDATE SET
   display_name = EXCLUDED.display_name,
+  division_id = EXCLUDED.division_id,
   minimum_age = EXCLUDED.minimum_age,
   maximum_age = EXCLUDED.maximum_age,
   price = EXCLUDED.price,
@@ -177,11 +259,12 @@ INSERT INTO orgs.checkout_intents (
 VALUES (
   'seed-intent-01', 'perf-corr-seed-01', 'perf-test', 'perf-cust-0001', 'perf-sess-0001',
   'perf-idem-seed-01', 'class_entry', 'perf-class-01', 'perf-child-seed-01',
-  'gid://shopify/Product/990099', 'gid://shopify/ProductVariant/99009901', 'perf-div-piano',
+  'gid://shopify/Product/990099', 'gid://shopify/ProductVariant/99009901', '11111111-1111-4111-8111-111111111111',
   'Piano', '30.00', 'USD', 'approved',
   now() + interval '365 days', now()
 )
 ON CONFLICT (id) DO UPDATE SET
+  division_id = EXCLUDED.division_id,
   status = EXCLUDED.status,
   expires_at = EXCLUDED.expires_at;
 
@@ -193,7 +276,7 @@ INSERT INTO orgs.checkout_intent_lines (
 VALUES (
   'seed-intent-line-01', 'seed-intent-01', 0, 'class_entry', 'perf-class-01',
   'perf-child-seed-01', 'gid://shopify/Product/990099', 'gid://shopify/ProductVariant/99009901', '30.00', 'USD',
-  'perf-div-piano', 'Piano'
+  '11111111-1111-4111-8111-111111111111', 'Piano'
 )
 ON CONFLICT (id) DO NOTHING;
 
@@ -354,8 +437,8 @@ INSERT INTO orgs.membership_entitlement_divisions (
   entitlement_id, organization_id, division_id, division_name_snapshot
 )
 VALUES
-  ('perf-ent-teacher-01', 'perf-test', 'perf-div-piano', 'Piano'),
-  ('perf-ent-accompanist-01', 'perf-test', 'perf-div-piano', 'Piano')
+  ('perf-ent-teacher-01', 'perf-test', '11111111-1111-4111-8111-111111111111', 'Piano'),
+  ('perf-ent-accompanist-01', 'perf-test', '11111111-1111-4111-8111-111111111111', 'Piano')
 ON CONFLICT (entitlement_id, division_id) DO UPDATE SET
   division_name_snapshot = EXCLUDED.division_name_snapshot;
 
@@ -384,7 +467,7 @@ ON CONFLICT (id) DO UPDATE SET
   updated_at = now();
 
 INSERT INTO orgs.teacher_profile_divisions (teacher_profile_id, organization_id, division_id)
-VALUES ('perf-teacher-prof-01', 'perf-test', 'perf-div-piano')
+VALUES ('perf-teacher-prof-01', 'perf-test', '11111111-1111-4111-8111-111111111111')
 ON CONFLICT (teacher_profile_id, division_id) DO NOTHING;
 
 INSERT INTO orgs.accompanist_profiles (
@@ -400,7 +483,7 @@ ON CONFLICT (id) DO UPDATE SET
   updated_at = now();
 
 INSERT INTO orgs.accompanist_profile_divisions (accompanist_profile_id, organization_id, division_id)
-VALUES ('perf-accomp-prof-01', 'perf-test', 'perf-div-piano')
+VALUES ('perf-accomp-prof-01', 'perf-test', '11111111-1111-4111-8111-111111111111')
 ON CONFLICT (accompanist_profile_id, division_id) DO NOTHING;
 
 -- 9. Concerto Repertoire Catalog

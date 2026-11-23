@@ -151,7 +151,8 @@ export function parseConfig(options?: ParseConfigOptions): ScenarioConfig {
 		slug: env.SLUG?.trim() || "perf-test",
 		festival: env.FESTIVAL?.trim() || "perf-2026",
 		classId: env.CLASS_ID?.trim() || "perf-class-01",
-		divisionId: env.DIVISION_ID?.trim() || "perf-div-piano",
+		divisionId:
+			env.DIVISION_ID?.trim() || "11111111-1111-4111-8111-111111111111",
 		openClassId: env.OPEN_CLASS_ID?.trim() || "perf-class-open-01",
 		concurrency: parseConcurrency(flags.concurrency ?? env.CONCURRENCY),
 		origin: new URL(baseUrl).origin,

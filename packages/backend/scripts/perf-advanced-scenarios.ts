@@ -45,9 +45,10 @@ const fallbackChild = (res?: StepResult, idx = 0) =>
 async function createChild(
 	cfg: ScenarioConfig,
 	idx: number,
+	label = "Perf Child",
 ): Promise<StepResult> {
 	const body = JSON.stringify({
-		displayName: `Perf Child ${idx}`,
+		displayName: `${label} ${idx}`,
 		birthday: "2015-05-15",
 	});
 	return executeHttp(
@@ -60,13 +61,14 @@ async function createChild(
 async function preseedChildren(
 	cfg: ScenarioConfig,
 	indices: readonly number[],
+	label = "Perf Child",
 ): Promise<Map<number, string>> {
 	const childMap = new Map<number, string>();
 	const batchSize = Math.max(1, cfg.concurrency);
 	for (let offset = 0; offset < indices.length; offset += batchSize) {
 		const batch = indices.slice(offset, offset + batchSize);
 		const preseeded = await Promise.all(
-			batch.map((idx) => createChild(cfg, idx)),
+			batch.map((idx) => createChild(cfg, idx, label)),
 		);
 		for (let i = 0; i < batch.length; i++) {
 			const idx = batch[i] ?? 0;
@@ -180,7 +182,7 @@ async function runScenario1(cfg: ScenarioConfig): Promise<ScenarioResult> {
 	);
 	const cStart = performance.now();
 	const childResults = await Promise.all(
-		parents.map((idx) => createChild(cfg, idx)),
+		parents.map((idx) => createChild(cfg, idx, "Perf S1 Child")),
 	);
 	const childDurMs = performance.now() - cStart;
 	const rStart = performance.now();
@@ -190,7 +192,10 @@ async function runScenario1(cfg: ScenarioConfig): Promise<ScenarioResult> {
 		),
 	);
 	const raceDurMs = performance.now() - rStart;
-	const allRes = [...childResults, ...joinResults];
+	const allRes: StepResult[] = [
+		...childResults.map((r) => ({ ...r, expectedStatus: 201 })),
+		...joinResults.map((r) => ({ ...r, expectedStatus: 200 })),
+	];
 	return {
 		summary: renderScenarioSummary(
 			"Scenario 1: High-Contention Waitlist Join Race",
@@ -204,7 +209,7 @@ async function runScenario1(cfg: ScenarioConfig): Promise<ScenarioResult> {
 					stats: statsFromResults(joinResults, raceDurMs),
 				},
 			],
-			joinResults,
+			allRes,
 		),
 		errorCount: countStepErrors(allRes),
 	};
@@ -229,7 +234,7 @@ async function runScenario2(cfg: ScenarioConfig): Promise<ScenarioResult> {
 		parents.map(async (idx) => {
 			const fStart = performance.now();
 			stepLanding.push(await getLanding(cfg));
-			stepChild.push(await createChild(cfg, idx));
+			stepChild.push(await createChild(cfg, idx, "Perf S2 Child"));
 			stepProfile.push(await updateProfile(cfg, idx));
 			stepSession.push(await getSession(cfg, idx));
 			funnelDurations.push(performance.now() - fStart);
@@ -281,7 +286,7 @@ async function runScenario3(cfg: ScenarioConfig): Promise<ScenarioResult> {
 		{ length: waitlistCount },
 		(_, i) => waitlistStart + i,
 	);
-	const childMap = await preseedChildren(cfg, waitlistIdx);
+	const childMap = await preseedChildren(cfg, waitlistIdx, "Perf S3 Child");
 	const readTasks = Array.from({ length: readCount }, (_, i) => {
 		const mod = i % 3;
 		return mod === 0
@@ -291,7 +296,7 @@ async function runScenario3(cfg: ScenarioConfig): Promise<ScenarioResult> {
 				: getSession(cfg, s3.start + i);
 	});
 	const writeTasks = Array.from({ length: writeCount }, (_, i) =>
-		createChild(cfg, writeStart + i),
+		createChild(cfg, writeStart + i, "Perf S3 Child"),
 	);
 	const waitlistTasks = waitlistIdx.map((idx) =>
 		joinWaitlist(cfg, idx, childMap.get(idx) ?? ""),
@@ -345,7 +350,7 @@ export async function runScenario4(
 		{ length: totalParents },
 		(_, i) => s4.start + i,
 	);
-	const childMap = await preseedChildren(cfg, allParents);
+	const childMap = await preseedChildren(cfg, allParents, "Perf S4 Child");
 	const p1Start = performance.now();
 	const initialJoins = await Promise.all(
 		allParents

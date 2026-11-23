@@ -89,7 +89,7 @@ describe("perf-advanced-scenarios helpers", () => {
 				expect(config.scenario).toBe("all");
 				expect(config.festival).toBe("perf-2026");
 				expect(config.classId).toBe("perf-class-01");
-				expect(config.divisionId).toBe("perf-div-piano");
+				expect(config.divisionId).toBe("11111111-1111-4111-8111-111111111111");
 				expect(config.openClassId).toBe("perf-class-open-01");
 				expect(config.concurrency).toBe(DEFAULT_CONCURRENCY);
 			} finally {
@@ -214,7 +214,7 @@ describe("perf-advanced-scenarios helpers", () => {
 					slug: "perf-test",
 					festival: "perf-2026",
 					classId: "perf-class-01",
-					divisionId: "perf-div-piano",
+					divisionId: "11111111-1111-4111-8111-111111111111",
 					openClassId: "perf-class-open-01",
 					concurrency: 500,
 					origin: "http://perf.local",
