@@ -3,7 +3,7 @@
 ## Goal reference
 - Locked goals: `goals/s21-v0-4-2-membership-admin-ui-and-repertoire-limits/goals.v0.md`
 - Goal establishment record: `goals/s21-v0-4-2-membership-admin-ui-and-repertoire-limits/establish-goals.v0.md`
-- Master program ledger: `specs/pre-thanksgiving-program.md` (Wave 4 `v0.4.2`, `READY`, depends on `S14` (`v0.4.1`), Decision `D7`)
+- Master program ledger: `specs/pre-thanksgiving-program.md` (Wave 4 `v0.4.2`, `DONE` via PR `#446` (`ca84970`), depends on `S14` (`v0.4.1`), Decision `D7`)
 - Bounded context architecture: `specs/bounded-contexts-2026.md` (`teacher-directory` admin membership UI & `class-checkout` repertoire validation)
 
 ## Scope
@@ -70,7 +70,7 @@ pwsh -NoProfile -File .agents/skills/festival-session/scripts/validate-packet.ps
 ```
 
 ## Delivery
-- Branch: `feat/s21-v0-4-2-membership-admin-ui-and-repertoire-limits`
+- Merged PR: `#446` (`ca84970`, branch `feat/s21-v0-4-2-membership-admin-ui-and-repertoire-limits`)
 - **Issue `#335` (Admin Membership Card Layout)**:
   - Restructured each membership card inside `div.admin-membership-list` in `packages/frontend/src/pages/AdminMembershipProductsPage.tsx` into a top `.admin-membership-card-details` section and a bottom right-aligned wrapping `.admin-membership-card-actions` row (`flex-direction: row-reverse; flex-wrap: wrap; justify-content: flex-start`) in `packages/frontend/src/styles.css`.
   - Updated `.admin-membership-list` to stack multiple membership cards vertically (`flex-direction: column; height: auto; max-height: none; overflow: visible`) without clipping or fixed-height overflow across viewports.
@@ -82,7 +82,10 @@ pwsh -NoProfile -File .agents/skills/festival-session/scripts/validate-packet.ps
   - Added `prevalidateRepertoirePieces` in `packages/backend/src/domains/class-checkout/class-checkout-validation.ts` (and exported via `packages/backend/src/checkout/class-checkout-helpers.ts`) to validate non-empty array shape, `maximumPerformancePieces`, and per-piece basic fields (including rejecting array items) before any `catalogWorkId` resolution.
   - Wired `prevalidateRepertoirePieces` ahead of `resolvePieceCatalogWorks` in both checkout (`packages/backend/src/domains/class-checkout/class-checkout-line-helpers.ts`) and registration metadata updates (`packages/backend/src/customer/customer-registration-legacy-helper.ts`), preserving existing error codes, HTTP statuses, and downstream duration/concerto/active-work validation precedence.
   - Added zero-lookup regression tests spying on `getCatalogWorkById` in `packages/backend/tests/class-checkout-service.test.ts` and `packages/backend/tests/customer-account-service.test.ts`.
-  - Review follow-up: Check every registration's piece count before resolving any catalog works in a multi-line checkout. Reuse the existing class configurations and cover an oversized later line with a zero-lookup regression test. The early check covers counts only.
+  - Review follow-up (`4a7cebc`): Check every registration's piece count before resolving any catalog works in a multi-line checkout (`class-checkout-line-runner.ts`). Reuse the existing class configurations and cover an oversized later line with a zero-lookup regression test. The early check covers counts only.
+- **Additional follow-up commits shipped in PR `#446` (`ca84970`)**:
+  - `1979fec` (`consolidate-admin-memberships`): Consolidated admin membership controls into a single 6-column `AdminEntitlementTable.tsx` and moved Shopify reconciliation and validation (`AdminShopifyReconciliationPanel.tsx`) to `AdminIntegrationsPage.tsx` (`/org/:slug/admin/integrations`).
+  - `080534f`: Preserved teacher membership edit lock state across entitlement report reloads.
 - **Modified files**:
   - `packages/backend/src/domains/class-checkout/class-checkout-validation.ts`
   - `packages/backend/src/domains/class-checkout/class-checkout-line-helpers.ts`
