@@ -8,7 +8,11 @@
 
 The memberships route, its Entitlements table, and the private admin report projection. The report resolves active profiles by organization, customer ID, and membership role, then applies effective teacher divisions before filtering and paging. Existing admin endpoints handle updates and revocation.
 
-The working tree already contained edits to `AGENTS.md` and `bun.lock`. The implementation used the current checkout and preserved those edits.
+## Delivery
+
+- Merged in PR `#446` (`ca84970`) via commits `1979fec` and `080534f`:
+  - `1979fec`: Consolidated admin membership controls into the 6-column `AdminEntitlementTable.tsx` and moved Shopify reconciliation and validation (`AdminShopifyReconciliationPanel.tsx`) onto `/org/:slug/admin/integrations` (`AdminIntegrationsPage.tsx`).
+  - `080534f`: Kept teacher membership edits locked across entitlement report reloads.
 
 ## Verification
 
