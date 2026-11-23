@@ -80,10 +80,12 @@ export function PrivacyPolicyPage() {
 			<h2>Public teacher and accompanist directory</h2>
 			<p>
 				If you are a teacher or accompanist member and choose to be listed, the
-				public directory shows your display name, the divisions you are approved
-				for, and whether your membership is active. It never shows your email
-				address, phone number, or mailing address. Listing is optional, and you
-				can change your choice at any time in your account.
+				public directory shows your display name, your role (teacher or
+				accompanist), and your approved divisions while your membership is
+				active. It never shows your email address, phone number, city, or
+				mailing address. Listing is optional. The listing box is checked by
+				default when you sign up, and you can change your choice during sign-up
+				or at any time in your account.
 			</p>
 
 			<h2>How we share information</h2>
@@ -96,10 +98,11 @@ export function PrivacyPolicyPage() {
 			</p>
 			<p>
 				Festival staff who manage memberships and registrations can view and
-				search the contact details you provide, such as your name, email
-				address, phone number, and mailing address, when you agree to share
-				them. We keep a record of when staff view or search customer profiles.
-				The record does not include the contact details themselves.
+				search the contact details you submit on Festival forms or agree to
+				share from Shopify, such as your name, email address, city or mailing
+				address, and phone number. We keep a record of when staff view or search
+				customer profiles. The record does not include the contact details
+				themselves.
 			</p>
 
 			<h2>Retention and security</h2>
