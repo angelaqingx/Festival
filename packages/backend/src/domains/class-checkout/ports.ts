@@ -12,6 +12,7 @@ import type {
 	PublicMembershipProductSummary,
 	RegistrationCatalogValue,
 } from "@festival/common";
+import type { ClassCheckoutStorefrontBinding } from "./checkout-execution-types.js";
 
 export interface CheckoutShopifyIntegrationRecord {
 	storeDomain?: string;
@@ -379,7 +380,9 @@ export interface MembershipCheckoutStorefrontPort {
 	checkout(input: {
 		organizationId: string;
 		shopifyCartId: string;
-	}): Promise<{ checkoutUrl: string }>;
+		expectedStorefrontBinding?: ClassCheckoutStorefrontBinding;
+		includeShopPrimaryDomain?: true;
+	}): Promise<{ checkoutUrl: string; shopPrimaryDomainUrl?: string }>;
 }
 
 export interface WaitlistEntitlementPort {
